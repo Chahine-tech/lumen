@@ -1,0 +1,30 @@
+# K3s registry configuration
+# This file configures containerd to use only internal registry mirrors
+# Path: /etc/rancher/k3s/registries.yaml
+
+mirrors:
+  docker.io:
+    endpoint:
+      - "http://registry.airgap.local:5000"
+
+  registry.k8s.io:
+    endpoint:
+      - "http://registry.airgap.local:5000"
+
+  quay.io:
+    endpoint:
+      - "http://registry.airgap.local:5000"
+
+  gcr.io:
+    endpoint:
+      - "http://registry.airgap.local:5000"
+
+  ghcr.io:
+    endpoint:
+      - "http://registry.airgap.local:5000"
+
+# Configuration for insecure registries (dev only)
+configs:
+  "registry.airgap.local:5000":
+    tls:
+      insecure_skip_verify: true

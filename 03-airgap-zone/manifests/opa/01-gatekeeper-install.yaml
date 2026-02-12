@@ -1,0 +1,29 @@
+# OPA Gatekeeper installation manifest
+# In airgap, you'd pre-download this from: https://raw.githubusercontent.com/open-policy-agent/gatekeeper/master/deploy/gatekeeper.yaml
+# For this demo, we'll reference the key components
+
+# NOTE: Run this to install Gatekeeper in airgap:
+# kubectl apply -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/release-3.15/deploy/gatekeeper.yaml
+# (but pre-download and save it first in connected zone)
+
+# This file documents what would be deployed
+# In production airgap, you'd have gatekeeper.yaml saved locally
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gatekeeper-system
+  labels:
+    admission.gatekeeper.sh/ignore: "true"
+    control-plane: controller-manager
+
+---
+# Placeholder - actual installation would include:
+# - CRDs (ConstraintTemplate, Constraint, Config, etc.)
+# - Deployment (gatekeeper-controller-manager)
+# - Service (gatekeeper-webhook-service)
+# - ValidatingWebhookConfiguration
+# - RBAC (ServiceAccount, ClusterRole, ClusterRoleBinding)
+
+# For setup instructions, see: docs/setup-opa-gatekeeper.md

@@ -1,0 +1,71 @@
+# Cilium ClusterwideNetworkPolicy to block ALL external traffic
+# This is the nuclear option - blocks internet at cluster level
+# Requires Cilium CNI
+
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: block-all-external-egress
+  annotations:
+    description: "Block all egress to external IPs (enforce airgap at CNI level)"
+spec:
+  endpointSelector: {}
+  egress:
+    # Allow internal cluster networks only
+    - toCIDR:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+        - 127.0.0.0/8
+    # Allow DNS (internal)
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+        - ports:
+            - port: "53"
+              protocol: TCP
+    # Block everything else (public IPs)
+    - toCIDRSet:
+        - cidr: 0.0.0.0/0
+          except:
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+            - 127.0.0.0/8
+      deny: true
+
+---
+# Cilium L7 HTTP policy for API endpoint security
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: lumen-api-l7-policy
+  namespace: lumen
+  annotations:
+    description: "L7 HTTP policy to allow only specific endpoints"
+spec:
+  endpointSelector:
+    matchLabels:
+      app: lumen-api
+  ingress:
+    - fromEndpoints:
+        - {}
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+          rules:
+            http:
+              - method: GET
+                path: "/health"
+              - method: GET
+                path: "/metrics"
+              - method: GET
+                path: "/hello"
+              - method: POST
+                path: "/hello"

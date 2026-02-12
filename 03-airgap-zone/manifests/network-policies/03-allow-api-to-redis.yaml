@@ -1,0 +1,49 @@
+# Allow lumen-api to communicate with Redis
+# This is an explicit allowlist: only API pods can talk to Redis
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-to-redis
+  namespace: lumen
+  annotations:
+    description: "Allow lumen-api pods to access Redis"
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: lumen-api
+      ports:
+        - protocol: TCP
+          port: 6379
+
+---
+# Allow Redis egress to API (for health checks if needed)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-egress
+  namespace: lumen
+  annotations:
+    description: "Allow Redis to respond to lumen-api"
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Egress
+  egress:
+    # Allow responses to API
+    - to:
+        - podSelector:
+            matchLabels:
+              app: lumen-api
+      ports:
+        - protocol: TCP
+          port: 6379

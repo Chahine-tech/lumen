@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lumen
+  labels:
+    name: lumen
+    environment: airgap
+    app: lumen-api

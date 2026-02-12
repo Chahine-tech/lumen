@@ -1,0 +1,61 @@
+# Allow Prometheus to scrape metrics from all pods
+# This enables observability while maintaining security
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scraping
+  namespace: lumen
+  annotations:
+    description: "Allow Prometheus to scrape metrics from lumen-api"
+spec:
+  podSelector:
+    matchLabels:
+      app: lumen-api
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 8080
+
+---
+# Allow monitoring namespace to egress to scrape targets
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-egress
+  namespace: monitoring
+  annotations:
+    description: "Allow Prometheus to scrape all targets"
+spec:
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes:
+    - Egress
+  egress:
+    # Allow scraping any pod in any namespace
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+    # Allow DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53

@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lumen-api-config
+  namespace: lumen
+data:
+  REDIS_ADDR: "redis:6379"
+  PORT: "8080"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lumen-api
+  namespace: lumen
+  labels:
+    app: lumen-api
+    tier: backend
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: lumen-api
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lumen-api
+  namespace: lumen
+  labels:
+    app: lumen-api
+    tier: backend
+    version: v1.0.0
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lumen-api
+  template:
+    metadata:
+      labels:
+        app: lumen-api
+        tier: backend
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: lumen-api
+          image: localhost:5000/lumen-api:v1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          env:
+            - name: REDIS_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: lumen-api-config
+                  key: REDIS_ADDR
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: lumen-api-config
+                  key: PORT
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

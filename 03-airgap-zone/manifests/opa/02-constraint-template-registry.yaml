@@ -1,0 +1,64 @@
+# ConstraintTemplate: Enforce that all images come from approved registries
+# Critical for airgap: ensures no external image pulls
+
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredregistry
+  annotations:
+    description: "Requires container images to come from approved registries"
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredRegistry
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            registries:
+              description: "List of approved registries"
+              type: array
+              items:
+                type: string
+
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequiredregistry
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          not starts_with_approved_registry(container.image)
+          msg := sprintf("Container <%v> has invalid image <%v>. Images must come from approved registries: %v", [container.name, container.image, input.parameters.registries])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.initContainers[_]
+          not starts_with_approved_registry(container.image)
+          msg := sprintf("InitContainer <%v> has invalid image <%v>. Images must come from approved registries: %v", [container.name, container.image, input.parameters.registries])
+        }
+
+        starts_with_approved_registry(image) {
+          registry := input.parameters.registries[_]
+          startswith(image, registry)
+        }
+
+---
+# Constraint: Apply the registry policy
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sRequiredRegistry
+metadata:
+  name: require-internal-registry
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+    namespaces:
+      - "lumen"
+      - "default"
+  parameters:
+    registries:
+      - "localhost:5000/"
+      - "registry.airgap.local:5000/"

@@ -1,0 +1,29 @@
+# Default Deny All Network Policy
+# This is the foundation of Zero Trust networking
+# Block ALL ingress and egress by default, then explicitly allow what's needed
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: lumen
+  annotations:
+    description: "Deny all ingress and egress traffic by default"
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# Deny all in kube-system as well
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: kube-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

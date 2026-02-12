@@ -1,0 +1,56 @@
+# ConstraintTemplate: Block images using :latest tag
+# Best practice: use specific version tags for reproducibility
+
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sblocklatesttag
+  annotations:
+    description: "Blocks container images using the :latest tag"
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sBlockLatestTag
+
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sblocklatesttag
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          image := container.image
+          endswith(image, ":latest")
+          msg := sprintf("Container <%v> uses :latest tag in image <%v>. Specific version tags are required.", [container.name, image])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.containers[_]
+          image := container.image
+          not contains(image, ":")
+          msg := sprintf("Container <%v> has no tag specified in image <%v> (implies :latest). Specific version tags are required.", [container.name, image])
+        }
+
+        violation[{"msg": msg}] {
+          container := input.review.object.spec.initContainers[_]
+          image := container.image
+          endswith(image, ":latest")
+          msg := sprintf("InitContainer <%v> uses :latest tag in image <%v>. Specific version tags are required.", [container.name, image])
+        }
+
+---
+# Constraint: Apply the no-latest policy
+apiVersion: constraints.gatekeeper.sh/v1beta1
+kind: K8sBlockLatestTag
+metadata:
+  name: block-latest-tag
+spec:
+  match:
+    kinds:
+      - apiGroups: [""]
+        kinds: ["Pod"]
+      - apiGroups: ["apps"]
+        kinds: ["Deployment", "StatefulSet", "DaemonSet"]
+    namespaces:
+      - "lumen"
