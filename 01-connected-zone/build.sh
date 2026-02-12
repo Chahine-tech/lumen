@@ -17,7 +17,7 @@ IMAGE_TAG="v1.0.0"
 echo -e "${YELLOW}[1/6]${NC} Building Go binary..."
 cd app
 go mod download
-go build -o ../bin/lumen-api main.go
+go build -o ../bin/lumen-api ./cmd/server
 cd ..
 echo -e "${GREEN}✓ Binary built${NC}"
 
