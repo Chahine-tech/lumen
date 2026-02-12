@@ -1,0 +1,59 @@
+# Allow Grafana to access DNS and Prometheus
+# This completes the monitoring stack NetworkPolicies
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-egress
+  namespace: monitoring
+  annotations:
+    description: "Allow Grafana to access DNS and Prometheus"
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes:
+    - Egress
+  egress:
+    # Allow DNS queries to CoreDNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow Grafana to query Prometheus
+    - to:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+
+---
+# Allow external access to Grafana UI
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-ingress
+  namespace: monitoring
+  annotations:
+    description: "Allow external access to Grafana UI"
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow all ingress to Grafana (for port-forward and future ingress)
+    - ports:
+        - protocol: TCP
+          port: 3000

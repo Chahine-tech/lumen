@@ -1,0 +1,25 @@
+# Allow ingress to CoreDNS from all namespaces
+# Required because default-deny-all in kube-system blocks DNS
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-ingress
+  namespace: kube-system
+  annotations:
+    description: "Allow all pods to query CoreDNS"
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: kube-dns
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow DNS queries from any namespace
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

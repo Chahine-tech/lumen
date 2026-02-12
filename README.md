@@ -24,8 +24,8 @@ A hands-on project to master distributed systems, network security, and Kubernet
 │ • Download deps     │     │ • File server       │     │ • Lumen API + Redis │
 │ • Run tests         │     │ • Image storage     │     │ • Cilium CNI        │
 └─────────────────────┘     └─────────────────────┘     │ • OPA Gatekeeper    │
-                                                         │ • Prometheus+Grafana│
-                                                         └─────────────────────┘
+                                                        │ • Prometheus+Grafana│
+                                                        └─────────────────────┘
 ```
 
 ## 🚀 Quick Start
@@ -134,6 +134,7 @@ make test-opa                  # Test admission control
 ## 📚 Documentation
 
 - [Complete Setup Guide](docs/SETUP.md) - Detailed step-by-step instructions
+- [Deployment Guide](docs/DEPLOYMENT.md) - Real deployment results and troubleshooting
 - [Architecture Deep Dive](docs/ARCHITECTURE.md) - Technical details
 
 ## 🛠️ Common Commands
