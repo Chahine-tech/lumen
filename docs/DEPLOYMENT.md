@@ -915,3 +915,333 @@ kubectl port-forward -n monitoring svc/grafana 3000:3000
 ---
 
 **Monitoring Status:** ✅ Prometheus Operational | ✅ Grafana Fully Functional
+
+## 🔐 Phase 6: OPA Gatekeeper - Admission Control
+
+### What is OPA Gatekeeper?
+
+Open Policy Agent (OPA) Gatekeeper is a **policy controller** for Kubernetes that enforces policies using admission webhooks. It validates, mutates, and audits resources before they're admitted to the cluster.
+
+### Deployment Commands
+
+```bash
+# Install Gatekeeper
+kubectl apply -f https://raw.githubusercontent.com/open-policy-agent/gatekeeper/v3.15.0/deploy/gatekeeper.yaml
+
+# Wait for Gatekeeper pods
+kubectl wait --for=condition=ready pod -l control-plane=controller-manager \
+  -n gatekeeper-system --timeout=90s
+
+# Apply constraint templates (with correct registry IP)
+sed 's/localhost:5000/192.168.107.6:5000/g' \
+  03-airgap-zone/manifests/opa/02-constraint-template-registry.yaml | kubectl apply -f -
+
+kubectl apply -f 03-airgap-zone/manifests/opa/05-constraint-template-no-latest.yaml
+kubectl apply -f 03-airgap-zone/manifests/opa/03-constraint-template-labels.yaml
+kubectl apply -f 03-airgap-zone/manifests/opa/04-constraint-template-resources.yaml
+```
+
+### Deployment Status
+
+```bash
+$ kubectl get pods -n gatekeeper-system
+NAME                                            READY   STATUS    RESTARTS   AGE
+gatekeeper-audit-8ccd97cc5-rld59                1/1     Running   1          5m
+gatekeeper-controller-manager-84fd8dbff-87jxc   1/1     Running   0          5m
+gatekeeper-controller-manager-84fd8dbff-dhdx7   1/1     Running   0          5m
+gatekeeper-controller-manager-84fd8dbff-stzf2   1/1     Running   0          5m
+```
+
+✅ **Result:** 1 audit pod + 3 controller replicas running
+
+### Policies Implemented
+
+#### 1. K8sRequiredRegistry - Enforce Internal Registry
+
+**Purpose:** Prevent pods from pulling images from external registries (critical for airgap)
+
+**Policy:**
+```yaml
+parameters:
+  registries:
+    - "192.168.107.6:5000/"
+    - "registry.airgap.local:5000/"
+```
+
+**Test:**
+```bash
+$ kubectl apply -n lumen -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test
+spec:
+  containers:
+  - name: test
+    image: docker.io/nginx:1.21
+EOF
+
+Error from server (Forbidden): admission webhook "validation.gatekeeper.sh" denied the request:
+[require-internal-registry] Container <test> has invalid image <docker.io/nginx:1.21>.
+Images must come from approved registries: ["192.168.107.6:5000/", "registry.airgap.local:5000/"]
+```
+
+✅ **Result:** External images blocked
+
+#### 2. K8sBlockLatestTag - Block :latest Tag
+
+**Purpose:** Enforce specific version tags for reproducibility and security
+
+**Test:**
+```bash
+$ kubectl apply -n lumen -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test
+spec:
+  containers:
+  - name: test
+    image: nginx:latest
+EOF
+
+Error from server (Forbidden): admission webhook "validation.gatekeeper.sh" denied the request:
+[block-latest-tag] Container <test> uses :latest tag in image <nginx:latest>.
+Specific version tags are required.
+```
+
+✅ **Result:** :latest tag blocked
+
+**Edge Case - No Tag:**
+```bash
+$ kubectl apply -n lumen -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test
+spec:
+  containers:
+  - name: test
+    image: nginx
+EOF
+
+Error from server (Forbidden): admission webhook "validation.gatekeeper.sh" denied the request:
+[block-latest-tag] Container <test> has no tag specified in image <nginx> (implies :latest).
+Specific version tags are required.
+```
+
+✅ **Result:** Images without tags also blocked
+
+#### 3. K8sRequiredLabels - Enforce Required Labels
+
+**Purpose:** Ensure resources have mandatory labels for organization and governance
+
+**Required Labels:**
+- `app`
+- `tier`
+
+**Test:**
+```bash
+$ kubectl apply -n lumen -f - <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test
+  labels:
+    app: test
+spec:
+  selector:
+    matchLabels:
+      app: test
+  template:
+    metadata:
+      labels:
+        app: test
+    spec:
+      containers:
+      - name: test
+        image: 192.168.107.6:5000/lumen-api:v1.0.0
+EOF
+
+Error from server (Forbidden): admission webhook "validation.gatekeeper.sh" denied the request:
+[require-app-labels] Resource is missing required labels: {"tier"}
+```
+
+✅ **Result:** Missing labels detected
+
+#### 4. K8sRequiredResources - Enforce Resource Limits
+
+**Purpose:** Prevent resource exhaustion by requiring CPU/memory requests and limits
+
+**Applies to:** Deployments, StatefulSets, DaemonSets
+
+**Policy:** Requires all containers to specify:
+- `resources.requests.cpu`
+- `resources.requests.memory`
+- `resources.limits.cpu`
+- `resources.limits.memory`
+
+### Constraint Templates and Constraints
+
+```bash
+$ kubectl get constrainttemplates
+NAME                   AGE
+k8sblocklatesttag      4m
+k8srequiredlabels      3m
+k8srequiredregistry    4m
+k8srequiredresources   3m
+
+$ kubectl get constraints --all-namespaces
+NAME                                                           ENFORCEMENT-ACTION   TOTAL-VIOLATIONS
+k8sblocklatesttag.constraints.gatekeeper.sh/block-latest-tag                        0
+k8srequiredlabels.constraints.gatekeeper.sh/require-app-labels                      0
+k8srequiredregistry.constraints.gatekeeper.sh/require-internal-registry            0
+k8srequiredresources.constraints.gatekeeper.sh/require-resources                    0
+```
+
+✅ **Result:** 4 ConstraintTemplates + 4 Constraints active, 0 violations
+
+### Valid Pod Example
+
+```bash
+$ kubectl apply -n lumen -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-valid
+  labels:
+    app: test
+    tier: backend
+spec:
+  containers:
+  - name: test
+    image: 192.168.107.6:5000/lumen-api:v1.0.0
+    resources:
+      requests:
+        cpu: "10m"
+        memory: "32Mi"
+      limits:
+        cpu: "50m"
+        memory: "64Mi"
+EOF
+
+pod/test-valid created
+```
+
+✅ **Result:** Compliant pods are admitted successfully
+
+### Gatekeeper Architecture
+
+```
+┌────────────────────────────────────────────────────┐
+│          Kubernetes API Server                     │
+│                                                     │
+│  ┌──────────────────────────────────────────┐     │
+│  │   ValidatingWebhookConfiguration         │     │
+│  │   - Intercepts CREATE/UPDATE requests    │     │
+│  └───────────────┬──────────────────────────┘     │
+└──────────────────┼─────────────────────────────────┘
+                   │
+                   ▼
+┌────────────────────────────────────────────────────┐
+│        Gatekeeper Controller Manager (3 replicas)  │
+│                                                     │
+│  ┌──────────────────────────────────────────┐     │
+│  │  Policy Enforcement                      │     │
+│  │  - Load ConstraintTemplates (Rego)       │     │
+│  │  - Apply Constraints to resources        │     │
+│  │  - Return allow/deny decision            │     │
+│  └──────────────────────────────────────────┘     │
+└────────────────────────────────────────────────────┘
+                   │
+                   ▼
+┌────────────────────────────────────────────────────┐
+│           Gatekeeper Audit Controller              │
+│                                                     │
+│  - Periodically scans existing resources          │
+│  - Reports constraint violations                   │
+│  - Updates constraint status                       │
+└────────────────────────────────────────────────────┘
+```
+
+### Policy Enforcement Flow
+
+```
+User creates Pod
+       │
+       ▼
+API Server intercepts
+       │
+       ▼
+Webhook calls Gatekeeper
+       │
+       ▼
+┌──────────────────────┐
+│  Check Constraints:  │
+│  1. Registry ✅      │
+│  2. No :latest ✅    │
+│  3. Labels ✅        │
+│  4. Resources ✅     │
+└──────────┬───────────┘
+           │
+     ┌─────┴──────┐
+     │            │
+  ALLOW         DENY
+     │            │
+     ▼            ▼
+  Pod created   Error returned
+```
+
+### Success Criteria
+
+| Criterion | Status | Notes |
+|-----------|--------|-------|
+| Gatekeeper installed | ✅ | v3.15.0, 4 pods running |
+| ConstraintTemplates created | ✅ | 4 templates (registry, latest, labels, resources) |
+| Constraints applied | ✅ | 4 constraints enforcing policies |
+| Registry policy working | ✅ | Blocks external images |
+| Latest tag policy working | ✅ | Blocks :latest and untagged images |
+| Labels policy working | ✅ | Requires app + tier labels |
+| Resources policy working | ✅ | Requires CPU/memory limits on Deployments |
+| Valid pods admitted | ✅ | Compliant resources pass validation |
+| No violations | ✅ | 0 total violations across all constraints |
+
+### Key Learnings
+
+1. **Admission Control Timing** - Gatekeeper validates resources BEFORE they're created, preventing policy violations proactively
+2. **Rego Language** - OPA uses Rego for policy logic, allowing complex conditional rules
+3. **Template vs Constraint** - ConstraintTemplates define policy logic (reusable), Constraints apply them to specific resources
+4. **Audit Mode** - Gatekeeper continuously audits existing resources for violations (not just new ones)
+5. **Webhook Dependencies** - Gatekeeper uses ValidatingWebhookConfiguration, so it must be healthy before creating resources
+6. **Namespace Targeting** - Constraints can target specific namespaces (we target `lumen` namespace)
+7. **Multiple Violations** - A single resource can trigger multiple constraint violations simultaneously
+
+### Airgap Considerations
+
+For true airgap deployment:
+1. **Pre-download Gatekeeper manifest** - Save `https://raw.githubusercontent.com/open-policy-agent/gatekeeper/v3.15.0/deploy/gatekeeper.yaml` in connected zone
+2. **Push Gatekeeper images to registry** - Extract images from manifest and upload to `192.168.107.6:5000`
+3. **Update image references** - Modify manifest to use internal registry before applying
+
+### Verification Commands
+
+```bash
+# Check Gatekeeper health
+kubectl get pods -n gatekeeper-system
+
+# List all constraint templates
+kubectl get constrainttemplates
+
+# List all constraints
+kubectl get constraints --all-namespaces
+
+# View constraint details
+kubectl describe k8srequiredregistry require-internal-registry
+
+# Test policy enforcement (should fail)
+kubectl run test --image=nginx:latest -n lumen
+```
+
+---
+
+**OPA Gatekeeper Status:** ✅ Fully Operational - 4 Policies Enforced
