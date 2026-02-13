@@ -14,11 +14,21 @@ spec:
       k8s-app: kube-dns
   policyTypes:
     - Ingress
+    - Egress
   ingress:
     # Allow DNS queries from any namespace
     - from:
         - namespaceSelector: {}
       ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+  egress:
+    # Allow CoreDNS to forward queries to upstream DNS
+    # TODO: In Phase 8, restrict this to only internal DNS servers for full airgap
+    # Allow Google DNS (8.8.8.8, 8.8.4.4) for now
+    - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
