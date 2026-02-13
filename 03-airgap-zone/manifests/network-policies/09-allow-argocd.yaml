@@ -88,6 +88,14 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # Allow Redis cache access
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-redis
+      ports:
+        - protocol: TCP
+          port: 6379
     # Allow HTTPS to internet (for GitHub git clone)
     # TODO: Remove this in Phase 8 when migrating to internal Git server (Gitea)
     # In production airgap, ArgoCD should pull from internal Git, not GitHub
