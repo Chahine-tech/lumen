@@ -13,7 +13,8 @@ spec:
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: lumen
+    # No namespace specified - uses namespace from each manifest file
+    # NetworkPolicies are deployed in: lumen, kube-system, argocd
 
   syncPolicy:
     automated:
