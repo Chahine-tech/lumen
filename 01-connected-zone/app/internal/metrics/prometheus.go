@@ -5,14 +5,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// Metrics holds all Prometheus metrics
 type Metrics struct {
 	HTTPRequestsTotal     *prometheus.CounterVec
 	HTTPRequestDuration   *prometheus.HistogramVec
 	RedisConnectionStatus prometheus.Gauge
 }
 
-// NewMetrics creates and registers Prometheus metrics
 func NewMetrics() *Metrics {
 	return &Metrics{
 		HTTPRequestsTotal: promauto.NewCounterVec(

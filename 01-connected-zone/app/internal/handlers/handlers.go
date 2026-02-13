@@ -9,13 +9,11 @@ import (
 	"github.com/Chahine-tech/lumen/internal/store"
 )
 
-// Handler holds dependencies for HTTP handlers
 type Handler struct {
 	store   *store.RedisStore
 	metrics *metrics.Metrics
 }
 
-// NewHandler creates a new handler with dependencies
 func NewHandler(store *store.RedisStore, metrics *metrics.Metrics) *Handler {
 	return &Handler{
 		store:   store,
@@ -23,19 +21,16 @@ func NewHandler(store *store.RedisStore, metrics *metrics.Metrics) *Handler {
 	}
 }
 
-// HealthResponse represents health check response
 type HealthResponse struct {
 	Status string            `json:"status"`
 	Checks map[string]string `json:"checks"`
 }
 
-// InfoResponse represents info endpoint response
 type InfoResponse struct {
 	Message string `json:"message"`
 	Counter int64  `json:"counter"`
 }
 
-// writeJSON writes JSON response with error handling
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -44,12 +39,10 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	}
 }
 
-// Health handles health check endpoint
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	checks := make(map[string]string)
 	status := "healthy"
 
-	// Check Redis using request context
 	if err := h.store.Ping(r.Context()); err != nil {
 		checks["redis"] = "unhealthy"
 		status = "degraded"
@@ -71,9 +64,7 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Hello handles main application endpoint
 func (h *Handler) Hello(w http.ResponseWriter, r *http.Request) {
-	// Increment counter using request context
 	counter, err := h.store.IncrementCounter(r.Context(), "hello_counter")
 	if err != nil {
 		log.Printf("Redis error: %v", err)

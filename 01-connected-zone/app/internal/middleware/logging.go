@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-// responseWriter wraps http.ResponseWriter to capture status code
 type responseWriter struct {
 	http.ResponseWriter
 	statusCode int
@@ -24,12 +23,10 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return size, err
 }
 
-// Logging middleware logs HTTP requests with status code and duration
 func Logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		// Wrap response writer to capture status
 		wrapped := &responseWriter{
 			ResponseWriter: w,
 			statusCode:     http.StatusOK, // default
