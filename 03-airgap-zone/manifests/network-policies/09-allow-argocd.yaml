@@ -76,6 +76,7 @@ spec:
         - protocol: TCP
           port: 8081
   egress:
+    # Allow DNS
     - to:
         - namespaceSelector:
             matchLabels:
@@ -88,6 +89,14 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # Allow HTTPS to internet (for GitHub git clone)
+    # TODO: Remove this in Phase 8 when migrating to internal Git server (Gitea)
+    # In production airgap, ArgoCD should pull from internal Git, not GitHub
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
