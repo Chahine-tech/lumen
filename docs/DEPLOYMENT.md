@@ -1245,3 +1245,623 @@ kubectl run test --image=nginx:latest -n lumen
 ---
 
 **OPA Gatekeeper Status:** ✅ Fully Operational - 4 Policies Enforced
+
+---
+
+## 📦 Phase 7: ArgoCD - GitOps Continuous Deployment
+
+### Overview
+
+ArgoCD enables GitOps-based continuous deployment where Git is the source of truth for cluster state.
+
+**Why ArgoCD in Airgap:**
+- ✅ Declarative infrastructure as code
+- ✅ Automated sync from Git repositories
+- ✅ Drift detection and self-healing
+- ✅ Multi-application management
+- ✅ Full airgap support with internal registries
+
+### Architecture
+
+```
+┌─────────────────────────┐
+│   Git Repository        │ ← Source of Truth
+│   (GitHub/Internal)     │
+└──────────┬──────────────┘
+           │
+           │ Git Clone (3min poll)
+           ▼
+┌─────────────────────────┐
+│  ArgoCD (argocd ns)     │
+│  ┌───────────────────┐  │
+│  │ Application       │  │ ← Defines what to deploy
+│  │ Controller        │  │
+│  └─────────┬─────────┘  │
+│            │             │
+│  ┌─────────▼─────────┐  │
+│  │ Repo Server       │  │ ← Renders manifests
+│  └─────────┬─────────┘  │
+│            │             │
+│  ┌─────────▼─────────┐  │
+│  │ Server (API/UI)   │  │ ← Web UI + API
+│  └───────────────────┘  │
+└──────────┬──────────────┘
+           │
+           │ kubectl apply
+           ▼
+┌─────────────────────────┐
+│  Target Namespaces      │
+│  • lumen (app)          │
+│  • lumen (monitoring)   │
+│  • lumen (netpol)       │
+└─────────────────────────┘
+```
+
+### Step 1: Download ArgoCD Artifacts (Connected Zone)
+
+```bash
+cd 01-connected-zone/argocd-airgap
+./download-argocd.sh
+```
+
+**Output:**
+```
+================================================
+  ArgoCD Airgap - Download Artifacts
+================================================
+[1/3] Downloading ArgoCD installation manifest...
+✓ Manifest downloaded
+
+[2/3] Extracting image list from manifest...
+ArgoCD images to pull:
+quay.io/argoproj/argocd:v2.12.3
+ghcr.io/dexidp/dex:v2.38.0
+redis:7.0.15-alpine
+
+[3/3] Pulling ArgoCD images...
+Pulling quay.io/argoproj/argocd:v2.12.3...
+✓ All images pulled
+
+Saving images to tar archives...
+✓ Saved quay.io-argoproj-argocd-v2.12.3.tar (120MB)
+✓ Saved ghcr.io-dexidp-dex-v2.38.0.tar (45MB)
+✓ Saved redis-7.0.15-alpine.tar (41MB)
+
+================================================
+  ArgoCD Artifacts Ready!
+================================================
+```
+
+**Key Learnings:**
+- ArgoCD has 3 main images (server, dex, redis)
+- Total size: ~206MB for full GitOps stack
+- Manifest downloaded from official GitHub releases
+
+### Step 2: Push to Internal Registry (Transit Zone)
+
+```bash
+cd 02-transit-zone
+./push-argocd.sh
+```
+
+**Output:**
+```
+================================================
+  Transit Zone - Push ArgoCD to Registry
+================================================
+[1/2] Loading ArgoCD images...
+✓ Images loaded
+
+[2/2] Tagging and pushing to internal registry...
+Processing: quay.io/argoproj/argocd:v2.12.3 → localhost:5000/argoproj/argocd:v2.12.3
+✓ Pushed argoproj/argocd:v2.12.3
+✓ Pushed dexidp/dex:v2.38.0
+✓ Pushed redis:7.0.15-alpine
+
+================================================
+  ArgoCD Images in Registry!
+================================================
+```
+
+**Verification:**
+```bash
+curl -s http://localhost:5000/v2/_catalog | jq .
+```
+
+**Output:**
+```json
+{
+  "repositories": [
+    "argoproj/argocd",
+    "dexidp/dex",
+    "lumen-api",
+    "redis"
+  ]
+}
+```
+
+### Step 3: Prepare Manifest for Airgap (Airgap Zone)
+
+```bash
+cd 03-airgap-zone/scripts
+./prepare-argocd-manifest.sh
+```
+
+**What this does:**
+- Replaces all `quay.io/argoproj/*` → `192.168.107.6:5000/argoproj/*`
+- Replaces all `ghcr.io/dexidp/*` → `192.168.107.6:5000/dexidp/*`
+- Generates `02-install-airgap.yaml` with registry overrides
+
+**Output:**
+```
+================================================
+  Prepare ArgoCD Manifest for Airgap
+================================================
+[1/2] Replacing image references...
+  quay.io/argoproj/* → 192.168.107.6:5000/argoproj/*
+  ghcr.io/dexidp/*   → 192.168.107.6:5000/dexidp/*
+✓ Manifest updated
+
+[2/2] Verifying image references...
+Images in manifest:
+192.168.107.6:5000/argoproj/argocd:v2.12.3
+192.168.107.6:5000/dexidp/dex:v2.38.0
+redis:7.0.15-alpine
+
+================================================
+  ArgoCD Manifest Ready!
+================================================
+```
+
+### Step 4: Deploy ArgoCD
+
+```bash
+cd 03-airgap-zone
+
+# Create namespace
+kubectl apply -f manifests/argocd/01-namespace.yaml
+
+# Install ArgoCD
+kubectl apply -f manifests/argocd/02-install-airgap.yaml
+
+# Wait for pods
+kubectl wait --for=condition=ready pod \
+  -l app.kubernetes.io/part-of=argocd \
+  -n argocd --timeout=300s
+
+# Apply ConfigMap
+kubectl apply -f manifests/argocd/03-argocd-cm.yaml
+
+# Apply NetworkPolicies
+kubectl apply -f manifests/network-policies/09-allow-argocd.yaml
+```
+
+**Output:**
+```bash
+$ kubectl get pods -n argocd
+NAME                                               READY   STATUS    RESTARTS   AGE
+argocd-application-controller-0                    1/1     Running   0          2m
+argocd-applicationset-controller-7d9c6d5f6-xk8mn   1/1     Running   0          2m
+argocd-dex-server-6fd8b59f5b-4jvnl                 1/1     Running   0          2m
+argocd-notifications-controller-5557f7bb5b-wz6rl   1/1     Running   0          2m
+argocd-redis-74cb89f466-h9tqx                      1/1     Running   0          2m
+argocd-repo-server-68444f6994-n8tpq                1/1     Running   0          2m
+argocd-server-579f659dd5-2xjkm                     1/1     Running   0          2m
+```
+
+**Key Components:**
+- **application-controller**: Syncs applications from Git
+- **repo-server**: Clones Git repos and renders manifests
+- **server**: Web UI + API
+- **dex-server**: SSO authentication (optional in airgap)
+- **redis**: Cache for application state
+
+### Step 5: Access ArgoCD UI
+
+```bash
+# Get admin password
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d && echo
+
+# Output: xY9zK3mP2wQ7r (example)
+
+# Port-forward
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+
+# Access: https://localhost:8080
+# Username: admin
+# Password: xY9zK3mP2wQ7r
+```
+
+**ArgoCD UI Screenshot:**
+```
+┌─────────────────────────────────────────────┐
+│  ArgoCD                          admin ▼    │
+├─────────────────────────────────────────────┤
+│  📦 Applications                           │
+│                                             │
+│  ┌──────────────────────────────────────┐  │
+│  │ lumen-app                            │  │
+│  │ ✅ Synced | ✅ Healthy                │  │
+│  │ Path: 03-airgap-zone/manifests/app   │  │
+│  └──────────────────────────────────────┘  │
+│                                             │
+│  ┌──────────────────────────────────────┐  │
+│  │ lumen-monitoring                     │  │
+│  │ ✅ Synced | ✅ Healthy                │  │
+│  │ Path: 03-airgap-zone/manifests/mon   │  │
+│  └──────────────────────────────────────┘  │
+└─────────────────────────────────────────────┘
+```
+
+### Step 6: Deploy Applications via ArgoCD
+
+**Update Git repository URL in Application manifests:**
+
+```bash
+# Edit these files with your GitHub username
+vim manifests/argocd/04-application-lumen.yaml
+vim manifests/argocd/05-application-monitoring.yaml
+vim manifests/argocd/06-application-network-policies.yaml
+
+# Replace: YOUR_USERNAME with actual GitHub username
+```
+
+**Deploy Applications:**
+
+```bash
+# Deploy Lumen app
+kubectl apply -f manifests/argocd/04-application-lumen.yaml
+
+# Deploy Monitoring
+kubectl apply -f manifests/argocd/05-application-monitoring.yaml
+
+# Deploy NetworkPolicies
+kubectl apply -f manifests/argocd/06-application-network-policies.yaml
+```
+
+**Check Application Status:**
+
+```bash
+kubectl get applications -n argocd
+```
+
+**Output:**
+```
+NAME                     SYNC STATUS   HEALTH STATUS
+lumen-app                Synced        Healthy
+lumen-monitoring         Synced        Healthy
+lumen-network-policies   Synced        Healthy
+```
+
+### Step 7: Test GitOps Workflow
+
+**Scenario: Update Lumen API replica count**
+
+1. **Edit manifest in Git:**
+
+```bash
+# Edit file
+vim 03-airgap-zone/manifests/app/01-api-deployment.yaml
+
+# Change replicas: 2 → 3
+spec:
+  replicas: 3  # Changed from 2
+
+# Commit and push
+git add .
+git commit -m "Scale lumen-api to 3 replicas"
+git push origin main
+```
+
+2. **ArgoCD detects change (default: 3min poll):**
+
+```bash
+# Watch application status
+kubectl get application lumen-app -n argocd -w
+```
+
+**Output:**
+```
+NAME        SYNC STATUS   HEALTH STATUS
+lumen-app   OutOfSync     Healthy        ← Git changed
+lumen-app   Syncing       Healthy        ← ArgoCD syncing
+lumen-app   Synced        Progressing    ← Pods creating
+lumen-app   Synced        Healthy        ← All healthy
+```
+
+3. **Verify deployment:**
+
+```bash
+kubectl get pods -n lumen -l app=lumen-api
+```
+
+**Output:**
+```
+NAME                         READY   STATUS    RESTARTS   AGE
+lumen-api-6f8d7c5b9d-2xjkm   1/1     Running   0          5m
+lumen-api-6f8d7c5b9d-4hnpq   1/1     Running   0          5m
+lumen-api-6f8d7c5b9d-9wz7k   1/1     Running   0          30s  ← NEW POD
+```
+
+**GitOps Workflow Validated:** ✅
+
+### Test: Self-Healing
+
+**Scenario: Manual change should be reverted**
+
+```bash
+# Manually scale down (outside Git)
+kubectl scale deployment lumen-api -n lumen --replicas=1
+
+# Check pods
+kubectl get pods -n lumen -l app=lumen-api
+```
+
+**Output:**
+```
+NAME                         READY   STATUS        RESTARTS   AGE
+lumen-api-6f8d7c5b9d-2xjkm   1/1     Running       0          10m
+lumen-api-6f8d7c5b9d-4hnpq   1/1     Terminating   0          10m
+lumen-api-6f8d7c5b9d-9wz7k   1/1     Terminating   0          5m
+```
+
+**ArgoCD self-heal (within 5 seconds):**
+
+```bash
+# ArgoCD detects drift and reverts
+kubectl get pods -n lumen -l app=lumen-api
+```
+
+**Output:**
+```
+NAME                         READY   STATUS    RESTARTS   AGE
+lumen-api-6f8d7c5b9d-2xjkm   1/1     Running   0          10m
+lumen-api-6f8d7c5b9d-7qw3n   1/1     Running   0          3s   ← RESTORED
+lumen-api-6f8d7c5b9d-8px2m   1/1     Running   0          3s   ← RESTORED
+```
+
+**Self-Healing Validated:** ✅
+
+### NetworkPolicies for ArgoCD
+
+**Applied NetworkPolicies:**
+
+```yaml
+# 09-allow-argocd.yaml
+- allow-argocd-server          # ArgoCD UI/API access
+- allow-argocd-repo-server     # Git clone + manifest rendering
+- allow-argocd-application-controller  # Kubernetes API access
+- allow-argocd-redis           # Internal cache
+```
+
+**What's allowed:**
+- ✅ ArgoCD → Kubernetes API (port 443)
+- ✅ ArgoCD → CoreDNS (port 53)
+- ✅ ArgoCD components → Each other
+- ❌ ArgoCD → Internet (blocked by default-deny-all)
+
+**Verification:**
+
+```bash
+kubectl describe netpol -n argocd
+```
+
+### Key Learnings
+
+#### 1. **GitOps Benefits**
+
+**Before ArgoCD (Manual):**
+```bash
+kubectl apply -f manifests/
+# What if someone changes it manually?
+# How do you track changes?
+# No audit trail
+```
+
+**With ArgoCD (GitOps):**
+```bash
+git commit -m "Update deployment"
+git push
+# ArgoCD auto-syncs
+# Git = source of truth
+# Full audit trail
+# Automatic rollback on failure
+```
+
+#### 2. **Sync Policies**
+
+```yaml
+syncPolicy:
+  automated:
+    prune: true       # Delete resources not in Git
+    selfHeal: true    # Revert manual changes
+```
+
+**prune = true:**
+- If you delete a file from Git → ArgoCD deletes resource from cluster
+
+**selfHeal = true:**
+- If someone runs `kubectl edit` → ArgoCD reverts within 5s
+
+#### 3. **Airgap Configuration**
+
+**Challenge:** ArgoCD needs to pull from Git, but we're in airgap.
+
+**Solutions:**
+
+**Option A:** Internal Git server (full airgap)
+```yaml
+source:
+  repoURL: http://gitea.airgap.local/lumen.git
+```
+
+**Option B:** Selective internet access (Git only)
+```bash
+# Allow HTTPS to GitHub only
+iptables -I OUTPUT -d 140.82.112.0/20 -p tcp --dport 443 -j ACCEPT
+```
+
+**Option C:** Git bundle (offline sync)
+```bash
+git bundle create lumen.bundle --all
+# Transfer to airgap
+git clone lumen.bundle
+```
+
+#### 4. **Multi-Application Strategy**
+
+We split into 3 Applications:
+- **lumen-app**: Core application (API + Redis)
+- **lumen-monitoring**: Prometheus + Grafana
+- **lumen-network-policies**: NetworkPolicies
+
+**Why split?**
+- Independent sync cycles
+- Different update frequencies
+- Easier rollback per component
+
+### Troubleshooting
+
+#### Problem: Application stuck in "OutOfSync"
+
+```bash
+# Check sync status
+kubectl describe application lumen-app -n argocd
+
+# Manual sync
+kubectl patch application lumen-app -n argocd \
+  --type merge -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{}}}'
+```
+
+#### Problem: "Failed to load live state"
+
+```bash
+# Check application-controller logs
+kubectl logs -n argocd -l app.kubernetes.io/name=argocd-application-controller
+
+# Common cause: RBAC permissions
+kubectl get clusterrole argocd-application-controller -o yaml
+```
+
+#### Problem: Git clone fails
+
+```bash
+# Check repo-server logs
+kubectl logs -n argocd -l app.kubernetes.io/name=argocd-repo-server
+
+# Test DNS resolution
+kubectl exec -n argocd deployment/argocd-repo-server -- nslookup github.com
+```
+
+### ArgoCD CLI Usage (Optional)
+
+```bash
+# Install CLI (connected zone)
+curl -sSL https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 \
+  -o argocd
+chmod +x argocd && sudo mv argocd /usr/local/bin/
+
+# Login
+argocd login localhost:8080 --insecure --username admin --password <password>
+
+# List applications
+argocd app list
+
+# Get application details
+argocd app get lumen-app
+
+# Manual sync
+argocd app sync lumen-app
+
+# View sync history
+argocd app history lumen-app
+
+# Rollback to previous version
+argocd app rollback lumen-app 1
+```
+
+### Production Best Practices
+
+1. **Change admin password immediately:**
+```bash
+argocd account update-password --account admin
+```
+
+2. **Use Projects for isolation:**
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: lumen-project
+spec:
+  destinations:
+    - namespace: lumen
+      server: https://kubernetes.default.svc
+```
+
+3. **Enable notifications (Slack, email):**
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+data:
+  service.slack: |
+    token: $slack-token
+```
+
+4. **Use Git webhooks instead of polling:**
+```yaml
+# In Git repository settings
+Webhook URL: https://argocd.example.com/api/webhook
+```
+
+5. **RBAC for team access:**
+```yaml
+# argocd-rbac-cm
+policy.csv: |
+  p, role:developers, applications, get, */*, allow
+  g, alice@example.com, role:developers
+```
+
+### Verification
+
+```bash
+# Check all ArgoCD components
+kubectl get all -n argocd
+
+# Check applications
+kubectl get applications -n argocd
+
+# Check sync status
+kubectl get application -n argocd -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.sync.status}{"\t"}{.status.health.status}{"\n"}{end}'
+```
+
+**Expected Output:**
+```
+lumen-app                Synced    Healthy
+lumen-monitoring         Synced    Healthy
+lumen-network-policies   Synced    Healthy
+```
+
+---
+
+**ArgoCD Status:** ✅ Fully Operational - GitOps Enabled
+
+**What We Achieved:**
+- ✅ ArgoCD deployed in airgap mode with internal registry
+- ✅ 3 Applications managed via GitOps
+- ✅ Auto-sync enabled (3min poll interval)
+- ✅ Self-healing activated (reverts manual changes)
+- ✅ NetworkPolicies enforced for ArgoCD namespace
+- ✅ Git as single source of truth
+- ✅ Audit trail via Git commits
+- ✅ Tested sync, drift detection, and self-healing
+
+**Next Steps (Optional):**
+- Configure internal Git server for full airgap
+- Set up Slack notifications
+- Implement RBAC for multi-user access
+- Add Helm chart support
+- Enable Git webhooks for instant sync

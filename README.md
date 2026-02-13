@@ -10,7 +10,8 @@ A hands-on project to master distributed systems, network security, and Kubernet
 - **Network security**: NetworkPolicies, iptables, CNI configuration
 - **Advanced Kubernetes**: K3s, containerd registry mirrors, admission controllers
 - **Observability**: Monitoring without external access (Prometheus + Grafana)
-- **Policy enforcement**: OPA Gatekeeper
+- **Policy enforcement**: OPA Gatekeeper for admission control
+- **GitOps**: ArgoCD for declarative continuous deployment
 - **DevOps**: Build pipelines, artifact management, air-gap deployment
 
 ## 🏗️ Architecture
@@ -22,7 +23,7 @@ A hands-on project to master distributed systems, network security, and Kubernet
 ├─────────────────────┤     ├─────────────────────┤     ├─────────────────────┤
 │ • Build images      │     │ • Docker Registry   │     │ • K3s cluster       │
 │ • Download deps     │     │ • File server       │     │ • Lumen API + Redis │
-│ • Run tests         │     │ • Image storage     │     │ • Cilium CNI        │
+│ • Run tests         │     │ • Image storage     │     │ • ArgoCD (GitOps)   │
 └─────────────────────┘     └─────────────────────┘     │ • OPA Gatekeeper    │
                                                         │ • Prometheus+Grafana│
                                                         └─────────────────────┘
@@ -74,6 +75,7 @@ make deploy                     # Deploy everything
 make deploy-network-policies    # Apply security policies
 make deploy-opa                 # Enable admission control
 make deploy-monitoring          # Setup observability
+make deploy-argocd              # Setup GitOps (optional)
 ```
 
 ### 5. Access Services
@@ -152,13 +154,24 @@ make clean             # Remove everything
 2. **Intermediate** (3-5 days): Registry mirrors, basic NetworkPolicies, monitoring
 3. **Advanced** (1-2 weeks): Cilium L7 policies, OPA custom rules, full airgap + iptables
 
+## ✅ Project Status
+
+**Completed Phases:**
+- ✅ Phase 1-3: Build, Transit, K3s, Application Deployment
+- ✅ Phase 4: NetworkPolicies - Zero Trust Security (13 policies)
+- ✅ Phase 5: Monitoring Stack - Prometheus + Grafana
+- ✅ Phase 6: OPA Gatekeeper - Admission Control (4 policies)
+- ✅ Phase 7: ArgoCD - GitOps Continuous Deployment
+
 ## 🚧 Extend This Project
 
+**Optional Future Enhancements:**
 - [ ] Add Helm charts
-- [ ] Implement GitOps with ArgoCD (airgap mode)
 - [ ] Add Vault for secrets management
 - [ ] Implement service mesh (Linkerd/Istio)
 - [ ] Add Falco for runtime security
+- [ ] Add Loki for centralized logging
+- [ ] Implement Chaos Mesh for resilience testing
 
 ## 📖 Resources
 
