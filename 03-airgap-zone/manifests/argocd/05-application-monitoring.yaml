@@ -7,7 +7,7 @@ spec:
   project: default
 
   source:
-    repoURL: https://github.com/YOUR_USERNAME/lumen.git
+    repoURL: https://github.com/Chahine-tech/lumen.git
     targetRevision: HEAD
     path: 03-airgap-zone/manifests/monitoring
 

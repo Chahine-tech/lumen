@@ -123,7 +123,7 @@ spec:
       serviceAccountName: prometheus
       containers:
         - name: prometheus
-          image: localhost:5000/prometheus:v2.45.0
+          image: 192.168.107.2:5000/prometheus:v2.45.0
           imagePullPolicy: IfNotPresent
           args:
             - '--config.file=/etc/prometheus/prometheus.yml'

@@ -123,7 +123,7 @@ spec:
         runAsUser: 472
       containers:
         - name: grafana
-          image: localhost:5000/grafana:10.2.0
+          image: 192.168.107.2:5000/grafana:10.2.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
