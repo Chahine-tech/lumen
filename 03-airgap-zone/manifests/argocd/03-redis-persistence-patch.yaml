@@ -1,0 +1,19 @@
+# Persistent storage for ArgoCD Redis
+# This ensures Redis cache survives pod restarts
+# Apply this with: kubectl apply -f 03-redis-persistence-patch.yaml
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: argocd-redis-pvc
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-redis
+    app.kubernetes.io/component: redis
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
