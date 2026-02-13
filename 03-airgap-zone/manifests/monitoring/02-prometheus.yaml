@@ -12,11 +12,15 @@ data:
         cluster: 'airgap-cluster'
         environment: 'airgap'
 
-    # Alerting (optional - would need Alertmanager in airgap)
-    # alerting:
-    #   alertmanagers:
-    #     - static_configs:
-    #         - targets: ['alertmanager:9093']
+    # Alerting
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: ['alertmanager:9093']
+
+    # Alert rules
+    rule_files:
+      - '/etc/prometheus/rules/*.yml'
 
     # Scrape configs
     scrape_configs:
@@ -146,6 +150,8 @@ spec:
           volumeMounts:
             - name: prometheus-config
               mountPath: /etc/prometheus
+            - name: prometheus-rules
+              mountPath: /etc/prometheus/rules
             - name: prometheus-storage
               mountPath: /prometheus
           livenessProbe:
@@ -164,6 +170,9 @@ spec:
         - name: prometheus-config
           configMap:
             name: prometheus-config
+        - name: prometheus-rules
+          configMap:
+            name: prometheus-rules
         - name: prometheus-storage
           emptyDir: {}
 
