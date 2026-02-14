@@ -79,7 +79,7 @@ spec:
     spec:
       containers:
         - name: alertmanager
-          image: 192.168.107.2:5000/alertmanager:v0.26.0
+          image: quay.io/prometheus/alertmanager:v0.26.0
           imagePullPolicy: IfNotPresent
           args:
             - '--config.file=/etc/alertmanager/alertmanager.yml'
