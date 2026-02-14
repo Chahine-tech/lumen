@@ -23,10 +23,13 @@ A hands-on project to master distributed systems, network security, and Kubernet
 ├─────────────────────┤     ├─────────────────────┤     ├─────────────────────┤
 │ • Build images      │     │ • Docker Registry   │     │ • K3s cluster       │
 │ • Download deps     │     │ • File server       │     │ • Lumen API + Redis │
-│ • Run tests         │     │ • Image storage     │     │ • ArgoCD (GitOps)   │
-└─────────────────────┘     └─────────────────────┘     │ • OPA Gatekeeper    │
-                                                        │ • Prometheus+Grafana│
-                                                        └─────────────────────┘
+│ • Run tests         │     │ • Image storage     │     │ • Gitea (Git server)│
+└─────────────────────┘     └─────────────────────┘     │ • ArgoCD (GitOps)   │
+                                                        │ • OPA Gatekeeper    │
+                                    ┌──────────────────▶│ • Prometheus+Grafana│
+                                    │                   └─────────────────────┘
+                              git push-all
+                           (GitHub + Gitea)
 ```
 
 ## 🚀 Quick Start
@@ -84,6 +87,12 @@ make deploy-argocd              # Setup GitOps (optional)
 make forward-api         # API: localhost:8080
 make forward-grafana     # Grafana: localhost:3000 (admin/admin)
 make forward-prometheus  # Prometheus: localhost:9090
+
+# Or use port-forwards directly:
+kubectl port-forward -n argocd svc/argocd-server 8081:443      # ArgoCD UI
+kubectl port-forward -n gitea svc/gitea 3001:3000              # Gitea (gitea-admin/gitea-admin)
+kubectl port-forward -n monitoring svc/grafana 3000:3000       # Grafana
+kubectl port-forward -n monitoring svc/prometheus 9090:9090    # Prometheus
 ```
 
 ## 📦 Technology Stack
@@ -93,6 +102,8 @@ make forward-prometheus  # Prometheus: localhost:9090
 - **Cluster**: K3s (lightweight, airgap-optimized)
 - **CNI**: Cilium (L3/L4/L7 NetworkPolicies)
 - **Registry**: Docker Registry v2
+- **Git Server**: Gitea (internal Git repository for airgap)
+- **GitOps**: ArgoCD (pulls from internal Gitea, not GitHub)
 - **Policy**: OPA Gatekeeper
 - **Monitoring**: Prometheus + Grafana (no remote_write)
 - **Isolation**: iptables + containerd mirrors
@@ -123,6 +134,25 @@ mirrors:
 - Enforce internal registry usage
 - Require resource limits
 - Validate required labels
+
+### GitOps Workflow with Gitea
+```bash
+# Configure git alias for dual push
+git config --global alias.push-all '!git push origin main && git push gitea main'
+
+# Daily workflow
+git add .
+git commit -m "feat: add new feature"
+git push-all  # Pushes to GitHub (backup) + Gitea (ArgoCD source)
+
+# ArgoCD automatically syncs from Gitea within 3 minutes
+```
+
+**Architecture:**
+- GitHub: Source of truth, backup, portfolio
+- Gitea (internal): Mirror for ArgoCD in airgap cluster
+- ArgoCD: Pulls from `http://gitea.gitea.svc.cluster.local:3000`
+- No external Internet access required for deployments ✅
 
 ## 🧪 Testing
 
@@ -161,7 +191,8 @@ make clean             # Remove everything
 - ✅ Phase 4: NetworkPolicies - Zero Trust Security (13 policies)
 - ✅ Phase 5: Monitoring Stack - Prometheus + Grafana
 - ✅ Phase 6: OPA Gatekeeper - Admission Control (4 policies)
-- ✅ Phase 7: ArgoCD - GitOps Continuous Deployment
+- ✅ Phase 7: ArgoCD - GitOps Continuous Deployment with Redis Persistence
+- ✅ Phase 8: Gitea - Internal Git Server for True Airgap GitOps
 
 ## 🚧 Extend This Project
 

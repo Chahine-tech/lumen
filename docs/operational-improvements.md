@@ -6,6 +6,7 @@ This document covers operational improvements and production hardening applied t
 - [ArgoCD Redis Persistence](#argocd-redis-persistence)
 - [ArgoCD NetworkPolicies (Redis Connectivity)](#argocd-networkpolicies-redis-connectivity)
 - [AlertManager Integration](#alertmanager-integration)
+- [Gitea Internal Git Server](#gitea-internal-git-server)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -604,6 +605,626 @@ Current AlertManager setup uses a default receiver (no notifications). To add re
 
 ---
 
+## Gitea Internal Git Server
+
+### Overview
+
+Phase 8 completes the **true airgap architecture** by deploying Gitea as an internal Git server. This eliminates the dependency on GitHub.com for ArgoCD GitOps operations.
+
+**Problem:**
+- ArgoCD was pulling manifests from GitHub.com (requires HTTPS/443 egress)
+- This breaks true airgap isolation (no external Internet access allowed)
+- In production airgap environments (military, government, secure enterprise), external connectivity is prohibited
+
+**Solution:**
+- Deploy **Gitea** (lightweight Git server) inside the airgap cluster
+- Mirror the lumen repository from GitHub to Gitea
+- Configure ArgoCD to pull from Gitea instead of GitHub
+- Remove HTTPS/443 egress from ArgoCD NetworkPolicies
+- Achieve **100% airgap isolation** ✅
+
+### Architecture
+
+```
+GitHub (backup/portfolio)
+   ↑
+   | git push origin main
+   |
+[Developer PC]
+   |
+   | git push gitea main (via port-forward)
+   ↓
+Gitea (airgap internal)
+   ↓
+   | ArgoCD polls every 3 minutes
+   ↓
+ArgoCD auto-sync
+   ↓
+Applications deployed (lumen, monitoring, network-policies)
+```
+
+**Key Points:**
+- GitHub: Source of truth, backup, portfolio visibility
+- Gitea: Internal mirror for ArgoCD in airgap cluster
+- No external Internet access required for deployments ✅
+
+### Deployment
+
+#### 1. Connected Zone - Download Gitea Image
+
+**File:** `01-connected-zone/scripts/06-pull-gitea-images.sh`
+
+```bash
+#!/bin/bash
+set -e
+
+GITEA_VERSION="1.21.5"
+ARTIFACTS_DIR="artifacts/gitea"
+
+mkdir -p "$ARTIFACTS_DIR/images"
+
+# Pull Gitea image
+docker pull "gitea/gitea:${GITEA_VERSION}"
+
+# Save to tar archive
+docker save "gitea/gitea:${GITEA_VERSION}" -o "$ARTIFACTS_DIR/images/gitea.tar"
+
+echo "gitea/gitea:${GITEA_VERSION}" > "$ARTIFACTS_DIR/images.txt"
+```
+
+**Execute:**
+```bash
+cd 01-connected-zone
+chmod +x scripts/06-pull-gitea-images.sh
+./scripts/06-pull-gitea-images.sh
+```
+
+#### 2. Transit Zone - Push to Registry
+
+**File:** `02-transit-zone/push-gitea.sh`
+
+```bash
+#!/bin/bash
+set -e
+
+ARTIFACTS_DIR="../01-connected-zone/artifacts/gitea"
+REGISTRY="localhost:5000"
+
+# Load and push Gitea image
+docker load -i "$ARTIFACTS_DIR/images/gitea.tar"
+
+while IFS= read -r image; do
+    image_name=$(echo "$image" | sed 's|^gitea/||')
+    docker tag "$image" "$REGISTRY/$image_name"
+    docker push "$REGISTRY/$image_name"
+done < "$ARTIFACTS_DIR/images.txt"
+```
+
+**Execute:**
+```bash
+cd 02-transit-zone
+chmod +x push-gitea.sh
+./push-gitea.sh
+```
+
+#### 3. Airgap Zone - Deploy Gitea
+
+**Files:**
+- `03-airgap-zone/manifests/gitea/01-namespace.yaml`
+- `03-airgap-zone/manifests/gitea/02-deployment.yaml`
+- `03-airgap-zone/manifests/gitea/03-service.yaml`
+- `03-airgap-zone/manifests/gitea/04-pvc.yaml`
+
+**Gitea Deployment:**
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  namespace: gitea
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitea
+  template:
+    metadata:
+      labels:
+        app: gitea
+    spec:
+      containers:
+      - name: gitea
+        image: gitea/gitea:1.21.5  # Uses docker.io mirror
+        ports:
+        - containerPort: 3000
+          name: http
+        - containerPort: 22
+          name: ssh
+        env:
+        - name: GITEA__database__DB_TYPE
+          value: "sqlite3"
+        - name: GITEA__database__PATH
+          value: "/data/gitea/gitea.db"
+        - name: GITEA__server__DOMAIN
+          value: "gitea.gitea.svc.cluster.local"
+        - name: GITEA__server__HTTP_PORT
+          value: "3000"
+        - name: GITEA__server__ROOT_URL
+          value: "http://gitea.gitea.svc.cluster.local:3000/"
+        - name: GITEA__security__INSTALL_LOCK
+          value: "true"
+        volumeMounts:
+        - name: gitea-data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: gitea-data
+        persistentVolumeClaim:
+          claimName: gitea-pvc
+```
+
+**Storage:**
+- SQLite database (no external PostgreSQL needed)
+- 5Gi PersistentVolumeClaim for Git repositories
+- Data persists across pod restarts
+
+**Execute:**
+```bash
+cd 03-airgap-zone
+
+# Deploy Gitea
+kubectl apply -f manifests/gitea/01-namespace.yaml
+kubectl apply -f manifests/gitea/04-pvc.yaml
+kubectl apply -f manifests/gitea/02-deployment.yaml
+kubectl apply -f manifests/gitea/03-service.yaml
+
+# Wait for Gitea to start
+kubectl wait --for=condition=ready pod -n gitea -l app=gitea --timeout=120s
+```
+
+#### 4. NetworkPolicies for Gitea
+
+**File:** `03-airgap-zone/manifests/network-policies/10-allow-gitea.yaml`
+
+```yaml
+---
+# Allow ArgoCD repo-server to clone from Gitea
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gitea-ingress
+  namespace: gitea
+spec:
+  podSelector:
+    matchLabels:
+      app: gitea
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from ArgoCD repo-server
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: argocd
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-repo-server
+      ports:
+        - protocol: TCP
+          port: 3000  # HTTP Git
+        - protocol: TCP
+          port: 22    # SSH Git
+---
+# Allow Gitea DNS access
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gitea-egress
+  namespace: gitea
+spec:
+  podSelector:
+    matchLabels:
+      app: gitea
+  policyTypes:
+    - Egress
+  egress:
+    # DNS for service discovery
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+```
+
+**Updated ArgoCD NetworkPolicy:**
+
+**File:** `03-airgap-zone/manifests/network-policies/09-allow-argocd.yaml`
+
+**Changes:**
+1. **Removed HTTPS/443 egress to GitHub** (breaks airgap)
+2. **Added Gitea egress** for repo-server:
+
+```yaml
+# Allow argocd-repo-server to access Gitea
+- to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: gitea
+      podSelector:
+        matchLabels:
+          app: gitea
+  ports:
+    - protocol: TCP
+      port: 3000  # HTTP Git
+    - protocol: TCP
+      port: 22    # SSH Git
+```
+
+**Execute:**
+```bash
+kubectl apply -f manifests/network-policies/10-allow-gitea.yaml
+kubectl apply -f manifests/network-policies/09-allow-argocd.yaml
+```
+
+#### 5. Initialize Gitea
+
+**Create admin user via CLI:**
+
+```bash
+# Port-forward to Gitea
+kubectl port-forward -n gitea svc/gitea 3001:3000 &
+
+# Wait for Gitea to be ready
+sleep 5
+
+# Create admin user
+kubectl exec -n gitea deploy/gitea -- su git -c "gitea admin user create \
+  --username gitea-admin \
+  --password gitea-admin \
+  --email admin@gitea.local \
+  --admin"
+```
+
+**Create organization and repository via API:**
+
+**File:** `03-airgap-zone/scripts/create-gitea-repo.sh`
+
+```bash
+#!/bin/bash
+set -e
+
+GITEA_URL="http://gitea.gitea.svc.cluster.local:3000"
+GITEA_USER="gitea-admin"
+GITEA_PASS="gitea-admin"
+
+# Create organization 'lumen'
+kubectl run gitea-create-org --image=curlimages/curl:latest --rm -it --restart=Never -- \
+  curl -X POST "${GITEA_URL}/api/v1/orgs" \
+  -u "${GITEA_USER}:${GITEA_PASS}" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"lumen","full_name":"Lumen Organization"}'
+
+# Create repository 'lumen' in organization
+kubectl run gitea-create-repo --image=curlimages/curl:latest --rm -it --restart=Never -- \
+  curl -X POST "${GITEA_URL}/api/v1/orgs/lumen/repos" \
+  -u "${GITEA_USER}:${GITEA_PASS}" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"lumen","description":"Lumen airgap Kubernetes project","private":false}'
+```
+
+**Execute:**
+```bash
+cd 03-airgap-zone/scripts
+chmod +x create-gitea-repo.sh
+./create-gitea-repo.sh
+```
+
+#### 6. Push Lumen Repository to Gitea
+
+**Configure git remote:**
+
+```bash
+# Add Gitea remote (with credentials embedded)
+git remote add gitea http://gitea-admin:gitea-admin@localhost:3001/lumen/lumen.git
+
+# Push repository
+git push gitea main --force
+```
+
+**Helper script:** `scripts/sync-gitea.sh`
+
+```bash
+#!/bin/bash
+set -e
+
+# Start port-forward if needed
+if ! nc -z localhost 3001 2>/dev/null; then
+    kubectl port-forward -n gitea svc/gitea 3001:3000 > /dev/null 2>&1 &
+    sleep 3
+fi
+
+# Ensure gitea remote exists
+if ! git remote get-url gitea > /dev/null 2>&1; then
+    git remote add gitea http://gitea-admin:gitea-admin@localhost:3001/lumen/lumen.git
+fi
+
+# Push to Gitea
+git push gitea main
+```
+
+#### 7. Update ArgoCD Applications
+
+Update all 3 application manifests to use Gitea:
+
+**Files to modify:**
+- `03-airgap-zone/manifests/argocd/04-application-lumen.yaml`
+- `03-airgap-zone/manifests/argocd/05-application-monitoring.yaml`
+- `03-airgap-zone/manifests/argocd/06-application-network-policies.yaml`
+
+**Change:**
+```yaml
+source:
+  repoURL: https://github.com/Chahine-tech/lumen.git
+```
+
+**To:**
+```yaml
+source:
+  repoURL: http://gitea.gitea.svc.cluster.local:3000/lumen/lumen.git
+```
+
+**Execute:**
+```bash
+# Update all applications
+sed -i '' 's|https://github.com/Chahine-tech/lumen.git|http://gitea.gitea.svc.cluster.local:3000/lumen/lumen.git|g' \
+  03-airgap-zone/manifests/argocd/04-application-lumen.yaml \
+  03-airgap-zone/manifests/argocd/05-application-monitoring.yaml \
+  03-airgap-zone/manifests/argocd/06-application-network-policies.yaml
+
+# Apply updated applications
+kubectl apply -f 03-airgap-zone/manifests/argocd/04-application-lumen.yaml
+kubectl apply -f 03-airgap-zone/manifests/argocd/05-application-monitoring.yaml
+kubectl apply -f 03-airgap-zone/manifests/argocd/06-application-network-policies.yaml
+```
+
+#### 8. Update ArgoCD Credentials
+
+Create Gitea repository secret for ArgoCD:
+
+```bash
+# Create Gitea secret
+kubectl create secret generic gitea-repo-secret -n argocd \
+  --from-literal=url=http://gitea.gitea.svc.cluster.local:3000/lumen/lumen.git \
+  --from-literal=username=gitea-admin \
+  --from-literal=password=gitea-admin \
+  --from-literal=type=git
+
+# Label it for ArgoCD
+kubectl label secret gitea-repo-secret -n argocd \
+  argocd.argoproj.io/secret-type=repository
+
+# Delete old GitHub secret (optional)
+kubectl delete secret github-repo-secret -n argocd --ignore-not-found
+```
+
+#### 9. Deploy ArgoCD
+
+ArgoCD deployment needs image references updated to use registry mirrors:
+
+```bash
+# Update ArgoCD manifest to use quay.io/docker.io prefixes (not direct registry IP)
+# This allows registries.yaml mirrors to work properly
+
+# Deploy ArgoCD with namespace flag
+kubectl apply -n argocd -f 03-airgap-zone/manifests/argocd/02-install-airgap.yaml
+
+# Wait for pods to be ready
+kubectl wait --for=condition=ready pod -n argocd -l app.kubernetes.io/name=argocd-server --timeout=120s
+```
+
+### GitOps Workflow
+
+#### Daily Development Workflow
+
+**Setup git alias (one-time):**
+
+```bash
+# Configure dual-push alias
+git config --global alias.push-all '!git push origin main && git push gitea main'
+```
+
+**Daily workflow:**
+
+```bash
+# 1. Make changes to code/manifests
+vim 03-airgap-zone/manifests/app/03-lumen-api.yaml
+
+# 2. Commit changes
+git add .
+git commit -m "feat: update lumen API configuration"
+
+# 3. Push to both remotes
+git push-all
+# This pushes to:
+#   - origin (GitHub) → backup, portfolio
+#   - gitea (internal) → ArgoCD source
+```
+
+**ArgoCD auto-sync:**
+- ArgoCD polls Gitea every 3 minutes
+- Detects changes automatically
+- Syncs applications to match Git state
+- No manual intervention needed ✅
+
+#### Port-Forward Helper Script
+
+**File:** `scripts/start-port-forwards.sh`
+
+```bash
+#!/bin/bash
+set -e
+
+# Kill existing port-forwards
+pkill -f 'kubectl port-forward' 2>/dev/null || true
+sleep 2
+
+# Start all port-forwards
+kubectl port-forward -n argocd svc/argocd-server 8081:443 > /dev/null 2>&1 &
+kubectl port-forward -n gitea svc/gitea 3001:3000 > /dev/null 2>&1 &
+kubectl port-forward -n monitoring svc/grafana 3000:3000 > /dev/null 2>&1 &
+kubectl port-forward -n monitoring svc/prometheus 9090:9090 > /dev/null 2>&1 &
+kubectl port-forward -n monitoring svc/alertmanager 9093:9093 > /dev/null 2>&1 &
+
+echo "✅ All services accessible!"
+echo "ArgoCD:      https://localhost:8081"
+echo "Gitea:       http://localhost:3001 (gitea-admin/gitea-admin)"
+echo "Grafana:     http://localhost:3000 (admin/admin)"
+echo "Prometheus:  http://localhost:9090"
+echo "AlertManager: http://localhost:9093"
+```
+
+### Verification
+
+#### 1. Verify Gitea is Running
+
+```bash
+# Check Gitea pod
+kubectl get pods -n gitea
+
+# Expected:
+# NAME                    READY   STATUS    RESTARTS   AGE
+# gitea-xxxxxxxxxx-xxxxx  1/1     Running   0          5m
+
+# Check Gitea service
+kubectl get svc -n gitea
+
+# Check PVC
+kubectl get pvc -n gitea
+```
+
+#### 2. Verify Repository in Gitea
+
+```bash
+# Port-forward to Gitea
+kubectl port-forward -n gitea svc/gitea 3001:3000
+
+# Open in browser
+open http://localhost:3001/lumen/lumen
+```
+
+Should show the lumen repository with all files.
+
+#### 3. Verify ArgoCD Uses Gitea
+
+```bash
+# Check ArgoCD applications
+kubectl get applications -n argocd
+
+# Expected: All applications "Synced" and "Healthy"
+
+# Check repo-server logs
+kubectl logs -n argocd deployment/argocd-repo-server --tail=20 | grep gitea
+
+# Should see: "RepoURL:http://gitea.gitea.svc.cluster.local:3000/lumen/lumen.git"
+```
+
+#### 4. Verify No External Access
+
+```bash
+# Test that repo-server CANNOT reach GitHub
+kubectl exec -n argocd deployment/argocd-repo-server -- timeout 5 curl -I https://github.com 2>&1
+
+# Expected: Timeout or connection refused (NetworkPolicy blocks HTTPS/443)
+```
+
+#### 5. Test GitOps Workflow
+
+```bash
+# Make a test change
+echo "# Test GitOps" >> 03-airgap-zone/manifests/app/01-namespace.yaml
+
+# Commit and push
+git add .
+git commit -m "test: verify GitOps sync from Gitea"
+git push-all
+
+# Wait 3 minutes for ArgoCD to poll
+sleep 180
+
+# Check if ArgoCD detected the change
+kubectl get applications -n argocd -o wide
+```
+
+### Production Considerations
+
+**Current Status:**
+- ✅ Gitea deployed with SQLite (dev/staging ready)
+- ✅ ArgoCD pulling from internal Gitea
+- ✅ 100% airgap isolation achieved
+- ⚠️ Single Gitea pod, no HA
+
+**For Production:**
+
+1. **Gitea High Availability:**
+   - Deploy PostgreSQL for Gitea database (instead of SQLite)
+   - Run Gitea with 3 replicas + load balancer
+   - Add anti-affinity rules
+
+2. **Backup Strategy:**
+   - Automated PVC snapshots to object storage
+   - Regular database backups
+   - Disaster recovery plan
+
+3. **Access Method:**
+   - Replace port-forward with Ingress Controller
+   - Configure internal DNS (gitea.internal.company.com)
+   - TLS/SSL with internal CA certificates
+
+4. **Monitoring:**
+   - Add Gitea metrics to Prometheus
+   - Alert on repository sync failures
+   - Monitor disk usage (PVC)
+
+5. **Security Hardening:**
+   - Change default credentials
+   - Enable 2FA for Gitea admin
+   - Implement RBAC for repositories
+   - Regular security updates
+
+### Troubleshooting
+
+See main [Troubleshooting](#troubleshooting) section below.
+
+**Common Gitea Issues:**
+
+**ImagePullBackOff for Gitea:**
+- Ensure image uses `gitea/gitea:1.21.5` (not `192.168.107.2:5000/...`)
+- This allows registries.yaml docker.io mirror to work
+
+**ArgoCD can't clone from Gitea:**
+- Check NetworkPolicy allows repo-server → gitea:3000
+- Verify Gitea repository URL in application manifest
+- Check ArgoCD repository secret exists
+
+**Port-forward dies:**
+- Use `scripts/start-port-forwards.sh` to restart all at once
+- For production, deploy Ingress Controller instead
+
+---
+
 ## Troubleshooting
 
 ### ArgoCD Applications Stuck in "Unknown" Status
@@ -798,16 +1419,24 @@ alerting:
 
 ## Summary
 
-This document covered three major operational improvements to Lumen:
+This document covered four major operational improvements to Lumen:
 
 1. **Redis Persistence** - Ensures ArgoCD cache survives pod restarts
 2. **NetworkPolicies** - Fixed Redis connectivity for all ArgoCD components
 3. **AlertManager** - Integrated alerting for proactive monitoring
+4. **Gitea Internal Git Server** - Achieved true 100% airgap isolation by removing GitHub dependency
 
-These improvements move the project from a basic GitOps setup toward a production-ready airgap platform.
+These improvements transform the project from a basic GitOps setup to a **production-grade airgap platform**.
+
+**Key Achievements:**
+- ✅ ArgoCD pulls from internal Gitea (not external GitHub)
+- ✅ No HTTPS/443 egress required (NetworkPolicies enforce airgap)
+- ✅ Complete GitOps workflow: `git push-all` → ArgoCD auto-sync → Apps deployed
+- ✅ True airgap architecture suitable for secure/classified environments
 
 **Next Steps (see [TODO.md](../TODO.md)):**
-- Phase 8: Full Airgap with Gitea (remove GitHub dependency)
+- Phase 9: Ingress Controller for persistent service access (Traefik)
 - Redis HA for production-grade ArgoCD
-- Ingress Controller for persistent service access
+- Gitea HA with PostgreSQL backend
 - Complete observability with Loki (logs) and Tempo (traces)
+- Secrets management with Vault or Sealed Secrets
