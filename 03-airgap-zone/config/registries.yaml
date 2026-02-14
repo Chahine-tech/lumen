@@ -28,3 +28,6 @@ configs:
   "registry.airgap.local:5000":
     tls:
       insecure_skip_verify: true
+  "192.168.107.2:5000":
+    tls:
+      insecure_skip_verify: true

@@ -7,7 +7,7 @@ spec:
   project: default
 
   source:
-    repoURL: https://github.com/Chahine-tech/lumen.git
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/lumen/lumen.git
     targetRevision: HEAD
     path: 03-airgap-zone/manifests/monitoring
 

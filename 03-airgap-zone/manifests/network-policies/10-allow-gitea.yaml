@@ -1,0 +1,65 @@
+---
+# Allow Gitea ingress from ArgoCD repo-server and port-forward access
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gitea-ingress
+  namespace: gitea
+  annotations:
+    description: "Allow ArgoCD to clone from Gitea and allow port-forward access"
+spec:
+  podSelector:
+    matchLabels:
+      app: gitea
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from ArgoCD repo-server for Git operations
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: argocd
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-repo-server
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 22
+    # Allow from anywhere for initial setup via port-forward
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3000
+
+---
+# Allow Gitea egress for DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gitea-egress
+  namespace: gitea
+  annotations:
+    description: "Allow Gitea DNS access for service discovery"
+spec:
+  podSelector:
+    matchLabels:
+      app: gitea
+  policyTypes:
+    - Egress
+  egress:
+    # DNS for service discovery
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

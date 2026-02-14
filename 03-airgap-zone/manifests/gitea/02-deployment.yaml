@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea
+  namespace: gitea
+  labels:
+    app: gitea
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitea
+  template:
+    metadata:
+      labels:
+        app: gitea
+    spec:
+      containers:
+      - name: gitea
+        image: gitea/gitea:1.21.5
+        ports:
+        - containerPort: 3000
+          name: http
+        - containerPort: 22
+          name: ssh
+        env:
+        - name: GITEA__database__DB_TYPE
+          value: "sqlite3"
+        - name: GITEA__database__PATH
+          value: "/data/gitea/gitea.db"
+        - name: GITEA__server__DOMAIN
+          value: "gitea.gitea.svc.cluster.local"
+        - name: GITEA__server__HTTP_PORT
+          value: "3000"
+        - name: GITEA__server__ROOT_URL
+          value: "http://gitea.gitea.svc.cluster.local:3000/"
+        - name: GITEA__server__DISABLE_SSH
+          value: "false"
+        - name: GITEA__server__SSH_PORT
+          value: "22"
+        - name: GITEA__security__INSTALL_LOCK
+          value: "true"
+        volumeMounts:
+        - name: gitea-data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: gitea-data
+        persistentVolumeClaim:
+          claimName: gitea-pvc

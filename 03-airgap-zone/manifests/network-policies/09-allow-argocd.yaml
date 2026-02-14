@@ -104,12 +104,19 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
-    # Allow HTTPS to internet (for GitHub git clone)
-    # TODO: Remove this in Phase 8 when migrating to internal Git server (Gitea)
-    # In production airgap, ArgoCD should pull from internal Git, not GitHub
-    - ports:
+    # Allow Gitea access for Git clone (internal airgap Git server)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gitea
+          podSelector:
+            matchLabels:
+              app: gitea
+      ports:
         - protocol: TCP
-          port: 443
+          port: 3000
+        - protocol: TCP
+          port: 22
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
