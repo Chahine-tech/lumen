@@ -1,0 +1,185 @@
+# Educational Note: Certificate Generation Job
+#
+# This Job creates a self-signed CA and wildcard certificate for *.airgap.local
+# It runs once to completion, generating certificates stored in a Secret.
+#
+# Why a Job instead of manual generation?
+# - Infrastructure as Code: Certificates defined in Git
+# - Repeatable: Can regenerate by deleting job and re-applying
+# - Airgap-friendly: No external dependencies
+# - Kubernetes-native: Directly creates Secret
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cert-generation-script
+  namespace: traefik
+data:
+  generate-certs.sh: |
+    #!/bin/sh
+    set -e
+
+    echo "🔐 Generating self-signed CA and certificates for airgap environment..."
+
+    CERT_DIR="/certs"
+    mkdir -p "$CERT_DIR"
+    cd "$CERT_DIR"
+
+    # 1. Generate CA private key (4096-bit RSA, highly secure)
+    echo "1️⃣  Generating CA private key..."
+    openssl genrsa -out ca.key 4096
+
+    # 2. Generate CA certificate (10-year validity, self-signed)
+    echo "2️⃣  Generating CA certificate..."
+    openssl req -new -x509 -days 3650 -key ca.key -out ca.crt \
+      -subj "/C=US/ST=Airgap/L=Cluster/O=Lumen Project/OU=Learning Lab/CN=Lumen Airgap CA"
+
+    # 3. Generate server private key for *.airgap.local
+    echo "3️⃣  Generating server private key..."
+    openssl genrsa -out tls.key 2048
+
+    # 4. Create Certificate Signing Request (CSR)
+    echo "4️⃣  Creating Certificate Signing Request..."
+    cat > openssl.cnf <<EOF
+    [req]
+    default_bits = 2048
+    prompt = no
+    default_md = sha256
+    req_extensions = req_ext
+    distinguished_name = dn
+
+    [dn]
+    C = US
+    ST = Airgap
+    L = Cluster
+    O = Lumen Project
+    OU = Ingress
+    CN = *.airgap.local
+
+    [req_ext]
+    subjectAltName = @alt_names
+
+    [alt_names]
+    DNS.1 = *.airgap.local
+    DNS.2 = airgap.local
+    DNS.3 = traefik.traefik.svc.cluster.local
+    EOF
+
+    openssl req -new -key tls.key -out tls.csr -config openssl.cnf
+
+    # 5. Sign server certificate with CA (1-year validity)
+    echo "5️⃣  Signing server certificate with CA..."
+    openssl x509 -req -in tls.csr -CA ca.crt -CAkey ca.key \
+      -CAcreateserial -out tls.crt -days 365 -sha256 \
+      -extfile openssl.cnf -extensions req_ext
+
+    # 6. Verify certificate
+    echo "6️⃣  Verifying certificate..."
+    openssl x509 -in tls.crt -text -noout | grep -A2 "Subject Alternative Name"
+
+    # 7. Create Kubernetes TLS Secret
+    echo "7️⃣  Creating Kubernetes Secret..."
+    kubectl create secret tls airgap-tls \
+      --cert=tls.crt \
+      --key=tls.key \
+      -n traefik \
+      --dry-run=client -o yaml > /tmp/secret.yaml
+
+    kubectl apply -f /tmp/secret.yaml
+
+    # 8. Store CA certificate in ConfigMap for distribution
+    echo "8️⃣  Creating CA ConfigMap..."
+    kubectl create configmap airgap-ca \
+      --from-file=ca.crt=ca.crt \
+      -n traefik \
+      --dry-run=client -o yaml > /tmp/ca-configmap.yaml
+
+    kubectl apply -f /tmp/ca-configmap.yaml
+
+    echo ""
+    echo "✅ Certificates generated successfully!"
+    echo ""
+    echo "📋 Next steps:"
+    echo "1. Extract CA certificate: kubectl get cm airgap-ca -n traefik -o jsonpath='{.data.ca\.crt}' > ca.crt"
+    echo "2. Import ca.crt into your browser/OS trust store"
+    echo "3. Deploy Traefik with TLS enabled"
+    echo ""
+    echo "🔍 Certificate info:"
+    echo "   CA Validity: 10 years"
+    echo "   Server Cert Validity: 1 year (renew annually)"
+    echo "   Domains: *.airgap.local, airgap.local"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cert-generation
+  namespace: traefik
+  annotations:
+    description: "Generates self-signed CA and wildcard TLS certificate for airgap environment"
+spec:
+  ttlSecondsAfterFinished: 86400  # Clean up after 24 hours
+  template:
+    metadata:
+      labels:
+        app: cert-generation
+    spec:
+      serviceAccountName: cert-generator
+      restartPolicy: OnFailure
+      containers:
+        - name: cert-generator
+          image: localhost:5000/bitnami/kubectl:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Install openssl first
+              apt-get update && apt-get install -y openssl
+              # Then run the script
+              /bin/sh /scripts/generate-certs.sh
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+            - name: certs
+              mountPath: /certs
+      volumes:
+        - name: scripts
+          configMap:
+            name: cert-generation-script
+            defaultMode: 0755
+        - name: certs
+          emptyDir: {}
+
+---
+# ServiceAccount for cert generation job
+# Needs permissions to create Secrets and ConfigMaps in traefik namespace
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cert-generator
+  namespace: traefik
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cert-generator
+  namespace: traefik
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["create", "get", "patch", "update"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cert-generator
+  namespace: traefik
+subjects:
+  - kind: ServiceAccount
+    name: cert-generator
+    namespace: traefik
+roleRef:
+  kind: Role
+  name: cert-generator
+  apiGroup: rbac.authorization.k8s.io

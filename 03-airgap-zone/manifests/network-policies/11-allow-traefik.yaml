@@ -1,0 +1,273 @@
+# NetworkPolicies for Traefik
+# Educational: Zero-trust networking requires explicit allow rules
+# Default deny-all is already in place, now we allow Traefik
+
+---
+# Allow Traefik ingress from external LoadBalancer
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: traefik-ingress
+  namespace: traefik
+  annotations:
+    description: "Allow external traffic to Traefik LoadBalancer"
+spec:
+  podSelector:
+    matchLabels:
+      app: traefik
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from anywhere (LoadBalancer)
+    - ports:
+        - protocol: TCP
+          port: 80   # HTTP
+        - protocol: TCP
+          port: 443  # HTTPS
+        - protocol: TCP
+          port: 8080 # Dashboard/metrics (internal only)
+
+---
+# Allow Traefik egress to backend services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: traefik-egress
+  namespace: traefik
+  annotations:
+    description: "Allow Traefik to route to backend services"
+spec:
+  podSelector:
+    matchLabels:
+      app: traefik
+  policyTypes:
+    - Egress
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Kubernetes API (for service discovery)
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+
+    # All backend services (any namespace, any pod)
+    # Educational: Traefik needs to reach any service it routes to
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3000  # Gitea, Grafana
+        - protocol: TCP
+          port: 8080  # Lumen API
+        - protocol: TCP
+          port: 9090  # Prometheus
+        - protocol: TCP
+          port: 9093  # AlertManager
+        - protocol: TCP
+          port: 80    # ArgoCD server
+
+---
+# Update Gitea NetworkPolicy to allow Traefik
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gitea-allow-traefik
+  namespace: gitea
+  annotations:
+    description: "Allow Traefik to access Gitea"
+spec:
+  podSelector:
+    matchLabels:
+      app: gitea
+  policyTypes:
+    - Ingress
+  ingress:
+    # Existing ArgoCD access (keep)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: argocd
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-repo-server
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 22
+
+    # NEW: Traefik access
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: traefik
+          podSelector:
+            matchLabels:
+              app: traefik
+      ports:
+        - protocol: TCP
+          port: 3000
+
+---
+# Monitoring namespace: Allow Traefik to Grafana
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-allow-traefik
+  namespace: monitoring
+  annotations:
+    description: "Allow Traefik to access Grafana"
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes:
+    - Ingress
+  ingress:
+    # Existing access (keep if any)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 3000
+
+    # NEW: Traefik access
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: traefik
+          podSelector:
+            matchLabels:
+              app: traefik
+      ports:
+        - protocol: TCP
+          port: 3000
+
+---
+# Allow Traefik to Prometheus
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-allow-traefik
+  namespace: monitoring
+  annotations:
+    description: "Allow Traefik to access Prometheus"
+spec:
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes:
+    - Ingress
+  ingress:
+    # Existing scraping access (keep)
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # NEW: Traefik access
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: traefik
+          podSelector:
+            matchLabels:
+              app: traefik
+      ports:
+        - protocol: TCP
+          port: 9090
+
+---
+# Allow Traefik to AlertManager
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alertmanager-allow-traefik
+  namespace: monitoring
+  annotations:
+    description: "Allow Traefik to access AlertManager"
+spec:
+  podSelector:
+    matchLabels:
+      app: alertmanager
+  policyTypes:
+    - Ingress
+  ingress:
+    # Existing Prometheus access (keep)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9093
+
+    # NEW: Traefik access
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: traefik
+          podSelector:
+            matchLabels:
+              app: traefik
+      ports:
+        - protocol: TCP
+          port: 9093
+
+---
+# ArgoCD: Allow Traefik
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: argocd-server-allow-traefik
+  namespace: argocd
+  annotations:
+    description: "Allow Traefik to access ArgoCD Web UI"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-server
+  policyTypes:
+    - Ingress
+  ingress:
+    # Existing internal ArgoCD communication (keep from 09-allow-argocd.yaml)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: argocd-server
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 8083
+
+    # NEW: Traefik access
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: traefik
+          podSelector:
+            matchLabels:
+              app: traefik
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443

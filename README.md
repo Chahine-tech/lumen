@@ -9,6 +9,8 @@ A hands-on project to master distributed systems, network security, and Kubernet
 - **Multi-zone architecture**: Connected → Transit → Airgap separation
 - **Network security**: NetworkPolicies, iptables, CNI configuration
 - **Advanced Kubernetes**: K3s, containerd registry mirrors, admission controllers
+- **Ingress Controllers**: Traefik v3 with CRDs, TLS termination, HTTP/2, middlewares
+- **Helm Package Management**: Production-ready chart deployment and configuration
 - **Observability**: Monitoring without external access (Prometheus + Grafana)
 - **Policy enforcement**: OPA Gatekeeper for admission control
 - **GitOps**: ArgoCD for declarative continuous deployment
@@ -17,19 +19,20 @@ A hands-on project to master distributed systems, network security, and Kubernet
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────┐     ┌─────────────────────┐     ┌─────────────────────┐
-│  Connected Zone     │────▶│  Transit Zone       │────▶│  Airgap Zone        │
-│  (Internet access)  │     │  (Registry/Bridge)  │     │  (No Internet)      │
-├─────────────────────┤     ├─────────────────────┤     ├─────────────────────┤
-│ • Build images      │     │ • Docker Registry   │     │ • K3s cluster       │
-│ • Download deps     │     │ • File server       │     │ • Lumen API + Redis │
-│ • Run tests         │     │ • Image storage     │     │ • Gitea (Git server)│
-└─────────────────────┘     └─────────────────────┘     │ • ArgoCD (GitOps)   │
-                                                        │ • OPA Gatekeeper    │
-                                    ┌──────────────────▶│ • Prometheus+Grafana│
-                                    │                   └─────────────────────┘
-                              git push-all
-                           (GitHub + Gitea)
+┌─────────────────────┐     ┌─────────────────────┐     ┌─────────────────────────────┐
+│  Connected Zone     │────▶│  Transit Zone       │────▶│  Airgap Zone (K3s)          │
+│  (Internet access)  │     │  (Registry/Bridge)  │     │  (No Internet)              │
+├─────────────────────┤     ├─────────────────────┤     ├─────────────────────────────┤
+│ • Build images      │     │ • Docker Registry   │     │ • Lumen API + Redis         │
+│ • Download Helm     │     │ • File server       │     │ • Gitea (Git server)        │
+│ • Run tests         │     │ • Image storage     │     │ • ArgoCD (GitOps)           │
+└─────────────────────┘     └─────────────────────┘     │ • Traefik Ingress (Helm)    │
+                                                        │ • OPA Gatekeeper            │
+                                    ┌──────────────────▶│ • Prometheus + Grafana      │
+                                    │                   └─────────────────────────────┘
+                              git push-all                          ▲
+                           (GitHub + Gitea)              https://gitea.airgap.local
+                                                        https://grafana.airgap.local
 ```
 
 ## 🚀 Quick Start
@@ -83,16 +86,20 @@ make deploy-argocd              # Setup GitOps (optional)
 
 ### 5. Access Services
 
+**With Traefik Ingress (Recommended):**
 ```bash
-make forward-api         # API: localhost:8080
-make forward-grafana     # Grafana: localhost:3000 (admin/admin)
-make forward-prometheus  # Prometheus: localhost:9090
+# Services accessible via DNS-based HTTPS URLs:
+https://traefik.airgap.local/dashboard/   # Traefik Dashboard (admin/admin)
+https://gitea.airgap.local                # Gitea (gitea-admin/gitea-admin)
+https://grafana.airgap.local              # Grafana (admin/admin)
+https://prometheus.airgap.local           # Prometheus
+https://alertmanager.airgap.local         # AlertManager
+https://argocd.airgap.local               # ArgoCD (admin/[from secret])
+```
 
-# Or use port-forwards directly:
-kubectl port-forward -n argocd svc/argocd-server 8081:443      # ArgoCD UI
-kubectl port-forward -n gitea svc/gitea 3001:3000              # Gitea (gitea-admin/gitea-admin)
-kubectl port-forward -n monitoring svc/grafana 3000:3000       # Grafana
-kubectl port-forward -n monitoring svc/prometheus 9090:9090    # Prometheus
+**Legacy port-forward (for troubleshooting only):**
+```bash
+./scripts/start-port-forwards.sh          # Legacy fallback
 ```
 
 ## 📦 Technology Stack
@@ -102,10 +109,12 @@ kubectl port-forward -n monitoring svc/prometheus 9090:9090    # Prometheus
 - **Cluster**: K3s (lightweight, airgap-optimized)
 - **CNI**: Cilium (L3/L4/L7 NetworkPolicies)
 - **Registry**: Docker Registry v2
+- **Ingress**: Traefik v3.6.8 (Helm chart, TLS termination, HTTP/2)
 - **Git Server**: Gitea (internal Git repository for airgap)
 - **GitOps**: ArgoCD (pulls from internal Gitea, not GitHub)
 - **Policy**: OPA Gatekeeper
 - **Monitoring**: Prometheus + Grafana (no remote_write)
+- **Package Management**: Helm 3 (for Traefik)
 - **Isolation**: iptables + containerd mirrors
 
 ## 🔑 Key Implementations
@@ -167,6 +176,7 @@ make test-opa                  # Test admission control
 
 - [Complete Setup Guide](docs/SETUP.md) - Detailed step-by-step instructions
 - [Deployment Guide](docs/DEPLOYMENT.md) - Real deployment results and troubleshooting
+- [Traefik Ingress](docs/traefik.md) - Production-grade ingress with Helm, TLS, and troubleshooting
 - [Architecture Deep Dive](docs/ARCHITECTURE.md) - Technical details
 
 ## 🛠️ Common Commands
@@ -188,16 +198,18 @@ make clean             # Remove everything
 
 **Completed Phases:**
 - ✅ Phase 1-3: Build, Transit, K3s, Application Deployment
-- ✅ Phase 4: NetworkPolicies - Zero Trust Security (13 policies)
+- ✅ Phase 4: NetworkPolicies - Zero jhTrust Security (13 policies)
 - ✅ Phase 5: Monitoring Stack - Prometheus + Grafana
 - ✅ Phase 6: OPA Gatekeeper - Admission Control (4 policies)
 - ✅ Phase 7: ArgoCD - GitOps Continuous Deployment with Redis Persistence
 - ✅ Phase 8: Gitea - Internal Git Server for True Airgap GitOps
+- ✅ Phase 9: Traefik Ingress Controller - Production-Grade Service Exposure (Helm)
 
 ## 🚧 Extend This Project
 
 **Optional Future Enhancements:**
-- [ ] Add Helm charts
+- [x] Add Helm charts (✅ Traefik deployed via Helm)
+- [ ] Migrate monitoring to `kube-prometheus-stack` Helm chart
 - [ ] Add Vault for secrets management
 - [ ] Implement service mesh (Linkerd/Istio)
 - [ ] Add Falco for runtime security
@@ -209,6 +221,15 @@ make clean             # Remove everything
 ### Kubernetes & K3s
 - [K3s Airgap Installation](https://docs.k3s.io/installation/airgap)
 - [Kubernetes NetworkPolicies](https://kubernetes.io/docs/concepts/services-networking/network-policies/)
+
+### Traefik & Ingress
+- [Traefik Documentation](https://doc.traefik.io/traefik/)
+- [Traefik Helm Chart](https://github.com/traefik/traefik-helm-chart)
+- [IngressRoute CRD Reference](https://doc.traefik.io/traefik/routing/providers/kubernetes-crd/)
+
+### Helm
+- [Helm Documentation](https://helm.sh/docs/)
+- [Helm Best Practices](https://helm.sh/docs/chart_best_practices/)
 
 ### Cilium
 - [Cilium NetworkPolicy Guide](https://docs.cilium.io/en/stable/security/policy/)

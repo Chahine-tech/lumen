@@ -1,0 +1,106 @@
+# Common Middlewares
+# Educational: Middlewares are reusable request/response transformations
+# They can be applied to any IngressRoute
+
+---
+# HTTP to HTTPS Redirect
+# Educational: Always redirect insecure HTTP to secure HTTPS
+# 301 = permanent redirect (cached by browsers)
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: https-redirect
+  namespace: traefik
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+    port: "443"
+
+---
+# Security Headers
+# Educational: These headers protect against common web vulnerabilities
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: security-headers
+  namespace: traefik
+spec:
+  headers:
+    # HSTS: Force HTTPS for 1 year
+    stsSeconds: 31536000
+    stsIncludeSubdomains: true
+    stsPreload: true
+
+    # Prevent clickjacking
+    customFrameOptionsValue: "SAMEORIGIN"
+
+    # XSS Protection
+    browserXssFilter: true
+
+    # Content-Type sniffing protection
+    contentTypeNosniff: true
+
+    # Referrer policy
+    referrerPolicy: "strict-origin-when-cross-origin"
+
+    # Permissions policy (disable unnecessary browser features)
+    permissionsPolicy: "camera=(), microphone=(), geolocation=()"
+
+---
+# Compression Middleware
+# Educational: Gzip compression reduces bandwidth (50-70% smaller)
+# Applied to text-based responses (HTML, CSS, JS, JSON)
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: compression
+  namespace: traefik
+spec:
+  compress:
+    excludedContentTypes:
+      - image/png
+      - image/jpeg
+      - video/mp4
+
+---
+# Rate Limiting
+# Educational: Prevent abuse by limiting requests per IP
+# Useful for API endpoints
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit
+  namespace: traefik
+spec:
+  rateLimit:
+    average: 100  # 100 requests per second average
+    burst: 200    # Allow bursts up to 200 req/s
+
+---
+# Basic Auth Middleware (for dashboard)
+# Educational: HTTP Basic Authentication
+# Username/password in base64-encoded format
+# Generate with: htpasswd -nb username password | base64
+# Default credentials: admin:admin
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: dashboard-auth
+  namespace: traefik
+spec:
+  basicAuth:
+    secret: dashboard-auth-secret
+
+---
+# Secret for dashboard auth
+apiVersion: v1
+kind: Secret
+metadata:
+  name: dashboard-auth-secret
+  namespace: traefik
+type: Opaque
+data:
+  # admin:admin (change in production!)
+  # Generated with: htpasswd -nb admin admin | base64
+  users: YWRtaW46JGFwcjEkaWhhU2RjWXYkaHNPR05kaHpMZ0w3cnhWM1JkVWk2MQoK

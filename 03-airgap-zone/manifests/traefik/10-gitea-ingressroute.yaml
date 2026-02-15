@@ -1,0 +1,53 @@
+# Gitea IngressRoute
+# Educational: Routes https://gitea.airgap.local → gitea.gitea.svc.cluster.local:3000
+# This is cross-namespace routing (traefik → gitea namespace)
+
+---
+# HTTP → HTTPS redirect
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: gitea-http
+  namespace: gitea
+  annotations:
+    description: "Redirect HTTP to HTTPS for Gitea"
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`gitea.airgap.local`)
+      kind: Rule
+      services:
+        - name: gitea
+          port: 3000
+      middlewares:
+        - name: https-redirect
+          namespace: traefik  # Reference middleware from traefik namespace
+
+---
+# HTTPS with TLS
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: gitea-https
+  namespace: gitea
+  annotations:
+    description: "Gitea - Secure HTTPS access"
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`gitea.airgap.local`)
+      kind: Rule
+      services:
+        - name: gitea
+          port: 3000
+      middlewares:
+        - name: security-headers
+          namespace: traefik
+        - name: compression
+          namespace: traefik
+  tls:
+    secretName: airgap-tls
+    # Note: Secret must be in same namespace as IngressRoute
+    # We'll copy the secret to gitea namespace via script

@@ -1,0 +1,44 @@
+# Prometheus IngressRoute
+# Educational: Prometheus should be protected (rate limiting to prevent DoS)
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: prometheus-http
+  namespace: monitoring
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`prometheus.airgap.local`)
+      kind: Rule
+      services:
+        - name: prometheus
+          port: 9090
+      middlewares:
+        - name: https-redirect
+          namespace: traefik
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: prometheus-https
+  namespace: monitoring
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`prometheus.airgap.local`)
+      kind: Rule
+      services:
+        - name: prometheus
+          port: 9090
+      middlewares:
+        - name: security-headers
+          namespace: traefik
+        - name: rate-limit
+          namespace: traefik  # Prevent abuse
+  tls:
+    secretName: airgap-tls

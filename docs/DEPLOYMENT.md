@@ -1863,5 +1863,384 @@ lumen-network-policies   Synced    Healthy
 - Configure internal Git server for full airgap
 - Set up Slack notifications
 - Implement RBAC for multi-user access
-- Add Helm chart support
 - Enable Git webhooks for instant sync
+
+---
+
+## 📡 Phase 9: Traefik Ingress Controller
+
+**Date:** 2026-02-14/15
+**Purpose:** Replace unstable `kubectl port-forward` with production-grade Ingress Controller
+
+### Why Traefik?
+
+**Before Traefik:**
+```bash
+# Multiple unstable port-forwards
+kubectl port-forward -n gitea svc/gitea 3001:3000 &
+kubectl port-forward -n monitoring svc/grafana 3000:3000 &
+kubectl port-forward -n argocd svc/argocd-server 8081:443 &
+# → Connections die frequently, not production-ready
+```
+
+**After Traefik:**
+```bash
+# Clean DNS-based HTTPS URLs
+https://gitea.airgap.local
+https://grafana.airgap.local
+https://argocd.airgap.local
+# → Always available, load balancing, TLS termination, metrics
+```
+
+**Traefik vs NGINX:** Modern CRD-based config, built-in dashboard, better learning experience.
+
+**Why Helm Chart?** Initial manual YAML deployment failed (IngressRoutes not loading). Official Helm chart worked immediately.
+
+### Deployment Steps
+
+#### 1. Connected Zone - Download Traefik
+
+```bash
+cd 01-connected-zone
+chmod +x scripts/07-pull-traefik-images.sh
+./scripts/07-pull-traefik-images.sh
+```
+
+**Downloaded:**
+- `traefik:v3.6.8` image (~150MB)
+- Helm chart `traefik-39.0.1.tgz` via `helm pull traefik/traefik`
+
+#### 2. Transit Zone - Push to Registry
+
+```bash
+cd 02-transit-zone
+chmod +x push-traefik.sh
+./push-traefik.sh
+```
+
+**Pushed:** `localhost:5000/traefik:v3.6.8`
+
+#### 3. Airgap Zone - Deploy
+
+##### Generate TLS Certificates
+
+```bash
+cd 03-airgap-zone
+kubectl apply -f manifests/traefik/02-cert-generation-job.yaml
+kubectl wait --for=condition=complete --timeout=120s job/cert-generation -n traefik
+```
+
+**Creates:**
+- Self-signed CA (10 year validity)
+- Wildcard server cert for `*.airgap.local` (1 year)
+- Secret `airgap-tls` in traefik namespace
+
+##### Install Traefik via Helm
+
+```bash
+helm install traefik ../../01-connected-zone/artifacts/traefik/helm/traefik-39.0.1.tgz \
+  --namespace traefik \
+  --create-namespace \
+  --values manifests/traefik-helm/values.yaml \
+  --wait
+```
+
+**Verification:**
+```bash
+$ kubectl get pods -n traefik
+NAME                       READY   STATUS    RESTARTS   AGE
+traefik-65f8c9d4bf-7k9mn   1/1     Running   0          2m
+traefik-65f8c9d4bf-qx2lp   1/1     Running   0          2m
+
+$ kubectl get svc traefik -n traefik
+NAME      TYPE           CLUSTER-IP     EXTERNAL-IP      PORT(S)
+traefik   LoadBalancer   10.43.123.45   192.168.107.3    80:30080/TCP,443:30443/TCP
+```
+
+##### Deploy Middlewares
+
+```bash
+kubectl apply -f manifests/traefik/08-middlewares.yaml
+```
+
+**Created middlewares:**
+- `https-redirect` - HTTP → HTTPS (301)
+- `security-headers` - HSTS, CSP, X-Frame-Options
+- `compression` - Gzip compression
+- `rate-limit` - 100 req/s avg, 200 burst
+- `dashboard-auth` - Basic Auth (admin:admin)
+
+##### Copy TLS Secrets
+
+```bash
+chmod +x scripts/copy-tls-secrets.sh
+./scripts/copy-tls-secrets.sh
+```
+
+Copies `airgap-tls` secret to: gitea, monitoring, argocd namespaces.
+
+##### Deploy IngressRoutes
+
+```bash
+kubectl apply -f manifests/traefik/10-gitea-ingressroute.yaml
+kubectl apply -f manifests/traefik/11-grafana-ingressroute.yaml
+kubectl apply -f manifests/traefik/12-prometheus-ingressroute.yaml
+kubectl apply -f manifests/traefik/13-alertmanager-ingressroute.yaml
+kubectl apply -f manifests/traefik/14-argocd-ingressroute.yaml
+```
+
+**Pattern:** Each service has 2 IngressRoutes:
+- HTTP: Redirects to HTTPS
+- HTTPS: TLS + Middlewares + Backend service
+
+##### Local Machine Setup
+
+```bash
+# Extract CA certificate
+./scripts/extract-ca-cert.sh
+
+# Install CA (macOS)
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain ./airgap-ca.crt
+
+# Setup DNS
+./scripts/setup-dns.sh
+```
+
+**DNS entries added to `/etc/hosts`:**
+```
+192.168.107.3    traefik.airgap.local
+192.168.107.3    gitea.airgap.local
+192.168.107.3    grafana.airgap.local
+192.168.107.3    prometheus.airgap.local
+192.168.107.3    alertmanager.airgap.local
+192.168.107.3    argocd.airgap.local
+```
+
+### Results
+
+```bash
+$ kubectl get ingressroute --all-namespaces
+NAMESPACE    NAME                     AGE
+traefik      traefik-dashboard        10m
+gitea        gitea-http               9m
+gitea        gitea-https              9m
+monitoring   grafana-http             9m
+monitoring   grafana-https            9m
+monitoring   prometheus-http          9m
+monitoring   prometheus-https         9m
+monitoring   alertmanager-http        9m
+monitoring   alertmanager-https       9m
+argocd       argocd-http              9m
+argocd       argocd-https             9m
+```
+
+**Total:** 11 IngressRoutes (HTTP + HTTPS for each service)
+
+### Access Services
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| Traefik Dashboard | https://traefik.airgap.local/dashboard/ | admin / admin |
+| Gitea | https://gitea.airgap.local | gitea-admin / gitea-admin |
+| Grafana | https://grafana.airgap.local | admin / admin |
+| Prometheus | https://prometheus.airgap.local | (none) |
+| AlertManager | https://alertmanager.airgap.local | (none) |
+| ArgoCD | https://argocd.airgap.local | admin / aaGKhHCXIiJxgrsA |
+
+**ArgoCD password:**
+```bash
+kubectl get secret argocd-initial-admin-secret -n argocd \
+  -o jsonpath='{.data.password}' | base64 -d
+```
+
+### Issues Fixed During Deployment
+
+#### Issue 1: Dashboard 404
+
+**Problem:** Default Helm chart IngressRoute uses entrypoint `traefik` (port 8080) not exposed via LoadBalancer.
+
+**Fix:** Reconfigured dashboard in `values.yaml`:
+```yaml
+ingressRoute:
+  dashboard:
+    enabled: true
+    entryPoints: ["websecure"]  # Use port 443
+    matchRule: Host(`traefik.airgap.local`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
+    middlewares:
+      - {name: dashboard-auth, namespace: traefik}
+```
+
+#### Issue 2: ArgoCD Redirect Loop
+
+**Problem:** `ERR_TOO_MANY_REDIRECTS` - ArgoCD forcing HTTPS internally while Traefik already terminated TLS.
+
+**Fix:**
+1. Added `X-Forwarded-Port: "443"` header to middleware
+2. Configured ArgoCD in insecure mode via ConfigMap:
+```bash
+kubectl patch configmap argocd-cmd-params-cm -n argocd \
+  --type merge -p '{"data":{"server.insecure":"true"}}'
+```
+
+#### Issue 3: Basic Auth Hash
+
+**Problem:** `htpasswd` hash in Secret was incorrect.
+
+**Fix:** Regenerated with:
+```bash
+kubectl create secret generic dashboard-auth-secret -n traefik \
+  --from-literal="users=$(htpasswd -nb admin admin)" \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+### Traefik Metrics
+
+**Prometheus scraping Traefik:**
+```bash
+$ kubectl exec -n monitoring deploy/prometheus -- \
+    wget -qO- http://traefik.traefik:8080/metrics | grep traefik_entrypoint
+# traefik_entrypoint_requests_total{entrypoint="websecure",code="200"} 142
+# traefik_entrypoint_request_duration_seconds_sum{entrypoint="websecure"} 12.3
+```
+
+**Metrics exposed:**
+- Request count by entrypoint/code
+- Request duration (latency)
+- Service health status
+- Router/middleware stats
+
+### Architecture
+
+```
+Browser (https://gitea.airgap.local)
+          ↓
+/etc/hosts: 192.168.107.3
+          ↓
+K3d LoadBalancer (192.168.107.3:443)
+          ↓
+Traefik Pod (2 replicas)
+  ├── Entrypoint: websecure (443)
+  ├── Router: Host(`gitea.airgap.local`)
+  ├── Middleware: security-headers, compression
+  ├── TLS Termination: *.airgap.local cert
+  └── Service: gitea.gitea:3000
+          ↓
+Gitea Pod
+```
+
+**Key concepts:**
+- **Entrypoints:** Ports (web:80, websecure:443, traefik:8080)
+- **Routers (IngressRoute):** Match rules (Host, Path, Headers)
+- **Middlewares:** Transformations (redirect, headers, auth)
+- **Services:** Backend targets (Kubernetes Services)
+- **TLS:** Certificate management (self-signed CA)
+
+### Helm Configuration
+
+**Key settings in `values.yaml`:**
+```yaml
+deployment:
+  replicas: 2  # HA
+
+service:
+  type: LoadBalancer  # K3d exposes on 192.168.107.3
+
+providers:
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: true  # Cross-namespace routing
+
+additionalArguments:
+  - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+  - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+
+metrics:
+  prometheus:
+    enabled: true
+```
+
+### Resource Usage
+
+```bash
+$ kubectl top pods -n traefik
+NAME                       CPU(cores)   MEMORY(bytes)
+traefik-65f8c9d4bf-7k9mn   12m          78Mi
+traefik-65f8c9d4bf-qx2lp   10m          72Mi
+```
+
+**Resource specs:**
+- CPU request: 200m, limit: 1000m
+- Memory request: 256Mi, limit: 512Mi
+
+### Files Created
+
+**Connected Zone:**
+- `scripts/07-pull-traefik-images.sh`
+- `artifacts/traefik/helm/traefik-39.0.1.tgz`
+- `artifacts/traefik/images/traefik-v3.6.8.tar`
+
+**Transit Zone:**
+- `push-traefik.sh`
+
+**Airgap Zone:**
+- `manifests/traefik-helm/values.yaml`
+- `manifests/traefik-helm/README.md`
+- `manifests/traefik/02-cert-generation-job.yaml`
+- `manifests/traefik/08-middlewares.yaml`
+- `manifests/traefik/10-gitea-ingressroute.yaml`
+- `manifests/traefik/11-grafana-ingressroute.yaml`
+- `manifests/traefik/12-prometheus-ingressroute.yaml`
+- `manifests/traefik/13-alertmanager-ingressroute.yaml`
+- `manifests/traefik/14-argocd-ingressroute.yaml`
+- `scripts/copy-tls-secrets.sh`
+- `scripts/extract-ca-cert.sh`
+- `scripts/setup-dns.sh`
+- `scripts/verify-traefik.sh`
+
+**Documentation:**
+- `docs/traefik.md` (comprehensive guide)
+
+### Verification
+
+```bash
+# All services accessible via HTTPS
+$ curl -k -I https://gitea.airgap.local | grep HTTP
+HTTP/2 200
+
+$ curl -k -I https://grafana.airgap.local | grep HTTP
+HTTP/2 200
+
+$ curl -k -I https://argocd.airgap.local | grep HTTP
+HTTP/2 200
+
+# HTTP → HTTPS redirect
+$ curl -I http://gitea.airgap.local | grep Location
+Location: https://gitea.airgap.local/
+
+# Dashboard with auth
+$ curl -k -u admin:admin https://traefik.airgap.local/dashboard/ | grep Traefik
+<title>Traefik</title>
+```
+
+**Traefik Status:** ✅ Fully Operational - Production-Grade Ingress
+
+**What We Achieved:**
+- ✅ Traefik v3.6.8 deployed via Helm chart
+- ✅ 6 services exposed via clean HTTPS URLs
+- ✅ Self-signed CA with wildcard TLS certificate
+- ✅ Automatic HTTP → HTTPS redirects (301)
+- ✅ Security headers (HSTS, CSP, X-Frame-Options)
+- ✅ Compression (Gzip) for bandwidth reduction
+- ✅ Basic Auth for Traefik dashboard
+- ✅ 2 replicas for high availability
+- ✅ Prometheus metrics integration
+- ✅ Cross-namespace routing enabled
+- ✅ Resource limits and security context
+
+**Next Steps (Optional):**
+- Migrate monitoring stack to `kube-prometheus-stack` Helm chart
+- Create ArgoCD Application for Traefik (GitOps)
+- Configure rate limiting per service
+- Add custom error pages (404, 500)
+- Implement mutual TLS (mTLS) for sensitive endpoints

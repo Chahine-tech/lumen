@@ -1,0 +1,73 @@
+image:
+  registry: localhost:5000
+  repository: traefik
+  tag: "v3.6.8"
+  pullPolicy: IfNotPresent
+
+deployment:
+  replicas: 2
+
+service:
+  type: LoadBalancer
+
+ports:
+  web:
+    port: 80
+  websecure:
+    port: 443
+  traefik:
+    port: 8080
+
+ingressRoute:
+  dashboard:
+    enabled: true
+    entryPoints: ["websecure"]
+    matchRule: Host(`traefik.airgap.local`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
+    middlewares:
+      - name: dashboard-auth
+        namespace: traefik
+    tls:
+      secretName: airgap-tls
+
+providers:
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: true
+  kubernetesIngress:
+    enabled: false
+
+logs:
+  general:
+    level: INFO
+  access:
+    enabled: true
+
+metrics:
+  prometheus:
+    enabled: true
+
+resources:
+  requests:
+    cpu: "200m"
+    memory: "256Mi"
+  limits:
+    cpu: "1000m"
+    memory: "512Mi"
+
+securityContext:
+  runAsUser: 65532
+  runAsNonRoot: true
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+
+additionalArguments:
+  - "--global.checknewversion=false"
+  - "--global.sendanonymoususage=false"
+  - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+  - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+
+rbac:
+  enabled: true
