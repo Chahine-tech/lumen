@@ -1,0 +1,136 @@
+# Traefik IngressRoutes for kube-prometheus-stack services
+# These replace the old monitoring IngressRoutes
+
+---
+# Prometheus HTTP → HTTPS redirect
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: prometheus-http
+  namespace: monitoring
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`prometheus.airgap.local`)
+      kind: Rule
+      services:
+        - name: kube-prometheus-stack-prometheus
+          port: 9090
+      middlewares:
+        - name: https-redirect
+          namespace: traefik
+
+---
+# Prometheus HTTPS
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: prometheus-https
+  namespace: monitoring
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`prometheus.airgap.local`)
+      kind: Rule
+      services:
+        - name: kube-prometheus-stack-prometheus
+          port: 9090
+      middlewares:
+        - name: security-headers
+          namespace: traefik
+        - name: compression
+          namespace: traefik
+        - name: rate-limit
+          namespace: traefik
+  tls:
+    secretName: airgap-tls
+
+---
+# Grafana HTTP → HTTPS redirect
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: grafana-http
+  namespace: monitoring
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`grafana.airgap.local`)
+      kind: Rule
+      services:
+        - name: kube-prometheus-stack-grafana
+          port: 80
+      middlewares:
+        - name: https-redirect
+          namespace: traefik
+
+---
+# Grafana HTTPS
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: grafana-https
+  namespace: monitoring
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`grafana.airgap.local`)
+      kind: Rule
+      services:
+        - name: kube-prometheus-stack-grafana
+          port: 80
+      middlewares:
+        - name: security-headers
+          namespace: traefik
+        - name: compression
+          namespace: traefik
+  tls:
+    secretName: airgap-tls
+
+---
+# AlertManager HTTP → HTTPS redirect
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: alertmanager-http
+  namespace: monitoring
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`alertmanager.airgap.local`)
+      kind: Rule
+      services:
+        - name: kube-prometheus-stack-alertmanager
+          port: 9093
+      middlewares:
+        - name: https-redirect
+          namespace: traefik
+
+---
+# AlertManager HTTPS
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: alertmanager-https
+  namespace: monitoring
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`alertmanager.airgap.local`)
+      kind: Rule
+      services:
+        - name: kube-prometheus-stack-alertmanager
+          port: 9093
+      middlewares:
+        - name: security-headers
+          namespace: traefik
+        - name: compression
+          namespace: traefik
+  tls:
+    secretName: airgap-tls

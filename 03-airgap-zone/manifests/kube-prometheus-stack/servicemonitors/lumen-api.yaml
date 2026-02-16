@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: lumen-api
+  namespace: lumen
+  labels:
+    release: kube-prometheus-stack  # Critical: tells Prometheus Operator to discover this ServiceMonitor
+    app: lumen-api
+    environment: airgap
+spec:
+  selector:
+    matchLabels:
+      app: lumen-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - lumen

@@ -7,7 +7,7 @@ metadata:
   name: allow-prometheus-scraping
   namespace: lumen
   annotations:
-    description: "Allow Prometheus to scrape metrics from lumen-api"
+    description: "Allow Prometheus (kube-prometheus-stack) to scrape metrics from lumen-api"
 spec:
   podSelector:
     matchLabels:
@@ -15,80 +15,12 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Allow from monitoring namespace
+    # Allow from monitoring namespace (kube-prometheus-stack)
     - from:
         - namespaceSelector:
             matchLabels:
               name: monitoring
-        - podSelector:
-            matchLabels:
-              app: prometheus
       ports:
         - protocol: TCP
           port: 8080
 
----
-# Allow monitoring namespace to egress to scrape targets
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: prometheus-egress
-  namespace: monitoring
-  annotations:
-    description: "Allow Prometheus to scrape all targets and reach AlertManager"
-spec:
-  podSelector:
-    matchLabels:
-      app: prometheus
-  policyTypes:
-    - Egress
-  egress:
-    # Allow scraping any pod in any namespace
-    - to:
-        - namespaceSelector: {}
-      ports:
-        - protocol: TCP
-          port: 8080
-        - protocol: TCP
-          port: 9090
-    # Allow communication with AlertManager
-    - to:
-        - podSelector:
-            matchLabels:
-              app: alertmanager
-      ports:
-        - protocol: TCP
-          port: 9093
-    # Allow DNS
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-
----
-# Allow AlertManager ingress from Prometheus
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: alertmanager-ingress
-  namespace: monitoring
-  annotations:
-    description: "Allow Prometheus to send alerts to AlertManager"
-spec:
-  podSelector:
-    matchLabels:
-      app: alertmanager
-  policyTypes:
-    - Ingress
-  ingress:
-    # Allow from Prometheus
-    - from:
-        - podSelector:
-            matchLabels:
-              app: prometheus
-      ports:
-        - protocol: TCP
-          port: 9093

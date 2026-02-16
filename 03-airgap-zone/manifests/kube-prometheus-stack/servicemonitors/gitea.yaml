@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gitea
+  namespace: gitea
+  labels:
+    release: kube-prometheus-stack  # Critical: tells Prometheus Operator to discover this ServiceMonitor
+    app: gitea
+    environment: airgap
+spec:
+  selector:
+    matchLabels:
+      app: gitea
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - gitea

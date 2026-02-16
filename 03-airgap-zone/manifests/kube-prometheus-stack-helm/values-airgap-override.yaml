@@ -1,0 +1,73 @@
+# Airgap overrides for kube-prometheus-stack
+# This file overrides default values to use localhost:5000 registry
+
+# Global settings
+global:
+  imageRegistry: localhost:5000
+
+# Alertmanager
+alertmanager:
+  alertmanagerSpec:
+    image:
+      registry: localhost:5000
+      repository: prometheus/alertmanager
+
+# Grafana
+grafana:
+  image:
+    registry: localhost:5000
+    repository: grafana/grafana
+    tag: "10.2.2"  # Latest version
+  adminPassword: admin
+
+  # Sidecar for auto-reload of dashboards
+  sidecar:
+    image:
+      registry: localhost:5000
+      repository: kiwigrid/k8s-sidecar
+      tag: "1.25.2"
+    dashboards:
+      enabled: true
+    datasources:
+      enabled: true
+
+# kube-state-metrics
+kubeStateMetrics:
+  image:
+    registry: localhost:5000
+    repository: kube-state-metrics/kube-state-metrics
+
+# Node Exporter
+nodeExporter:
+  image:
+    registry: localhost:5000
+    repository: prometheus/node-exporter
+
+# Prometheus
+prometheus:
+  prometheusSpec:
+    image:
+      registry: localhost:5000
+      repository: prometheus/prometheus
+
+    # Match ALL ServiceMonitors
+    serviceMonitorSelector: {}
+    podMonitorSelector: {}
+
+# Prometheus Operator
+prometheusOperator:
+  image:
+    registry: localhost:5000
+    repository: prometheus-operator/prometheus-operator
+    tag: v0.68.0  # Use our downloaded version
+
+  prometheusConfigReloader:
+    image:
+      registry: localhost:5000
+      repository: prometheus-operator/prometheus-config-reloader
+      tag: v0.68.0  # Use our downloaded version
+
+  admissionWebhooks:
+    enabled: false  # Disable webhooks for simplicity in airgap
+    patch:
+      enabled: false  # Also disable the webhook patch job
