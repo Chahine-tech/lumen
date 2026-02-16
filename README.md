@@ -11,7 +11,7 @@ A hands-on project to master distributed systems, network security, and Kubernet
 - **Advanced Kubernetes**: K3s, containerd registry mirrors, admission controllers
 - **Ingress Controllers**: Traefik v3 with CRDs, TLS termination, HTTP/2, middlewares
 - **Helm Package Management**: Production-ready chart deployment and configuration
-- **Observability**: Monitoring without external access (Prometheus + Grafana)
+- **Observability**: Production monitoring with kube-prometheus-stack (Prometheus, Grafana, AlertManager)
 - **Policy enforcement**: OPA Gatekeeper for admission control
 - **GitOps**: ArgoCD for declarative continuous deployment
 - **DevOps**: Build pipelines, artifact management, air-gap deployment
@@ -28,11 +28,14 @@ A hands-on project to master distributed systems, network security, and Kubernet
 │ • Run tests         │     │ • Image storage     │     │ • ArgoCD (GitOps)           │
 └─────────────────────┘     └─────────────────────┘     │ • Traefik Ingress (Helm)    │
                                                         │ • OPA Gatekeeper            │
-                                    ┌──────────────────▶│ • Prometheus + Grafana      │
+                                    ┌──────────────────▶│ • kube-prometheus-stack     │
                                     │                   └─────────────────────────────┘
                               git push-all                          ▲
-                           (GitHub + Gitea)              https://gitea.airgap.local
+                           (GitHub + Gitea)              https://traefik.airgap.local
+                                                        https://gitea.airgap.local
+                                                        https://argocd.airgap.local
                                                         https://grafana.airgap.local
+                                                        https://prometheus.airgap.local
 ```
 
 ## 🚀 Quick Start
@@ -113,7 +116,7 @@ https://argocd.airgap.local               # ArgoCD (admin/[from secret])
 - **Git Server**: Gitea (internal Git repository for airgap)
 - **GitOps**: ArgoCD (pulls from internal Gitea, not GitHub)
 - **Policy**: OPA Gatekeeper
-- **Monitoring**: Prometheus + Grafana (no remote_write)
+- **Monitoring**: kube-prometheus-stack v55 (Prometheus v2.48, Grafana v10.2.2, Node Exporter, kube-state-metrics)
 - **Package Management**: Helm 3 (for Traefik)
 - **Isolation**: iptables + containerd mirrors
 
@@ -198,18 +201,19 @@ make clean             # Remove everything
 
 **Completed Phases:**
 - ✅ Phase 1-3: Build, Transit, K3s, Application Deployment
-- ✅ Phase 4: NetworkPolicies - Zero jhTrust Security (13 policies)
-- ✅ Phase 5: Monitoring Stack - Prometheus + Grafana
+- ✅ Phase 4: NetworkPolicies - Zero Trust Security (13+ policies)
+- ✅ Phase 5: Basic Monitoring Stack - Manual Prometheus + Grafana
 - ✅ Phase 6: OPA Gatekeeper - Admission Control (4 policies)
 - ✅ Phase 7: ArgoCD - GitOps Continuous Deployment with Redis Persistence
 - ✅ Phase 8: Gitea - Internal Git Server for True Airgap GitOps
 - ✅ Phase 9: Traefik Ingress Controller - Production-Grade Service Exposure (Helm)
+- ✅ Phase 10: Production Observability - kube-prometheus-stack with 40+ Dashboards
 
 ## 🚧 Extend This Project
 
 **Optional Future Enhancements:**
-- [x] Add Helm charts (✅ Traefik deployed via Helm)
-- [ ] Migrate monitoring to `kube-prometheus-stack` Helm chart
+- [x] Add Helm charts (✅ Traefik + kube-prometheus-stack via Helm)
+- [x] Migrate monitoring to `kube-prometheus-stack` Helm chart (✅ Phase 10)
 - [ ] Add Vault for secrets management
 - [ ] Implement service mesh (Linkerd/Istio)
 - [ ] Add Falco for runtime security
