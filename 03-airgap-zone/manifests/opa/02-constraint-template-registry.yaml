@@ -1,7 +1,7 @@
 # ConstraintTemplate: Enforce that all images come from approved registries
 # Critical for airgap: ensures no external image pulls
 
-apiVersion: templates.gatekeeper.sh/v1
+apiVersion: templates.gatekeeper.sh/v1beta1
 kind: ConstraintTemplate
 metadata:
   name: k8srequiredregistry
@@ -60,5 +60,4 @@ spec:
       - "default"
   parameters:
     registries:
-      - "192.168.107.2:5000/"
-      - "registry.airgap.local:5000/"
+      - "localhost:5000/"

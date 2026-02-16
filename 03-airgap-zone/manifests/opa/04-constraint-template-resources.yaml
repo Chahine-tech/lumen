@@ -1,7 +1,7 @@
 # ConstraintTemplate: Require resource limits and requests
 # Essential for cluster stability and preventing resource exhaustion
 
-apiVersion: templates.gatekeeper.sh/v1
+apiVersion: templates.gatekeeper.sh/v1beta1
 kind: ConstraintTemplate
 metadata:
   name: k8srequiredresources
@@ -18,26 +18,35 @@ spec:
       rego: |
         package k8srequiredresources
 
-        violation[{"msg": msg}] {
+        # Get containers from either Pods or Deployment/StatefulSet/DaemonSet
+        get_containers[container] {
           container := input.review.object.spec.containers[_]
+        }
+
+        get_containers[container] {
+          container := input.review.object.spec.template.spec.containers[_]
+        }
+
+        violation[{"msg": msg}] {
+          container := get_containers[_]
           not container.resources.requests.cpu
           msg := sprintf("Container <%v> has no CPU request", [container.name])
         }
 
         violation[{"msg": msg}] {
-          container := input.review.object.spec.containers[_]
+          container := get_containers[_]
           not container.resources.requests.memory
           msg := sprintf("Container <%v> has no memory request", [container.name])
         }
 
         violation[{"msg": msg}] {
-          container := input.review.object.spec.containers[_]
+          container := get_containers[_]
           not container.resources.limits.cpu
           msg := sprintf("Container <%v> has no CPU limit", [container.name])
         }
 
         violation[{"msg": msg}] {
-          container := input.review.object.spec.containers[_]
+          container := get_containers[_]
           not container.resources.limits.memory
           msg := sprintf("Container <%v> has no memory limit", [container.name])
         }

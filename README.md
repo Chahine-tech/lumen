@@ -213,7 +213,7 @@ make clean             # Remove everything
 
 **Optional Future Enhancements:**
 - [x] Add Helm charts (✅ Traefik + kube-prometheus-stack via Helm)
-- [x] Migrate monitoring to `kube-prometheus-stack` Helm chart (✅ Phase 10)
+- [x] Migrate monitoring to `kube-prometheus-stack` Helm chart
 - [ ] Add Vault for secrets management
 - [ ] Implement service mesh (Linkerd/Istio)
 - [ ] Add Falco for runtime security

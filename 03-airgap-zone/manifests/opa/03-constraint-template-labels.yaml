@@ -1,7 +1,7 @@
 # ConstraintTemplate: Require specific labels on resources
 # Good practice for organization and governance
 
-apiVersion: templates.gatekeeper.sh/v1
+apiVersion: templates.gatekeeper.sh/v1beta1
 kind: ConstraintTemplate
 metadata:
   name: k8srequiredlabels

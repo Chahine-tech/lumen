@@ -1,7 +1,7 @@
 # ConstraintTemplate: Block images using :latest tag
 # Best practice: use specific version tags for reproducibility
 
-apiVersion: templates.gatekeeper.sh/v1
+apiVersion: templates.gatekeeper.sh/v1beta1
 kind: ConstraintTemplate
 metadata:
   name: k8sblocklatesttag
