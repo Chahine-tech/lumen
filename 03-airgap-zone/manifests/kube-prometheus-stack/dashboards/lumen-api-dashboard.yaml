@@ -80,7 +80,7 @@ data:
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 24,
             "x": 0,
             "y": 0
           },
@@ -98,7 +98,7 @@ data:
           "targets": [
             {
               "expr": "http_requests_total{job=\"lumen-api\"}",
-              "legendFormat": "{{endpoint}} - {{method}} - {{status}}",
+              "legendFormat": "{{exported_endpoint}} - {{method}} - {{status}}",
               "refId": "A"
             }
           ],
@@ -137,8 +137,8 @@ data:
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 12,
-            "y": 0
+            "x": 0,
+            "y": 8
           },
           "id": 2,
           "options": {
@@ -154,7 +154,7 @@ data:
           },
           "targets": [
             {
-              "expr": "sum(http_requests_total{job=\"lumen-api\", endpoint=\"/hello\"})",
+              "expr": "sum(http_requests_total{job=\"lumen-api\", exported_endpoint=\"/hello\"})",
               "refId": "A"
             }
           ],
@@ -213,7 +213,7 @@ data:
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 0,
+            "x": 12,
             "y": 8
           },
           "id": 3,
@@ -230,7 +230,7 @@ data:
           "targets": [
             {
               "expr": "rate(http_requests_total{job=\"lumen-api\"}[1m])",
-              "legendFormat": "{{endpoint}} rate",
+              "legendFormat": "{{exported_endpoint}} rate",
               "refId": "A"
             }
           ],
@@ -288,87 +288,11 @@ data:
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
-            "x": 12,
-            "y": 8
-          },
-          "id": 4,
-          "options": {
-            "legend": {
-              "calcs": ["last"],
-              "displayMode": "table",
-              "placement": "bottom"
-            },
-            "tooltip": {
-              "mode": "single"
-            }
-          },
-          "targets": [
-            {
-              "expr": "active_connections{job=\"lumen-api\"}",
-              "legendFormat": "Pod: {{pod}}",
-              "refId": "A"
-            }
-          ],
-          "title": "Active Connections",
-          "type": "timeseries"
-        },
-        {
-          "datasource": "Prometheus",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "tooltip": false,
-                  "viz": false,
-                  "legend": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "never",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              },
-              "unit": "short"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
             "w": 24,
             "x": 0,
             "y": 16
           },
-          "id": 5,
+          "id": 4,
           "options": {
             "legend": {
               "calcs": ["last"],

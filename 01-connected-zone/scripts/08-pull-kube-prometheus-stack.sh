@@ -1,16 +1,16 @@
 #!/bin/bash
 set -e
 
-PROMETHEUS_VERSION="v2.45.0"
-ALERTMANAGER_VERSION="v0.26.0"
-GRAFANA_VERSION="10.2.2"  # Updated to match Helm chart default
-GRAFANA_SIDECAR_VERSION="1.25.2"  # NEW: Grafana sidecar for dashboard auto-reload
-PROMETHEUS_OPERATOR_VERSION="v0.68.0"
-PROMETHEUS_CONFIG_RELOADER_VERSION="v0.68.0"
-NODE_EXPORTER_VERSION="v1.7.0"
-KUBE_STATE_METRICS_VERSION="v2.10.1"
+PROMETHEUS_VERSION="v3.5.1"  # Updated to latest LTS (Feb 2026)
+ALERTMANAGER_VERSION="v0.31.1"  # Updated to latest (Feb 2026)
+GRAFANA_VERSION="12.4.0-22046043985"  # Updated to latest (Feb 2026)
+GRAFANA_SIDECAR_VERSION="1.30.1"  # Updated to latest sidecar version
+PROMETHEUS_OPERATOR_VERSION="v0.78.2"  # Updated to latest (supports Prometheus 3.x)
+PROMETHEUS_CONFIG_RELOADER_VERSION="v0.78.2"  # Match operator version
+NODE_EXPORTER_VERSION="v1.8.2"  # Updated to latest
+KUBE_STATE_METRICS_VERSION="v2.14.0"  # Updated to latest
 
-HELM_CHART_VERSION="55.0.0"  # prometheus-community/kube-prometheus-stack Helm chart version
+HELM_CHART_VERSION="69.0.0"  # Updated to latest chart version (Feb 2026)
 ARTIFACTS_DIR="artifacts/kube-prometheus-stack"
 
 echo "====================================="
