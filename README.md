@@ -31,7 +31,7 @@ A hands-on project to master distributed systems, network security, and Kubernet
                                     ┌──────────────────▶│ • kube-prometheus-stack     │
                                     │                   └─────────────────────────────┘
                               git push-all                          ▲
-                           (GitHub + Gitea)              https://traefik.airgap.local
+                           (GitHub + Gitea)             https://traefik.airgap.local
                                                         https://gitea.airgap.local
                                                         https://argocd.airgap.local
                                                         https://grafana.airgap.local
