@@ -58,7 +58,7 @@ spec:
     spec:
       containers:
         - name: lumen-api
-          image: docker.io/library/lumen-api:v1.0.0
+          image: localhost:5000/lumen-api:v1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
