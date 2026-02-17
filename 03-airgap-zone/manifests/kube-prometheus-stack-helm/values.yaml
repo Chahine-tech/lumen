@@ -1290,7 +1290,15 @@ grafana:
 
   ## Configure additional grafana datasources (passed through tpl)
   ## ref: http://docs.grafana.org/administration/provisioning/#datasources
-  additionalDataSources: []
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      uid: loki
+      url: http://loki-gateway.monitoring.svc.cluster.local
+      access: proxy
+      isDefault: false
+      jsonData:
+        maxLines: 1000
   # - name: prometheus-sample
   #   access: proxy
   #   basicAuth: true
