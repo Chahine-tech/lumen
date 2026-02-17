@@ -1,4 +1,4 @@
-# Grafana Alloy v1.13.0 - Airgap Override Values
+# Grafana Alloy v1.13.1 - Airgap Override Values
 # Role: Log collector (Promtail replacement) - DaemonSet on all nodes
 # Sends logs to Loki running in monitoring namespace
 
@@ -11,7 +11,7 @@ global:
 image:
   registry: "localhost:5000"
   repository: grafana/alloy
-  tag: "v1.13.0"
+  tag: "v1.13.1"
   pullPolicy: IfNotPresent
 
 # --- Config reloader ---
