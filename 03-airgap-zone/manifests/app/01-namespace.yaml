@@ -6,3 +6,16 @@ metadata:
     name: lumen
     environment: airgap
     app: lumen-api
+    app.kubernetes.io/instance: lumen-app
+
+    # Pod Security Standards (PSS) - Restricted Mode
+    # Enforces strict security requirements:
+    # - No privileged containers
+    # - Must run as non-root (runAsNonRoot=true)
+    # - No host access (hostPath, hostNetwork, hostPID)
+    # - Capabilities must be dropped (ALL)
+    # - allowPrivilegeEscalation=false required
+    # - seccompProfile required (RuntimeDefault or Localhost)
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

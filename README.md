@@ -11,8 +11,8 @@ A hands-on project to master distributed systems, network security, and Kubernet
 - **Advanced Kubernetes**: K3s, containerd registry mirrors, admission controllers
 - **Ingress Controllers**: Traefik v3 with CRDs, TLS termination, HTTP/2, middlewares
 - **Helm Package Management**: Production-ready chart deployment and configuration
-- **Observability**: Production monitoring with kube-prometheus-stack (Prometheus, Grafana, AlertManager)
-- **Policy enforcement**: OPA Gatekeeper for admission control
+- **Observability**: Production monitoring with kube-prometheus-stack (Prometheus v3.5, Grafana v12.4, AlertManager v0.31)
+- **Security**: OPA Gatekeeper + Pod Security Standards (PSS) for admission control and runtime security
 - **GitOps**: ArgoCD for declarative continuous deployment
 - **DevOps**: Build pipelines, artifact management, air-gap deployment
 
@@ -110,13 +110,13 @@ https://argocd.airgap.local               # ArgoCD (admin/[from secret])
 - **API**: Go 1.26 (production-grade with graceful shutdown)
 - **Cache**: Redis 7 Alpine
 - **Cluster**: K3s (lightweight, airgap-optimized)
-- **CNI**: Cilium (L3/L4/L7 NetworkPolicies)
+- **CNI**: Flannel (default K3s CNI, upgrade path to Cilium available)
 - **Registry**: Docker Registry v2
 - **Ingress**: Traefik v3.6.8 (Helm chart, TLS termination, HTTP/2)
 - **Git Server**: Gitea (internal Git repository for airgap)
-- **GitOps**: ArgoCD (pulls from internal Gitea, not GitHub)
-- **Policy**: OPA Gatekeeper
-- **Monitoring**: kube-prometheus-stack v55 (Prometheus v2.48, Grafana v10.2.2, Node Exporter, kube-state-metrics)
+- **GitOps**: ArgoCD v3.2.0 (pulls from internal Gitea, not GitHub)
+- **Security**: OPA Gatekeeper v3.18.0 + Pod Security Standards (PSS restricted mode)
+- **Monitoring**: kube-prometheus-stack v69 (Prometheus v3.5.1, Grafana v12.4.0, Node Exporter v1.8.2, kube-state-metrics v2.15.0)
 - **Package Management**: Helm 3 (for Traefik)
 - **Isolation**: iptables + containerd mirrors
 
@@ -141,11 +141,24 @@ mirrors:
 - Explicit allow rules for required communication
 - Cilium L7 HTTP filtering
 
-### Admission Control
+### Security (Defense in Depth)
+
+**Layer 1: OPA Gatekeeper** (Custom Policies)
 - Block `:latest` tags
-- Enforce internal registry usage
-- Require resource limits
-- Validate required labels
+- Enforce internal registry (`localhost:5000/` only)
+- Require resource limits (CPU/memory requests and limits)
+- Validate required labels (`app`, `tier`)
+
+**Layer 2: Pod Security Standards** (System Security)
+- No privileged containers
+- Must run as non-root (`runAsNonRoot=true`)
+- No host access (hostPath, hostNetwork, hostPID)
+- Capabilities must drop ALL
+- `seccompProfile` required (RuntimeDefault)
+
+**Layer 3: NetworkPolicies** (Zero-Trust Networking)
+- Default deny-all
+- Explicit allow rules only
 
 ### GitOps Workflow with Gitea
 ```bash
@@ -180,6 +193,7 @@ make test-opa                  # Test admission control
 - [Complete Setup Guide](docs/SETUP.md) - Detailed step-by-step instructions
 - [Deployment Guide](docs/DEPLOYMENT.md) - Real deployment results and troubleshooting
 - [Traefik Ingress](docs/traefik.md) - Production-grade ingress with Helm, TLS, and troubleshooting
+- [Monitoring Stack](docs/monitoring.md) - kube-prometheus-stack deployment and upgrades (58KB)
 - [Architecture Deep Dive](docs/ARCHITECTURE.md) - Technical details
 
 ## 🛠️ Common Commands
@@ -200,14 +214,21 @@ make clean             # Remove everything
 ## ✅ Project Status
 
 **Completed Phases:**
-- ✅ Phase 1-3: Build, Transit, K3s, Application Deployment
-- ✅ Phase 4: NetworkPolicies - Zero Trust Security (13+ policies)
-- ✅ Phase 5: Basic Monitoring Stack - Manual Prometheus + Grafana
-- ✅ Phase 6: OPA Gatekeeper - Admission Control (4 policies)
-- ✅ Phase 7: ArgoCD - GitOps Continuous Deployment with Redis Persistence
+- ✅ Phase 1-4: Build, Transit, K3s, Application Deployment
+- ✅ Phase 5: NetworkPolicies - Zero Trust Security (13+ policies)
+- ✅ Phase 6-7: Basic Monitoring + ArgoCD GitOps with Redis Persistence
 - ✅ Phase 8: Gitea - Internal Git Server for True Airgap GitOps
 - ✅ Phase 9: Traefik Ingress Controller - Production-Grade Service Exposure (Helm)
 - ✅ Phase 10: Production Observability - kube-prometheus-stack with 40+ Dashboards
+- ✅ Phase 11/12: Version Upgrades - Prometheus v3.5.1, Grafana v12.4.0, ArgoCD v3.2.0
+- ✅ Phase 13: OPA Gatekeeper v3.18.0 - Admission Control (4 custom policies)
+- ✅ Phase 14: Pod Security Standards (PSS) - Restricted Mode Security
+
+**Current State:**
+- 🛡️ **3-Layer Security**: OPA Gatekeeper + PSS + NetworkPolicies
+- 📊 **Complete Observability**: Metrics (Prometheus/Grafana) with 40+ dashboards
+- 🔄 **Full GitOps**: ArgoCD syncing from internal Gitea
+- 🔒 **Production-Grade**: TLS, RBAC, admission control, zero-trust networking
 
 ## 🚧 Extend This Project
 

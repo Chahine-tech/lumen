@@ -94,6 +94,15 @@ spec:
                 - ping
             initialDelaySeconds: 5
             periodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999  # Redis user in official image
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           volumeMounts:
             - name: redis-data
               mountPath: /data
