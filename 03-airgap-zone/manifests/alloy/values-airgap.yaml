@@ -1,0 +1,136 @@
+# Grafana Alloy v1.13.0 - Airgap Override Values
+# Role: Log collector (Promtail replacement) - DaemonSet on all nodes
+# Sends logs to Loki running in monitoring namespace
+
+# --- Image registry override ---
+global:
+  image:
+    registry: "localhost:5000"
+
+# --- Alloy image ---
+image:
+  registry: "localhost:5000"
+  repository: grafana/alloy
+  tag: "v1.13.0"
+  pullPolicy: IfNotPresent
+
+# --- Config reloader ---
+configReloader:
+  enabled: true
+  image:
+    registry: "localhost:5000"
+    repository: prometheus-operator/prometheus-config-reloader
+    tag: "v0.81.0"
+
+# --- Deploy as DaemonSet (one pod per node) ---
+controller:
+  type: daemonset
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
+# --- Alloy config: collect pod logs and send to Loki ---
+alloy:
+  configMap:
+    create: true
+    content: |
+      // Discover all pods in the cluster
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+
+      // Relabel pod metadata into log labels
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+
+        // Keep only running pods
+        rule {
+          source_labels = ["__meta_kubernetes_pod_phase"]
+          regex         = "Pending|Running"
+          action        = "keep"
+        }
+
+        // Namespace label
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+
+        // Pod name label
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+
+        // Container name label
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+
+        // App label (from pod labels)
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app"]
+          target_label  = "app"
+        }
+
+        // Node name
+        rule {
+          source_labels = ["__meta_kubernetes_pod_node_name"]
+          target_label  = "node"
+        }
+      }
+
+      // Tail pod logs from filesystem
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.process.pods.receiver]
+      }
+
+      // Process logs: detect JSON structured logs from lumen-api
+      loki.process "pods" {
+        // Try to parse JSON logs (from lumen-api slog output)
+        stage.json {
+          expressions = {
+            level  = "level",
+            msg    = "msg",
+            method = "method",
+            path   = "path",
+            status = "status",
+          }
+        }
+
+        // Extract level as label for filtering in Grafana
+        stage.labels {
+          values = {
+            level = "",
+          }
+        }
+
+        forward_to = [loki.write.default.receiver]
+      }
+
+      // Send to Loki
+      loki.write "default" {
+        endpoint {
+          url = "http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push"
+        }
+      }
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# --- Service account (needs read access to pods/logs) ---
+serviceAccount:
+  create: true
+  name: alloy
+
+# --- RBAC (needs to read pods and namespaces) ---
+rbac:
+  create: true

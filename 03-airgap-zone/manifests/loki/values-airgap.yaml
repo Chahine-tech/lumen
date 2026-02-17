@@ -1,0 +1,114 @@
+# Loki 3.6.5 - Airgap Override Values
+# Mode: SingleBinary (monolithic) - single-node K3s
+# Storage: filesystem (no S3, no MinIO)
+
+# --- Global image registry override ---
+global:
+  imageRegistry: localhost:5000
+
+# --- Deployment mode ---
+deploymentMode: SingleBinary
+
+# --- Loki config ---
+loki:
+  auth_enabled: false
+
+  commonConfig:
+    replication_factor: 1
+
+  schemaConfig:
+    configs:
+      - from: "2024-04-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+
+  storage:
+    type: filesystem
+
+  storage_config:
+    tsdb_shipper:
+      active_index_directory: /var/loki/tsdb-index
+      cache_location: /var/loki/tsdb-cache
+      shared_store: filesystem
+    filesystem:
+      directory: /var/loki/chunks
+
+  limits_config:
+    reject_old_samples: true
+    reject_old_samples_max_age: 168h
+    max_cache_freshness_per_query: 10m
+
+  querier:
+    max_concurrent: 2
+
+# --- SingleBinary pod ---
+singleBinary:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  persistence:
+    enabled: true
+    size: 5Gi
+
+# --- Disable ALL other replica groups (required for SingleBinary) ---
+backend:
+  replicas: 0
+read:
+  replicas: 0
+write:
+  replicas: 0
+ingester:
+  replicas: 0
+querier:
+  replicas: 0
+queryFrontend:
+  replicas: 0
+queryScheduler:
+  replicas: 0
+distributor:
+  replicas: 0
+compactor:
+  replicas: 0
+indexGateway:
+  replicas: 0
+bloomCompactor:
+  replicas: 0
+bloomGateway:
+  replicas: 0
+
+# --- Gateway (nginx) - override image registry ---
+gateway:
+  enabled: true
+  replicas: 1
+  image:
+    registry: localhost:5000
+    repository: nginxinc/nginx-unprivileged
+    tag: 1.29-alpine
+    pullPolicy: IfNotPresent
+
+# --- Disable memcached (not needed for single-node) ---
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+
+# --- Disable lokiCanary (requires external images) ---
+lokiCanary:
+  enabled: false
+
+# --- Disable MinIO (using filesystem) ---
+minio:
+  enabled: false
+
+# --- Disable helm test ---
+test:
+  enabled: false

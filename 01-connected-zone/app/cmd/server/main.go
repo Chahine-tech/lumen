@@ -1,20 +1,27 @@
 package main
 
 import (
-	"log"
+	"log/slog"
+	"os"
 
 	"github.com/Chahine-tech/lumen/internal/app"
 )
 
 func main() {
-	// Create application
+	// Configure structured JSON logging (for Loki)
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
 	application, err := app.NewApp()
 	if err != nil {
-		log.Fatalf("Failed to initialize app: %v", err)
+		slog.Error("Failed to initialize app", "error", err)
+		os.Exit(1)
 	}
 
-	// Run with graceful shutdown
 	if err := application.Run(); err != nil {
-		log.Fatalf("Server error: %v", err)
+		slog.Error("Server error", "error", err)
+		os.Exit(1)
 	}
 }
