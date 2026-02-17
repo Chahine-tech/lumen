@@ -957,6 +957,118 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
 
 ---
 
+## Phase 15: Logs + pprof (February 17, 2026)
+
+### What Changed
+
+Completed the **Logs** pillar of observability and added Go profiling to lumen-api.
+
+### Loki 3.6.5 — Log Aggregation
+
+**Why not loki-stack?** The `grafana/loki-stack` chart is officially deprecated (no more updates). The standalone `grafana/loki` chart v6.53.0 is the replacement.
+
+**Why not S3/MinIO?** Single-node airgap setup — filesystem storage is simpler, sufficient, and avoids the deprecated MinIO subchart.
+
+**Deployment mode: SingleBinary** — all Loki components (ingester, querier, compactor, etc.) run in one pod. Correct for single-node K3s.
+
+**Key config:**
+```yaml
+deploymentMode: SingleBinary
+loki:
+  auth_enabled: false
+  storage:
+    type: filesystem
+  schemaConfig:
+    configs:
+      - from: "2024-04-01"
+        store: tsdb          # TSDB replaces deprecated boltdb-shipper
+        object_store: filesystem
+        schema: v13          # Current schema version
+```
+
+**Images used:**
+| Image | Tag | Role |
+|-------|-----|------|
+| `localhost:5000/grafana/loki` | `3.6.5` | Log storage + query engine |
+| `localhost:5000/nginxinc/nginx-unprivileged` | `1.29-alpine` | Loki gateway |
+| `localhost:5000/kiwigrid/k8s-sidecar` | `1.30.9` | Config sidecar |
+
+### Grafana Alloy v1.13.1 — Log Collector
+
+**Why not Promtail?** Promtail is **EOL March 2026** — no more updates or security patches. Grafana Alloy is the official replacement.
+
+Alloy runs as a **DaemonSet** (one pod per node) and:
+1. Discovers all pods via Kubernetes API
+2. Tails pod logs from node filesystem
+3. Parses JSON logs from lumen-api (via `stage.json`)
+4. Extracts `level` label for filtering in Grafana
+5. Ships to Loki gateway
+
+**Images used:**
+| Image | Tag | Role |
+|-------|-----|------|
+| `localhost:5000/grafana/alloy` | `v1.13.1` | Log collector DaemonSet |
+| `localhost:5000/prometheus-operator/prometheus-config-reloader` | `v0.81.0` | Config reloader sidecar |
+
+### lumen-api v1.1.0 — pprof + Structured Logging
+
+**pprof endpoints** added to `app.go`:
+```
+/debug/pprof/          — index
+/debug/pprof/profile   — CPU profiling (30s)
+/debug/pprof/trace     — goroutine trace
+/debug/pprof/symbol    — symbol lookup
+/debug/pprof/cmdline   — command line args
+```
+
+**Structured JSON logging** via `log/slog` (stdlib, no external deps):
+```json
+{"time":"2026-02-17T10:00:00Z","level":"INFO","msg":"request","method":"GET","path":"/hello","status":200,"duration_ms":1,"remote_addr":"10.0.0.1:12345"}
+```
+Alloy parses these JSON fields and indexes `level` as a Loki label — enables filtering by `{level="ERROR"}` in Grafana Explore.
+
+### Loki Datasource in Grafana
+
+Added to `kube-prometheus-stack` values (`additionalDataSources`):
+```yaml
+additionalDataSources:
+  - name: Loki
+    type: loki
+    uid: loki
+    url: http://loki-gateway.monitoring.svc.cluster.local
+    access: proxy
+    jsonData:
+      maxLines: 1000
+```
+
+### Querying Logs in Grafana
+
+**Grafana → Explore → Loki**
+
+```logql
+# All lumen namespace logs
+{namespace="lumen"}
+
+# Only lumen-api errors
+{namespace="lumen", app="lumen-api", level="ERROR"}
+
+# Search for specific text
+{namespace="lumen"} |= "Redis"
+
+# Parse JSON and filter by HTTP status
+{namespace="lumen", app="lumen-api"} | json | status >= 500
+```
+
+### 3 Pillars Status
+
+| Pillar | Status | Stack |
+|--------|--------|-------|
+| **Metrics** | ✅ Complete | Prometheus 3.5.1 + Grafana 12.4.0 |
+| **Logs** | ✅ Complete | Loki 3.6.5 + Alloy v1.13.1 |
+| **Traces** | ⏳ Pending | Tempo (planned) |
+
+---
+
 ## References
 
 - [kube-prometheus-stack Helm Chart](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)
@@ -964,11 +1076,14 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
 - [Grafana v12 Release Notes](https://grafana.com/docs/grafana/latest/whatsnew/whats-new-in-v12-0/)
 - [ArgoCD v3.0 Release](https://github.com/argoproj/argo-cd/releases/tag/v3.0.0)
 - [Prometheus Operator Documentation](https://prometheus-operator.dev/)
+- [Loki Deployment Modes](https://grafana.com/docs/loki/latest/get-started/deployment-modes/)
+- [Grafana Alloy — Promtail Migration](https://grafana.com/docs/alloy/latest/set-up/migrate/from-promtail/)
+- [Promtail EOL Announcement](https://community.grafana.com/t/promtail-end-of-life-eol-march-2026/159636)
 - [VERSION-COMPARISON.md](./VERSION-COMPARISON.md) - Detailed version comparison
 - [TESTING-MONITORING.md](./TESTING-MONITORING.md) - Testing procedures
 
 ---
 
-**Last Updated:** February 16, 2026
+**Last Updated:** February 17, 2026
 **Project:** Lumen Airgap Kubernetes
 **Phases Covered:** Phase 10 (kube-prometheus-stack), Phase 11/12 (Upgrades to latest versions)
