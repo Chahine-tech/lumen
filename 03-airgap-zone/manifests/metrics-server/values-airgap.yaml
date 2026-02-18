@@ -6,10 +6,11 @@ image:
   tag: "v0.8.0"
   pullPolicy: IfNotPresent
 
-# Required for K3s - skip TLS verification for kubelet metrics
+# Required for K3s - override default args completely to avoid duplication
+defaultArgs: false
 args:
   - --cert-dir=/tmp
-  - --secure-port=10250
+  - --secure-port=4443
   - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname
   - --kubelet-use-node-status-port
   - --metric-resolution=15s
