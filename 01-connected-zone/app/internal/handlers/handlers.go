@@ -2,12 +2,17 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/Chahine-tech/lumen/internal/metrics"
 	"github.com/Chahine-tech/lumen/internal/store"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
+
+var tracer = otel.Tracer("lumen-api")
 
 type Handler struct {
 	store   *store.RedisStore
@@ -35,15 +40,21 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Printf("Error encoding JSON: %v", err)
+		slog.Error("Error encoding JSON", "error", err)
 	}
 }
 
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracer.Start(r.Context(), "health.check")
+	defer span.End()
+
 	checks := make(map[string]string)
 	status := "healthy"
 
-	if err := h.store.Ping(r.Context()); err != nil {
+	_, redisSpan := tracer.Start(ctx, "redis.ping")
+	if err := h.store.Ping(ctx); err != nil {
+		redisSpan.RecordError(err)
+		redisSpan.SetStatus(codes.Error, err.Error())
 		checks["redis"] = "unhealthy"
 		status = "degraded"
 		h.metrics.RedisConnectionStatus.Set(0)
@@ -51,6 +62,9 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 		checks["redis"] = "healthy"
 		h.metrics.RedisConnectionStatus.Set(1)
 	}
+	redisSpan.End()
+
+	span.SetAttributes(attribute.String("health.status", status))
 
 	response := HealthResponse{
 		Status: status,
@@ -65,11 +79,19 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Hello(w http.ResponseWriter, r *http.Request) {
-	counter, err := h.store.IncrementCounter(r.Context(), "hello_counter")
+	ctx, span := tracer.Start(r.Context(), "hello.handler")
+	defer span.End()
+
+	_, redisSpan := tracer.Start(ctx, "redis.increment")
+	counter, err := h.store.IncrementCounter(ctx, "hello_counter")
 	if err != nil {
-		log.Printf("Redis error: %v", err)
-		counter = 0 // fallback
+		redisSpan.RecordError(err)
+		redisSpan.SetStatus(codes.Error, err.Error())
+		slog.Error("Redis error", "error", err)
+		counter = 0
 	}
+	redisSpan.SetAttributes(attribute.Int64("counter.value", counter))
+	redisSpan.End()
 
 	response := InfoResponse{
 		Message: "Hello World from Lumen Airgap!",

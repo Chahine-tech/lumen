@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 
 	"github.com/Chahine-tech/lumen/internal/app"
+	"github.com/Chahine-tech/lumen/internal/tracing"
 )
 
 func main() {
@@ -13,6 +15,15 @@ func main() {
 		Level: slog.LevelInfo,
 	}))
 	slog.SetDefault(logger)
+
+	// Initialize OpenTelemetry TracerProvider (sends traces to Tempo)
+	ctx := context.Background()
+	shutdown, err := tracing.Init(ctx)
+	if err != nil {
+		slog.Warn("Tracing initialization failed, continuing without tracing", "error", err)
+	} else {
+		defer shutdown(ctx)
+	}
 
 	application, err := app.NewApp()
 	if err != nil {

@@ -58,7 +58,7 @@ spec:
     spec:
       containers:
         - name: lumen-api
-          image: localhost:5000/lumen-api:v1.1.0
+          image: localhost:5000/lumen-api:v1.2.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -75,6 +75,8 @@ spec:
                 configMapKeyRef:
                   name: lumen-api-config
                   key: PORT
+            - name: TEMPO_ENDPOINT
+              value: "http://tempo.monitoring.svc.cluster.local:4318"
           resources:
             requests:
               cpu: 100m

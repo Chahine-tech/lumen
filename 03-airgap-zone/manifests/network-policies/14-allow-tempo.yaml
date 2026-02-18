@@ -1,0 +1,107 @@
+# NetworkPolicies for Grafana Tempo (distributed tracing)
+
+---
+# Allow lumen-api to send traces to Tempo (OTLP HTTP port 4318)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tempo-otlp-egress
+  namespace: lumen
+  annotations:
+    description: "Allow lumen-api to send traces to Tempo via OTLP HTTP"
+spec:
+  podSelector:
+    matchLabels:
+      app: lumen-api
+  policyTypes:
+    - Egress
+  egress:
+    # Tempo OTLP HTTP receiver
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 4318  # OTLP HTTP
+
+---
+# Allow Tempo to receive OTLP traces from lumen namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tempo-otlp-ingress
+  namespace: monitoring
+  annotations:
+    description: "Allow Tempo to receive OTLP traces from lumen-api"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: tempo
+  policyTypes:
+    - Ingress
+  ingress:
+    # From lumen-api (OTLP HTTP)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: lumen
+      ports:
+        - protocol: TCP
+          port: 4318  # OTLP HTTP
+        - protocol: TCP
+          port: 4317  # OTLP gRPC
+
+    # From Grafana (query traces)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - protocol: TCP
+          port: 3200  # Tempo query API
+
+    # From Traefik (IngressRoute)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: traefik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 3200
+
+---
+# Allow Grafana to query Tempo
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-tempo-egress
+  namespace: monitoring
+  annotations:
+    description: "Allow Grafana to query Tempo for traces"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  policyTypes:
+    - Egress
+  egress:
+    # Tempo query API
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tempo
+      ports:
+        - protocol: TCP
+          port: 3200
+    # Loki (for derivedFields / log correlation)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loki
+      ports:
+        - protocol: TCP
+          port: 3100

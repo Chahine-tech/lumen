@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-# Phase 15: Loki + Alloy + Metrics Server
-# Loki 3.6.5 (Feb 6, 2026) + Alloy v1.13.1 (Feb 13, 2026) + Metrics Server v0.8.0
+# Phase 15: Loki + Alloy + Metrics Server + Tempo
+# Loki 3.6.5 (Feb 6, 2026) + Alloy v1.13.1 (Feb 13, 2026) + Metrics Server v0.8.0 + Tempo 2.10.0 (Jan 26, 2026)
 
 LOKI_VERSION="3.6.5"
 LOKI_CHART_VERSION="6.53.0"
@@ -16,6 +16,9 @@ CONFIG_RELOADER_VERSION="v0.81.0"
 METRICS_SERVER_VERSION="v0.8.0"
 METRICS_SERVER_CHART_VERSION="3.13.0"
 
+TEMPO_VERSION="2.10.0"
+TEMPO_CHART_VERSION="1.24.4"
+
 ARTIFACTS_DIR="artifacts/observability"
 
 echo "============================================="
@@ -23,6 +26,7 @@ echo "Phase 15: Pulling Observability Stack artifacts"
 echo "  - Loki ${LOKI_VERSION} (log aggregation)"
 echo "  - Grafana Alloy ${ALLOY_VERSION} (log collector, replaces Promtail EOL)"
 echo "  - Metrics Server ${METRICS_SERVER_VERSION} (HPA support)"
+echo "  - Grafana Tempo ${TEMPO_VERSION} (distributed tracing)"
 echo "============================================="
 
 mkdir -p "$ARTIFACTS_DIR/images"
@@ -32,7 +36,7 @@ mkdir -p "$ARTIFACTS_DIR/helm"
 # LOKI
 # -------------------------------------------------------
 echo ""
-echo "[1/3] Pulling Loki ${LOKI_VERSION} images..."
+echo "[1/4] Pulling Loki ${LOKI_VERSION} images..."
 
 echo "  - grafana/loki:${LOKI_VERSION}..."
 docker pull "docker.io/grafana/loki:${LOKI_VERSION}"
@@ -62,7 +66,7 @@ docker save "docker.io/kiwigrid/k8s-sidecar:${K8S_SIDECAR_VERSION}" \
 # GRAFANA ALLOY (replaces Promtail - EOL March 2026)
 # -------------------------------------------------------
 echo ""
-echo "[2/3] Pulling Grafana Alloy ${ALLOY_VERSION} images..."
+echo "[2/4] Pulling Grafana Alloy ${ALLOY_VERSION} images..."
 
 echo "  - grafana/alloy:${ALLOY_VERSION}..."
 docker pull "docker.io/grafana/alloy:${ALLOY_VERSION}"
@@ -83,7 +87,7 @@ docker save "quay.io/prometheus-operator/prometheus-config-reloader:${CONFIG_REL
 # METRICS SERVER (required for HPA)
 # -------------------------------------------------------
 echo ""
-echo "[3/3] Pulling Metrics Server ${METRICS_SERVER_VERSION}..."
+echo "[3/4] Pulling Metrics Server ${METRICS_SERVER_VERSION}..."
 
 echo "  - metrics-server:${METRICS_SERVER_VERSION}..."
 docker pull "registry.k8s.io/metrics-server/metrics-server:${METRICS_SERVER_VERSION}"
@@ -99,6 +103,22 @@ helm pull metrics-server/metrics-server --version "${METRICS_SERVER_CHART_VERSIO
 echo "  Saving Metrics Server image..."
 docker save "registry.k8s.io/metrics-server/metrics-server:${METRICS_SERVER_VERSION}" \
     -o "$ARTIFACTS_DIR/images/metrics-server-${METRICS_SERVER_VERSION}.tar"
+
+# -------------------------------------------------------
+# GRAFANA TEMPO (distributed tracing)
+# -------------------------------------------------------
+echo ""
+echo "[4/4] Pulling Grafana Tempo ${TEMPO_VERSION}..."
+
+echo "  - grafana/tempo:${TEMPO_VERSION}..."
+docker pull "docker.io/grafana/tempo:${TEMPO_VERSION}"
+
+echo "  Downloading Tempo Helm chart v${TEMPO_CHART_VERSION}..."
+helm pull grafana/tempo --version "${TEMPO_CHART_VERSION}" -d "$ARTIFACTS_DIR/helm"
+
+echo "  Saving Tempo image..."
+docker save "docker.io/grafana/tempo:${TEMPO_VERSION}" \
+    -o "$ARTIFACTS_DIR/images/tempo-${TEMPO_VERSION}.tar"
 
 # -------------------------------------------------------
 # PUSH TO LOCAL REGISTRY
@@ -133,6 +153,11 @@ docker tag "registry.k8s.io/metrics-server/metrics-server:${METRICS_SERVER_VERSI
     "localhost:5000/metrics-server/metrics-server:${METRICS_SERVER_VERSION}"
 docker push "localhost:5000/metrics-server/metrics-server:${METRICS_SERVER_VERSION}"
 
+# Tempo
+docker tag "docker.io/grafana/tempo:${TEMPO_VERSION}" \
+    "localhost:5000/grafana/tempo:${TEMPO_VERSION}"
+docker push "localhost:5000/grafana/tempo:${TEMPO_VERSION}"
+
 # -------------------------------------------------------
 # SUMMARY
 # -------------------------------------------------------
@@ -146,6 +171,7 @@ echo "  localhost:5000/kiwigrid/k8s-sidecar:${K8S_SIDECAR_VERSION}"
 echo "  localhost:5000/grafana/alloy:${ALLOY_VERSION}"
 echo "  localhost:5000/prometheus-operator/prometheus-config-reloader:${CONFIG_RELOADER_VERSION}"
 echo "  localhost:5000/metrics-server/metrics-server:${METRICS_SERVER_VERSION}"
+echo "  localhost:5000/grafana/tempo:${TEMPO_VERSION}"
 echo ""
 echo "Helm charts in $ARTIFACTS_DIR/helm:"
 ls -lh "$ARTIFACTS_DIR/helm/"

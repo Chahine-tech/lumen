@@ -1,0 +1,57 @@
+# Grafana Tempo 2.10.0 - Airgap Override Values
+# Mode: monolithic (single binary)
+# Storage: local filesystem (no S3/MinIO)
+
+# --- Image override ---
+tempo:
+  registry: localhost:5000
+  repository: grafana/tempo
+  tag: "2.10.0"
+  pullPolicy: IfNotPresent
+
+  # --- Tracing storage config ---
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal
+
+  # --- OTLP receivers ---
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+
+  # --- Retention (15 days) ---
+  retention: 336h
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# --- Persistence (PVC for trace storage) ---
+persistence:
+  enabled: true
+  storageClassName: local-path
+  size: 5Gi
+
+# --- Service: expose OTLP + query ports ---
+service:
+  type: ClusterIP
+
+# --- Disable ServiceMonitor (not needed) ---
+serviceMonitor:
+  enabled: false
+
+# --- Disable metrics generator (not needed) ---
+tempoQuery:
+  enabled: false

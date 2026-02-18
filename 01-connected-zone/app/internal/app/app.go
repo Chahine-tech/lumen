@@ -53,8 +53,10 @@ func NewApp() (*App, error) {
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
 	handler := middleware.Recovery(
-		middleware.Logging(
-			middleware.Metrics(m)(mux),
+		middleware.Tracing("lumen-api")(
+			middleware.Logging(
+				middleware.Metrics(m)(mux),
+			),
 		),
 	)
 

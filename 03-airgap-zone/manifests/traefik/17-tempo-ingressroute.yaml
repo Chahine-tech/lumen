@@ -1,0 +1,47 @@
+# Traefik IngressRoutes for Grafana Tempo (distributed tracing)
+
+---
+# Tempo HTTP → HTTPS redirect
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: tempo-http
+  namespace: monitoring
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`tempo.airgap.local`)
+      kind: Rule
+      services:
+        - name: tempo
+          port: 3200
+      middlewares:
+        - name: https-redirect
+          namespace: traefik
+
+---
+# Tempo HTTPS
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: tempo-https
+  namespace: monitoring
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`tempo.airgap.local`)
+      kind: Rule
+      services:
+        - name: tempo
+          port: 3200
+      middlewares:
+        - name: security-headers
+          namespace: traefik
+        - name: compression
+          namespace: traefik
+        - name: rate-limit
+          namespace: traefik
+  tls:
+    secretName: airgap-tls
