@@ -4,7 +4,7 @@
 
 # --- Image override ---
 tempo:
-  registry: localhost:5000
+  registry: 192.168.2.2:5000
   repository: grafana/tempo
   tag: "2.10.0"
   pullPolicy: IfNotPresent

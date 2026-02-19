@@ -2,7 +2,7 @@
 # Required for HPA (Horizontal Pod Autoscaler)
 
 image:
-  repository: localhost:5000/metrics-server/metrics-server
+  repository: 192.168.2.2:5000/metrics-server/metrics-server
   tag: "v0.8.0"
   pullPolicy: IfNotPresent
 

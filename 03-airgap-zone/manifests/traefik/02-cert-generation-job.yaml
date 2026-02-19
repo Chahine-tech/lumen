@@ -128,7 +128,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: cert-generator
-          image: localhost:5000/bitnami/kubectl:latest
+          image: 192.168.2.2:5000/bitnami/kubectl:latest
           command: ["/bin/sh", "-c"]
           args:
             - |

@@ -1,6 +1,6 @@
-# Monitoring Stack - kube-prometheus-stack with Helm
+# Monitoring Stack — Complete Observability (Metrics + Logs + Traces)
 
-This document covers Phase 10 (kube-prometheus-stack deployment) and Phase 11/12 (upgrade to latest versions).
+This document covers Phase 10 (kube-prometheus-stack), Phase 11/12 (upgrades), and Phase 15 (Loki + Alloy + Tempo + OpenTelemetry).
 
 ---
 
@@ -9,6 +9,8 @@ This document covers Phase 10 (kube-prometheus-stack deployment) and Phase 11/12
 - [Overview](#overview)
 - [Phase 10: kube-prometheus-stack Deployment](#phase-10-kube-prometheus-stack-deployment)
 - [Phase 11/12: Upgrade to Latest Versions](#phase-1112-upgrade-to-latest-versions)
+- [Phase 15: Logs — Loki + Alloy](#phase-15-logs--pprof-february-17-2026)
+- [Phase 15 (suite): Traces — Tempo + OpenTelemetry](#phase-15-suite-traces--grafana-tempo--opentelemetry-february-18-2026)
 - [Architecture](#architecture)
 - [Components](#components)
 - [Deployment Workflow](#deployment-workflow)
@@ -1059,13 +1061,235 @@ additionalDataSources:
 {namespace="lumen", app="lumen-api"} | json | status >= 500
 ```
 
-### 3 Pillars Status
+### 3 Pillars Status (after Phase 15 part 1)
 
 | Pillar | Status | Stack |
 |--------|--------|-------|
 | **Metrics** | ✅ Complete | Prometheus 3.5.1 + Grafana 12.4.0 |
 | **Logs** | ✅ Complete | Loki 3.6.5 + Alloy v1.13.1 |
-| **Traces** | ⏳ Pending | Tempo (planned) |
+| **Traces** | ⏳ Pending | Tempo (next) |
+
+---
+
+## Phase 15 (suite): Traces — Grafana Tempo + OpenTelemetry (February 18, 2026)
+
+### What Changed
+
+Completed the **Traces** pillar of observability. lumen-api v1.2.0 now emits OpenTelemetry spans to Grafana Tempo, and `trace_id` appears in every structured log — enabling one-click navigation from a Loki log line to the corresponding Tempo trace in Grafana.
+
+### Grafana Tempo 2.10.0 — Distributed Tracing Backend
+
+**Mode:** Monolithic (single binary, all components in one pod).
+**Storage:** Local filesystem — no S3/MinIO needed for single-node airgap.
+**Deployment:** Helm chart `grafana/tempo:1.24.4`, extracted to `03-airgap-zone/manifests/tempo/`.
+
+**Key config (`values-airgap.yaml`):**
+```yaml
+tempo:
+  registry: localhost:5000
+  repository: grafana/tempo
+  tag: "2.10.0"
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /var/tempo/traces
+      wal:
+        path: /var/tempo/wal
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"   # lumen-api sends traces here
+  retention: 336h  # 14 days
+persistence:
+  enabled: true
+  storageClassName: local-path
+  size: 5Gi
+```
+
+**ArgoCD Application:** `03-airgap-zone/manifests/argocd/12-application-tempo.yaml`
+- sync-wave: `"6"` (after Loki wave 4, Alloy wave 5)
+- namespace: `monitoring`
+- Helm releaseName: `tempo`
+
+**Access:** https://tempo.airgap.local (Traefik IngressRoute `17-tempo-ingressroute.yaml`)
+
+### OpenTelemetry — lumen-api v1.2.0
+
+**Go SDK versions used:**
+
+| Package | Version | Note |
+|---------|---------|-------|
+| `go.opentelemetry.io/otel` | `v1.37.0` | Core SDK |
+| `go.opentelemetry.io/otel/sdk` | `v1.37.0` | TracerProvider |
+| `go.opentelemetry.io/otel/trace` | `v1.37.0` | Span API |
+| `go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp` | `v1.37.0` | OTLP HTTP exporter |
+| `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp` | `v0.62.0` | HTTP middleware |
+
+> **Version note:** otelhttp `v0.65.0` requires `otel@v1.40.0` — incompatible with `v1.37.0`. Use `v0.62.0` which is fully compatible.
+
+**New files:**
+
+`internal/tracing/tracing.go` — TracerProvider initialization:
+```go
+func Init(ctx context.Context) (func(context.Context) error, error) {
+    endpoint := os.Getenv("TEMPO_ENDPOINT")
+    // default: http://tempo.monitoring.svc.cluster.local:4318
+
+    exporter, _ := otlptracehttp.New(ctx,
+        otlptracehttp.WithEndpointURL(endpoint),
+        otlptracehttp.WithInsecure(),
+    )
+    res := resource.NewWithAttributes(semconv.SchemaURL,
+        semconv.ServiceName("lumen-api"),
+        semconv.ServiceVersion("v1.2.0"),
+    )
+    tp := sdktrace.NewTracerProvider(
+        sdktrace.WithBatcher(exporter),
+        sdktrace.WithResource(res),
+        sdktrace.WithSampler(sdktrace.AlwaysSample()),
+    )
+    otel.SetTracerProvider(tp)
+    return tp.Shutdown, nil
+}
+```
+
+`internal/middleware/tracing.go` — OTel HTTP middleware:
+```go
+func Tracing(serviceName string) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return otelhttp.NewHandler(next, serviceName,
+            otelhttp.WithMessageEvents(otelhttp.ReadEvents, otelhttp.WriteEvents),
+        )
+    }
+}
+```
+
+**Middleware chain in `app.go`:**
+```go
+handler := middleware.Recovery(
+    middleware.Tracing("lumen-api")(   // OTel: creates root span per request
+        middleware.Logging(             // slog: injects trace_id from context
+            middleware.Metrics(m)(mux), // Prometheus: records HTTP metrics
+        ),
+    ),
+)
+```
+
+**Child spans in handlers (`handlers.go`):**
+```go
+var tracer = otel.Tracer("lumen-api")
+
+func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
+    ctx, span := tracer.Start(r.Context(), "health.check")
+    defer span.End()
+
+    _, redisSpan := tracer.Start(ctx, "redis.ping")
+    // ... redis ping
+    redisSpan.End()
+    span.SetAttributes(attribute.String("health.status", status))
+}
+
+func (h *Handler) Hello(w http.ResponseWriter, r *http.Request) {
+    ctx, span := tracer.Start(r.Context(), "hello.handler")
+    defer span.End()
+
+    _, redisSpan := tracer.Start(ctx, "redis.increment")
+    // ... redis incr
+    redisSpan.SetAttributes(attribute.Int64("counter.value", counter))
+    redisSpan.End()
+}
+```
+
+**trace_id in logs (`middleware/logging.go`):**
+```go
+span := trace.SpanFromContext(r.Context())
+slog.Info("request",
+    "method", r.Method,
+    "path", r.URL.Path,
+    "status", wrapped.statusCode,
+    "duration_ms", time.Since(start).Milliseconds(),
+    "trace_id", span.SpanContext().TraceID().String(),  // NEW
+)
+```
+
+Every request log now contains `trace_id`, e.g.:
+```json
+{"time":"2026-02-18T10:00:00Z","level":"INFO","msg":"request","method":"GET","path":"/hello","status":200,"duration_ms":1,"trace_id":"173db01794a77852a12..."}
+```
+
+### Grafana Datasources — Loki↔Tempo Correlation
+
+Updated `kube-prometheus-stack-helm/values.yaml` (`additionalDataSources`):
+
+```yaml
+additionalDataSources:
+  - name: Loki
+    type: loki
+    uid: loki
+    url: http://loki-gateway.monitoring.svc.cluster.local
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - name: TraceID
+          matcherRegex: '"trace_id":"(\w+)"'  # parse trace_id from JSON log
+          url: '${__value.raw}'
+          datasourceUid: tempo                 # → open in Tempo
+
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    url: http://tempo.monitoring.svc.cluster.local:3200
+    jsonData:
+      httpMethod: GET
+      tracesToLogsV2:                          # Tempo → Loki drilldown
+        datasourceUid: loki
+        spanStartTimeShift: '-1m'
+        spanEndTimeShift: '1m'
+        tags:
+          - key: app
+```
+
+### NetworkPolicies for Tempo
+
+File: `03-airgap-zone/manifests/network-policies/14-allow-tempo.yaml`
+
+Three policies:
+1. **`allow-tempo-otlp-egress`** (lumen ns): lumen-api → monitoring port 4318 (OTLP HTTP)
+2. **`tempo-otlp-ingress`** (monitoring ns): accept from lumen:4318/4317, from grafana:3200, from traefik:3200
+3. **`grafana-tempo-egress`** (monitoring ns): grafana → tempo:3200, grafana → loki:3100
+
+### Deployment manifest (`03-lumen-api.yaml`)
+
+```yaml
+image: localhost:5000/lumen-api:v1.2.0
+env:
+  - name: TEMPO_ENDPOINT
+    value: "http://tempo.monitoring.svc.cluster.local:4318"
+```
+
+### Verifying Traces in Grafana
+
+**Grafana → Explore → Tempo → Search → Service Name: `lumen-api`**
+
+Shows all traces with:
+- Trace ID (e.g., `173db01794a77852...`)
+- Root span name (`/hello`, `/health`)
+- Duration
+- Child spans: `hello.handler` → `redis.increment`
+
+**Grafana → Explore → Loki → query `{namespace="lumen"}` → click `trace_id` value → opens Tempo**
+
+### 3 Pillars Status — COMPLETE ✅
+
+| Pillar | Status | Stack |
+|--------|--------|-------|
+| **Metrics** | ✅ Complete | Prometheus 3.5.1 + Grafana 12.4.0 |
+| **Logs** | ✅ Complete | Loki 3.6.5 + Alloy v1.13.1 |
+| **Traces** | ✅ Complete | Grafana Tempo 2.10.0 + OpenTelemetry Go SDK v1.37.0 |
 
 ---
 
@@ -1081,9 +1305,12 @@ additionalDataSources:
 - [Promtail EOL Announcement](https://community.grafana.com/t/promtail-end-of-life-eol-march-2026/159636)
 - [VERSION-COMPARISON.md](./VERSION-COMPARISON.md) - Detailed version comparison
 - [TESTING-MONITORING.md](./TESTING-MONITORING.md) - Testing procedures
+- [Grafana Tempo Documentation](https://grafana.com/docs/tempo/latest/)
+- [OpenTelemetry Go SDK](https://opentelemetry.io/docs/languages/go/)
+- [OTel contrib otelhttp](https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp)
 
 ---
 
-**Last Updated:** February 17, 2026
+**Last Updated:** February 18, 2026
 **Project:** Lumen Airgap Kubernetes
-**Phases Covered:** Phase 10 (kube-prometheus-stack), Phase 11/12 (Upgrades to latest versions)
+**Phases Covered:** Phase 10 (kube-prometheus-stack), Phase 11/12 (Upgrades), Phase 15 (Loki + Alloy + Tempo + OpenTelemetry)

@@ -4,7 +4,7 @@
 
 # --- Global image registry override ---
 global:
-  imageRegistry: localhost:5000
+  imageRegistry: 192.168.2.2:5000
 
 # --- Deployment mode ---
 deploymentMode: SingleBinary
@@ -82,7 +82,7 @@ gateway:
   enabled: true
   replicas: 1
   image:
-    registry: localhost:5000
+    registry: 192.168.2.2:5000
     repository: nginxinc/nginx-unprivileged
     tag: 1.29-alpine
     pullPolicy: IfNotPresent

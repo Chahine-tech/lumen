@@ -5,11 +5,11 @@
 # --- Image registry override ---
 global:
   image:
-    registry: "localhost:5000"
+    registry: "192.168.2.2:5000"
 
 # --- Alloy image ---
 image:
-  registry: "localhost:5000"
+  registry: "192.168.2.2:5000"
   repository: grafana/alloy
   tag: "v1.13.1"
   pullPolicy: IfNotPresent
@@ -18,7 +18,7 @@ image:
 configReloader:
   enabled: true
   image:
-    registry: "localhost:5000"
+    registry: "192.168.2.2:5000"
     repository: prometheus-operator/prometheus-config-reloader
     tag: "v0.81.0"
 
