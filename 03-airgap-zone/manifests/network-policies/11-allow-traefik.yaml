@@ -14,7 +14,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: traefik
+      app.kubernetes.io/name: traefik
   policyTypes:
     - Ingress
   ingress:
@@ -39,7 +39,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: traefik
+      app.kubernetes.io/name: traefik
   policyTypes:
     - Egress
   egress:
@@ -117,7 +117,7 @@ spec:
               name: traefik
           podSelector:
             matchLabels:
-              app: traefik
+              app.kubernetes.io/name: traefik
       ports:
         - protocol: TCP
           port: 3000
@@ -134,19 +134,10 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: grafana
+      app.kubernetes.io/name: grafana
   policyTypes:
     - Ingress
   ingress:
-    # Existing access (keep if any)
-    - from:
-        - podSelector:
-            matchLabels:
-              app: prometheus
-      ports:
-        - protocol: TCP
-          port: 3000
-
     # NEW: Traefik access
     - from:
         - namespaceSelector:
@@ -154,7 +145,7 @@ spec:
               name: traefik
           podSelector:
             matchLabels:
-              app: traefik
+              app.kubernetes.io/name: traefik
       ports:
         - protocol: TCP
           port: 3000
@@ -171,7 +162,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: prometheus
+      app.kubernetes.io/name: prometheus
   policyTypes:
     - Ingress
   ingress:
@@ -189,7 +180,7 @@ spec:
               name: traefik
           podSelector:
             matchLabels:
-              app: traefik
+              app.kubernetes.io/name: traefik
       ports:
         - protocol: TCP
           port: 9090
@@ -206,7 +197,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: alertmanager
+      app.kubernetes.io/name: alertmanager
   policyTypes:
     - Ingress
   ingress:
@@ -214,7 +205,7 @@ spec:
     - from:
         - podSelector:
             matchLabels:
-              app: prometheus
+              app.kubernetes.io/name: prometheus
       ports:
         - protocol: TCP
           port: 9093
@@ -226,7 +217,7 @@ spec:
               name: traefik
           podSelector:
             matchLabels:
-              app: traefik
+              app.kubernetes.io/name: traefik
       ports:
         - protocol: TCP
           port: 9093
@@ -265,7 +256,7 @@ spec:
               name: traefik
           podSelector:
             matchLabels:
-              app: traefik
+              app.kubernetes.io/name: traefik
       ports:
         - protocol: TCP
           port: 80
