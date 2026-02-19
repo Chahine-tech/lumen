@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.lumen.arp</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/sbin/arp</string>
+        <string>-s</string>
+        <string>192.168.2.100</string>
+        <string>52:54:00:aa:73:c6</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/lumen-arp.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/lumen-arp.log</string>
+</dict>
+</plist>
