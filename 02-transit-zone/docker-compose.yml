@@ -1,10 +1,7 @@
 version: '3.8'
 
-# Transit Zone: Registry pour stocker les images avant transfert en airgap
-# Simule un "sneakernet" ou une zone DMZ
-
 services:
-  # Simple Docker Registry (alternative légère à Harbor)
+  # Simple Docker Registry
   registry:
     image: registry:2
     container_name: transit-registry
@@ -20,7 +17,6 @@ services:
       - transit-net
     restart: unless-stopped
 
-  # Registry UI pour visualiser les images
   registry-ui:
     image: joxit/docker-registry-ui:latest
     container_name: transit-registry-ui
@@ -38,7 +34,7 @@ services:
       - transit-net
     restart: unless-stopped
 
-  # Nginx pour servir les fichiers (Helm charts, binaries, etc.)
+  # Nginx
   fileserver:
     image: nginx:alpine
     container_name: transit-fileserver

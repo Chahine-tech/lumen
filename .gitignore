@@ -47,3 +47,6 @@ kubeconfig
 tmp/
 temp/
 .tmp/
+
+# Local only
+TODO.md
