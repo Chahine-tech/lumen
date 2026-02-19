@@ -11,14 +11,14 @@ alertmanager:
     image:
       registry: 192.168.2.2:5000
       repository: prometheus/alertmanager
-      tag: v0.31.1  # Updated to latest
+      tag: v0.28.0
 
 # Grafana
 grafana:
   image:
     registry: 192.168.2.2:5000
     repository: grafana/grafana
-    tag: "12.4.0-22046043985"  # Updated to latest (Feb 2026)
+    tag: "11.4.1"
   adminPassword: admin
 
   # Sidecar for auto-reload of dashboards
@@ -26,7 +26,7 @@ grafana:
     image:
       registry: 192.168.2.2:5000
       repository: kiwigrid/k8s-sidecar
-      tag: "1.30.1"  # Updated to latest
+      tag: "1.28.0"
     dashboards:
       enabled: true
     datasources:
@@ -37,14 +37,14 @@ kubeStateMetrics:
   image:
     registry: 192.168.2.2:5000
     repository: kube-state-metrics/kube-state-metrics
-    tag: v2.14.0  # Updated to latest
+    tag: v2.14.0
 
 # Node Exporter
 nodeExporter:
   image:
     registry: 192.168.2.2:5000
     repository: prometheus/node-exporter
-    tag: v1.8.2  # Updated to latest
+    tag: v1.8.2
 
 # Prometheus
 prometheus:
@@ -52,7 +52,7 @@ prometheus:
     image:
       registry: 192.168.2.2:5000
       repository: prometheus/prometheus
-      tag: v3.5.1  # Updated to latest LTS (Prometheus 3.x)
+      tag: v3.1.0
 
     # Match ALL ServiceMonitors
     serviceMonitorSelector: {}
@@ -63,15 +63,15 @@ prometheusOperator:
   image:
     registry: 192.168.2.2:5000
     repository: prometheus-operator/prometheus-operator
-    tag: v0.78.2  # Updated to latest (supports Prometheus 3.x)
+    tag: v0.80.0
 
   prometheusConfigReloader:
     image:
       registry: 192.168.2.2:5000
       repository: prometheus-operator/prometheus-config-reloader
-      tag: v0.78.2  # Updated to match operator version
+      tag: v0.80.0
 
   admissionWebhooks:
-    enabled: false  # Disable webhooks for simplicity in airgap
+    enabled: false
     patch:
-      enabled: false  # Also disable the webhook patch job
+      enabled: false
