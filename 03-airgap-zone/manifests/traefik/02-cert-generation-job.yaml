@@ -77,15 +77,17 @@ data:
     echo "6️⃣  Verifying certificate..."
     openssl x509 -in tls.crt -text -noout | grep -A2 "Subject Alternative Name"
 
-    # 7. Create Kubernetes TLS Secret
-    echo "7️⃣  Creating Kubernetes Secret..."
+    # 7. Create Kubernetes TLS Secret in all namespaces that have HTTPS IngressRoutes
+    echo "7️⃣  Creating Kubernetes Secret in all required namespaces..."
     kubectl create secret tls airgap-tls \
       --cert=tls.crt \
       --key=tls.key \
-      -n traefik \
       --dry-run=client -o yaml > /tmp/secret.yaml
 
-    kubectl apply -f /tmp/secret.yaml
+    for ns in traefik monitoring argocd gitea lumen; do
+      sed "s/namespace: .*/namespace: $ns/" /tmp/secret.yaml | kubectl apply -f -
+      echo "  ✓ airgap-tls created in namespace $ns"
+    done
 
     # 8. Store CA certificate in ConfigMap for distribution
     echo "8️⃣  Creating CA ConfigMap..."
@@ -160,10 +162,9 @@ metadata:
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   name: cert-generator
-  namespace: traefik
 rules:
   - apiGroups: [""]
     resources: ["secrets", "configmaps"]
@@ -171,15 +172,14 @@ rules:
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRoleBinding
 metadata:
   name: cert-generator
-  namespace: traefik
 subjects:
   - kind: ServiceAccount
     name: cert-generator
     namespace: traefik
 roleRef:
-  kind: Role
+  kind: ClusterRole
   name: cert-generator
   apiGroup: rbac.authorization.k8s.io
