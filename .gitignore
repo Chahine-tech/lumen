@@ -51,5 +51,5 @@ temp/
 # Local only
 TODO.md
 
-# Generated cert artifacts (récupérer via: kubectl get cm airgap-ca -n traefik -o jsonpath='{.data.ca\.crt}')
+# Generated cert artifacts (retrieve via: kubectl get cm airgap-ca -n traefik -o jsonpath='{.data.ca\.crt}')
 *.crt
