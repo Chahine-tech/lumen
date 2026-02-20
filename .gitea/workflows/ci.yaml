@@ -64,6 +64,7 @@ jobs:
         run: |
           docker run --rm \
             -v /var/cache/trivy:/root/.cache/trivy \
+            -v /var/run/docker.sock:/var/run/docker.sock \
             ${{ env.REGISTRY }}/aquasec/trivy:0.59.1 \
             image \
             --skip-db-update \
