@@ -26,6 +26,8 @@ data:
     container:
       network: host
       privileged: false
+      dns_servers:
+        - 10.43.0.10
       valid_volumes:
         - /var/cache/trivy
 ---
@@ -83,6 +85,8 @@ spec:
                 secretKeyRef:
                   name: gitea-runner-token
                   key: token
+            - name: GITEA_INSTANCE_URL
+              value: http://gitea.gitea.svc.cluster.local:3000
           volumeMounts:
             - name: runner-data
               mountPath: /data
