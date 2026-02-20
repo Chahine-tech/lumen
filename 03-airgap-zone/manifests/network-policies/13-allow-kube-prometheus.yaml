@@ -36,7 +36,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: prometheus-operator
+      app.kubernetes.io/name: kube-prometheus-stack-prometheus-operator
   policyTypes:
     - Egress
   egress:
@@ -171,7 +171,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: node-exporter
+      app.kubernetes.io/name: prometheus-node-exporter
   policyTypes:
     - Egress
   egress:
