@@ -26,7 +26,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          server-url: http://gitea.gitea.svc.cluster.local:3000
+          server-url: http://192.168.2.2:30300
 
       - name: Run tests
         working-directory: 01-connected-zone/app
@@ -43,7 +43,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          server-url: http://gitea.gitea.svc.cluster.local:3000
+          server-url: http://192.168.2.2:30300
 
       - name: Compute image tag
         id: meta

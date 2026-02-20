@@ -24,9 +24,8 @@ data:
     cache:
       enabled: false
     container:
-      network: bridge
+      network: host
       privileged: false
-      options: "--add-host=gitea.gitea.svc.cluster.local:10.43.111.145"
       valid_volumes:
         - /var/cache/trivy
 ---

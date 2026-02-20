@@ -6,7 +6,7 @@ metadata:
   labels:
     app: gitea
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: gitea
   ports:
@@ -14,6 +14,7 @@ spec:
     protocol: TCP
     port: 3000
     targetPort: 3000
+    nodePort: 30300
   - name: ssh
     protocol: TCP
     port: 22
