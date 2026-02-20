@@ -1,13 +1,13 @@
-# Allow lumen-api to communicate with Redis
-# This is an explicit allowlist: only API pods can talk to Redis
+# Allow lumen-api to communicate with Redis (master + replica) on port 6379
+# Allow lumen-api to communicate with Redis sentinels on port 26379
+# Allow inter-Redis communication (replication + sentinel healthchecks)
 
+# lumen-api → redis master/replica/sentinel (ingress on redis pods)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-api-to-redis
   namespace: lumen
-  annotations:
-    description: "Allow lumen-api pods to access Redis"
 spec:
   podSelector:
     matchLabels:
@@ -15,6 +15,7 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    # lumen-api → master and replica (port 6379)
     - from:
         - podSelector:
             matchLabels:
@@ -22,16 +23,48 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
+    # lumen-api → sentinels (port 26379)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: lumen-api
+      ports:
+        - protocol: TCP
+          port: 26379
+    # sentinels → master/replica (healthcheck + failover promotion, port 6379)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: redis
+              role: sentinel
+      ports:
+        - protocol: TCP
+          port: 6379
+    # master/replica → sentinel (replication status, port 26379)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 26379
+    # replica → master (replication, port 6379)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: redis
+              role: replica
+      ports:
+        - protocol: TCP
+          port: 6379
 
 ---
-# Allow Redis egress to API (for health checks if needed)
+# Redis pods egress: to each other + to lumen-api
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: redis-egress
   namespace: lumen
-  annotations:
-    description: "Allow Redis to respond to lumen-api"
 spec:
   podSelector:
     matchLabels:
@@ -39,11 +72,26 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # Allow responses to API
+    # All redis pods → all redis pods (replication + sentinel communication)
     - to:
         - podSelector:
             matchLabels:
-              app: lumen-api
+              app: redis
       ports:
         - protocol: TCP
           port: 6379
+        - protocol: TCP
+          port: 26379
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

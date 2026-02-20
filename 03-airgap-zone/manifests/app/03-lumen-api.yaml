@@ -5,6 +5,9 @@ metadata:
   namespace: lumen
 data:
   REDIS_ADDR: "redis:6379"
+  REDIS_MODE: "sentinel"
+  REDIS_SENTINEL_ADDRS: "redis-sentinel.lumen.svc.cluster.local:26379"
+  REDIS_MASTER_NAME: "mymaster"
   PORT: "8080"
 
 ---
@@ -50,7 +53,7 @@ spec:
       labels:
         app: lumen-api
         tier: backend
-        version: v1.0.0
+        version: v1.3.0
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8080"
@@ -58,7 +61,7 @@ spec:
     spec:
       containers:
         - name: lumen-api
-          image: 192.168.2.2:5000/lumen-api:v1.2.0
+          image: 192.168.2.2:5000/lumen-api:v1.3.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -70,6 +73,21 @@ spec:
                 configMapKeyRef:
                   name: lumen-api-config
                   key: REDIS_ADDR
+            - name: REDIS_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: lumen-api-config
+                  key: REDIS_MODE
+            - name: REDIS_SENTINEL_ADDRS
+              valueFrom:
+                configMapKeyRef:
+                  name: lumen-api-config
+                  key: REDIS_SENTINEL_ADDRS
+            - name: REDIS_MASTER_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: lumen-api-config
+                  key: REDIS_MASTER_NAME
             - name: PORT
               valueFrom:
                 configMapKeyRef:

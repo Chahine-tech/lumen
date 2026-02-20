@@ -39,7 +39,7 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # To Redis
+    # To Redis master/replica (port 6379) and sentinels (port 26379)
     - to:
         - podSelector:
             matchLabels:
@@ -47,3 +47,5 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
+        - protocol: TCP
+          port: 26379

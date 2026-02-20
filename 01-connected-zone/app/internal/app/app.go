@@ -25,11 +25,14 @@ type App struct {
 }
 
 func NewApp() (*App, error) {
-	redisAddr := getEnv("REDIS_ADDR", "localhost:6379")
-	port := getEnv("PORT", "8080")
+	redisAddr       := getEnv("REDIS_ADDR", "localhost:6379")
+	redisMode       := getEnv("REDIS_MODE", "standalone")
+	sentinelAddrs   := getEnv("REDIS_SENTINEL_ADDRS", "")
+	redisMasterName := getEnv("REDIS_MASTER_NAME", "mymaster")
+	port            := getEnv("PORT", "8080")
 
-	slog.Info("Connecting to Redis", "addr", redisAddr)
-	redisStore, err := store.NewRedisStore(redisAddr)
+	slog.Info("Connecting to Redis", "addr", redisAddr, "mode", redisMode)
+	redisStore, err := store.NewRedisStore(redisAddr, redisMode, sentinelAddrs, redisMasterName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Redis: %w", err)
 	}
