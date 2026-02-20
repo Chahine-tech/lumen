@@ -12,6 +12,7 @@ on:
     paths:
       - "01-connected-zone/app/**"
       - "01-connected-zone/Dockerfile"
+  workflow_dispatch:
 
 env:
   REGISTRY: 192.168.2.2:5000
