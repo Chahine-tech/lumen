@@ -10,13 +10,11 @@ import (
 )
 
 func main() {
-	// Configure structured JSON logging (for Loki)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
 	slog.SetDefault(logger)
 
-	// Initialize OpenTelemetry TracerProvider (sends traces to Tempo)
 	ctx := context.Background()
 	shutdown, err := tracing.Init(ctx)
 	if err != nil {
