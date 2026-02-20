@@ -12,7 +12,7 @@ NC='\033[0m'
 
 ARTIFACTS="../../01-connected-zone/artifacts/argocd/install.yaml"
 OUTPUT="../manifests/argocd/02-install-airgap.yaml"
-REGISTRY_IP="192.168.107.2:5000"
+REGISTRY_IP="192.168.2.2:5000"
 
 if [ ! -f "$ARTIFACTS" ]; then
   echo -e "${RED}Error: $ARTIFACTS not found${NC}"

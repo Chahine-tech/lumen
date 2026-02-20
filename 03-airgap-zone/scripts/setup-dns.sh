@@ -7,7 +7,7 @@ set -e
 
 HOSTS_FILE="/etc/hosts"
 BACKUP_FILE="/etc/hosts.backup.$(date +%Y%m%d_%H%M%S)"
-TRAEFIK_IP="192.168.107.3"  # K3d LoadBalancer IP
+TRAEFIK_IP="192.168.2.100"  # MetalLB LoadBalancer IP
 
 DOMAINS=(
     "traefik.airgap.local"

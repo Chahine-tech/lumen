@@ -83,8 +83,7 @@ make test-airgap
 make deploy                     # Deploy everything
 make deploy-network-policies    # Apply security policies
 make deploy-opa                 # Enable admission control
-make deploy-monitoring          # Setup observability
-make deploy-argocd              # Setup GitOps (optional)
+make deploy-monitoring          # Setup observability (managed by ArgoCD)
 ```
 
 ### 5. Access Services
@@ -190,11 +189,7 @@ make test-opa                  # Test admission control
 
 ## 📚 Documentation
 
-- [Complete Setup Guide](docs/SETUP.md) - Detailed step-by-step instructions
-- [Deployment Guide](docs/DEPLOYMENT.md) - Real deployment results and troubleshooting
-- [Traefik Ingress](docs/traefik.md) - Production-grade ingress with Helm, TLS, and troubleshooting
-- [Monitoring Stack](docs/monitoring.md) - kube-prometheus-stack deployment and upgrades (58KB)
-- [Architecture Deep Dive](docs/ARCHITECTURE.md) - Technical details
+- [Airgap Multipass Setup](docs/AIRGAP-MULTIPASS.md) - Phase 16 setup guide (VMs, K3s, MetalLB, registry, ArgoCD)
 
 ## 🛠️ Common Commands
 
@@ -215,20 +210,23 @@ make clean             # Remove everything
 
 **Completed Phases:**
 - ✅ Phase 1-4: Build, Transit, K3s, Application Deployment
-- ✅ Phase 5: NetworkPolicies - Zero Trust Security (13+ policies)
+- ✅ Phase 5: NetworkPolicies - Zero Trust Security
 - ✅ Phase 6-7: Basic Monitoring + ArgoCD GitOps with Redis Persistence
 - ✅ Phase 8: Gitea - Internal Git Server for True Airgap GitOps
 - ✅ Phase 9: Traefik Ingress Controller - Production-Grade Service Exposure (Helm)
-- ✅ Phase 10: Production Observability - kube-prometheus-stack with 40+ Dashboards
-- ✅ Phase 11/12: Version Upgrades - Prometheus v3.5.1, Grafana v12.4.0, ArgoCD v3.2.0
+- ✅ Phase 10: Production Observability - kube-prometheus-stack (Prometheus, Grafana, AlertManager)
+- ✅ Phase 11/12: Version Upgrades
 - ✅ Phase 13: OPA Gatekeeper v3.18.0 - Admission Control (4 custom policies)
 - ✅ Phase 14: Pod Security Standards (PSS) - Restricted Mode Security
+- ✅ Phase 15: Complete Observability Stack - Loki + Alloy + Tempo (logs + traces)
+- ✅ Phase 16: Multipass Migration - 2-node K3s cluster, MetalLB, arm64, full airgap on real Linux VMs
 
 **Current State:**
 - 🛡️ **3-Layer Security**: OPA Gatekeeper + PSS + NetworkPolicies
-- 📊 **Complete Observability**: Metrics (Prometheus/Grafana) with 40+ dashboards
+- 📊 **Complete Observability**: Metrics + Logs + Traces (Prometheus, Grafana, Loki, Alloy, Tempo)
 - 🔄 **Full GitOps**: ArgoCD syncing from internal Gitea
-- 🔒 **Production-Grade**: TLS, RBAC, admission control, zero-trust networking
+- 🔒 **Production-Grade**: TLS, RBAC, admission control, zero-trust networking, MetalLB LoadBalancer
+- 🖥️ **Multi-Node**: 2-node K3s cluster on Multipass VMs (arm64)
 
 ## 🚧 Extend This Project
 
@@ -237,8 +235,8 @@ make clean             # Remove everything
 - [x] Migrate monitoring to `kube-prometheus-stack` Helm chart
 - [ ] Add Vault for secrets management
 - [ ] Implement service mesh (Linkerd/Istio)
+- [x] Add Loki for centralized logging (✅ Loki 3.6.5 + Alloy + Tempo via Helm)
 - [ ] Add Falco for runtime security
-- [ ] Add Loki for centralized logging
 - [ ] Implement Chaos Mesh for resilience testing
 
 ## 📖 Resources

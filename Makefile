@@ -18,9 +18,14 @@ all: build-connected setup-transit setup-airgap deploy test ## Run complete setu
 	@echo "$(GREEN)✓ Complete setup finished!$(NC)"
 
 # Connected Zone
-build-connected: ## Build images and package artifacts in connected zone
-	@echo "$(YELLOW)[Connected Zone]$(NC) Building..."
-	cd 01-connected-zone && ./build.sh
+build-connected: ## Pull and push images to transit registry (see 01-connected-zone/scripts/)
+	@echo "$(YELLOW)[Connected Zone]$(NC) Run scripts in 01-connected-zone/scripts/ to pull and push images"
+	@echo "  ./scripts/06-pull-gitea-images.sh"
+	@echo "  ./scripts/07-pull-traefik-images.sh"
+	@echo "  ./scripts/08-pull-kube-prometheus-stack.sh"
+	@echo "  ./scripts/09-pull-argocd.sh"
+	@echo "  ./scripts/10-pull-gatekeeper.sh"
+	@echo "  ./scripts/11-pull-observability-stack.sh"
 
 test-api-local: ## Test API locally with docker-compose
 	@echo "$(YELLOW)[Connected Zone]$(NC) Testing API locally..."
@@ -79,9 +84,9 @@ deploy-opa: ## Deploy OPA Gatekeeper policies
 	@echo "$(YELLOW)[K8s]$(NC) Deploying OPA policies..."
 	kubectl apply -f 03-airgap-zone/manifests/opa/
 
-deploy-monitoring: ## Deploy monitoring stack (Prometheus + Grafana)
-	@echo "$(YELLOW)[K8s]$(NC) Deploying monitoring..."
-	kubectl apply -f 03-airgap-zone/manifests/monitoring/
+deploy-monitoring: ## Deploy monitoring stack (managed by ArgoCD)
+	@echo "$(YELLOW)[K8s]$(NC) Monitoring is managed by ArgoCD (kube-prometheus-stack + loki + alloy + tempo)"
+	@echo "  Check status: multipass exec node-1 -- kubectl get apps -n argocd"
 
 # Testing
 test: test-k8s-connectivity test-api-k8s test-network-policies ## Run all tests
@@ -171,11 +176,10 @@ clean: clean-k8s clean-docker ## Clean everything
 	@echo "$(GREEN)✓ Cleanup complete$(NC)"
 
 # Documentation
-docs: ## Generate documentation
+docs: ## Show available documentation
 	@echo "$(YELLOW)Documentation available:$(NC)"
-	@echo "  README.md - Project overview"
-	@echo "  docs/SETUP.md - Detailed setup guide"
-	@echo "  docs/ARCHITECTURE.md - Architecture details"
+	@echo "  README.md              - Project overview"
+	@echo "  docs/AIRGAP-MULTIPASS.md - Phase 16 Multipass setup guide"
 
 # Quick commands
 quick-start: build-connected setup-transit ## Quick start (skip airgap setup)

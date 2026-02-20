@@ -23,7 +23,7 @@ fi
 
 echo -e "${YELLOW}[1/7]${NC} Configuring /etc/hosts for registry..."
 if ! grep -q "$REGISTRY_HOST" /etc/hosts; then
-    echo "172.20.0.2 $REGISTRY_HOST" >> /etc/hosts
+    echo "192.168.2.2 $REGISTRY_HOST" >> /etc/hosts
     echo -e "${GREEN}✓ Added $REGISTRY_HOST to /etc/hosts${NC}"
 else
     echo -e "${GREEN}✓ $REGISTRY_HOST already in /etc/hosts${NC}"
