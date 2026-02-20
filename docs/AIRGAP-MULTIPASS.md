@@ -215,6 +215,41 @@ The Gitea remote uses the public HTTPS URL (no port-forward needed):
 git remote set-url gitea https://gitea-admin:gitea-admin123@gitea.airgap.local/lumen/lumen.git
 ```
 
+## CI/CD — Gitea Actions
+
+Automated pipeline triggered on push to `main` (paths: `01-connected-zone/app/**`, `01-connected-zone/Dockerfile`, `.gitea/workflows/ci.yaml`).
+
+### Pipeline steps
+
+| Step | What it does |
+|------|-------------|
+| Test | `go test ./... -v -count=1` |
+| Build | `docker build` → tagged `lumen-api:<short-sha>` + `latest` |
+| Scan | Trivy 0.59.1 — HIGH/CRITICAL, offline DB (`/var/cache/trivy`) |
+| Push | `192.168.2.2:5000/lumen-api:<sha>` and `:latest` |
+
+### Components
+
+- **act_runner v0.2.11** — K8s Deployment in `gitea` namespace, pinned to node-1
+- **lumen-api:builder** — job container image (`golang:1.26-alpine` + `docker-cli` + `git` + `nodejs`)
+- **Gitea NodePort 30300** — exposes Gitea on `192.168.2.2:30300` (reachable from node-1 host network)
+- **Trivy DB** — pre-cached at `/var/cache/trivy` on node-1 (hostPath), no internet required
+
+### Key design decisions
+
+- Runner registers with `--instance http://192.168.2.2:30300`: this address is stored in `.runner` and becomes `GITHUB_SERVER_URL` injected into every job container. Must be reachable from `network: host` containers (node-1's network stack), not a K8s-internal DNS name.
+- `actions/checkout@v4` steps use `with: github-server-url: http://192.168.2.2:30300` as an explicit override (defense in depth — works even if runner re-registers with a wrong address).
+- Trivy runs inside a Docker container and needs `-v /var/run/docker.sock:/var/run/docker.sock` to inspect the locally built image (image exists in Docker daemon, not yet in the registry at scan time).
+
+### Trigger a manual run
+
+```bash
+# workflow_dispatch is enabled — trigger via Gitea UI:
+# Gitea → repo → Actions → CI → Run workflow
+```
+
+Or just push a change under the monitored paths.
+
 ## Key design decisions
 
 - **MetalLB as bootstrap**: installed before ArgoCD, not managed by GitOps

@@ -220,6 +220,7 @@ make clean             # Remove everything
 - ✅ Phase 14: Pod Security Standards (PSS) - Restricted Mode Security
 - ✅ Phase 15: Complete Observability Stack - Loki + Alloy + Tempo (logs + traces)
 - ✅ Phase 16: Multipass Migration - 2-node K3s cluster, MetalLB, arm64, full airgap on real Linux VMs
+- ✅ Phase 16.5: Gitea Actions CI — automated test → build → Trivy scan → push pipeline (fully airgapped)
 
 **Current State:**
 - 🛡️ **3-Layer Security**: OPA Gatekeeper + PSS + NetworkPolicies
@@ -227,6 +228,7 @@ make clean             # Remove everything
 - 🔄 **Full GitOps**: ArgoCD syncing from internal Gitea
 - 🔒 **Production-Grade**: TLS, RBAC, admission control, zero-trust networking, MetalLB LoadBalancer
 - 🖥️ **Multi-Node**: 2-node K3s cluster on Multipass VMs (arm64)
+- ⚙️ **CI Pipeline**: Gitea Actions — test → build → Trivy scan → push (100% airgapped)
 
 ## 🚧 Extend This Project
 
