@@ -376,6 +376,7 @@ spec:
                 - redis-cli -p 26379 sentinel masters | grep -q mymaster
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 5
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

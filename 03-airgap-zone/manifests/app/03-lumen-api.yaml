@@ -42,7 +42,7 @@ metadata:
   labels:
     app: lumen-api
     tier: backend
-    version: v1.0.0
+    version: v1.3.0
 spec:
   replicas: 2
   selector:
@@ -61,8 +61,8 @@ spec:
     spec:
       containers:
         - name: lumen-api
-          image: 192.168.2.2:5000/lumen-api:v1.3.0
-          imagePullPolicy: IfNotPresent
+          image: 192.168.2.2:5000/lumen-api:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
               name: http
