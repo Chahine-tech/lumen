@@ -29,11 +29,11 @@ spec:
         - name: GITEA__database__PATH
           value: "/data/gitea/gitea.db"
         - name: GITEA__server__DOMAIN
-          value: "gitea.gitea.svc.cluster.local"
+          value: "192.168.2.2"
         - name: GITEA__server__HTTP_PORT
           value: "3000"
         - name: GITEA__server__ROOT_URL
-          value: "http://gitea.gitea.svc.cluster.local:3000/"
+          value: "http://192.168.2.2:30300/"
         - name: GITEA__server__DISABLE_SSH
           value: "false"
         - name: GITEA__server__SSH_PORT
