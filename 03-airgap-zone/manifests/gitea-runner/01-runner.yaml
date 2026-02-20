@@ -72,7 +72,7 @@ spec:
             - |
               act_runner register \
                 --no-interactive \
-                --instance http://gitea.gitea.svc.cluster.local:3000 \
+                --instance http://192.168.2.2:30300 \
                 --token $(RUNNER_TOKEN) \
                 --name k8s-runner \
                 --labels ubuntu-latest:docker://192.168.2.2:5000/lumen-api:builder \
@@ -84,7 +84,7 @@ spec:
                   name: gitea-runner-token
                   key: token
             - name: GITEA_INSTANCE_URL
-              value: http://gitea.gitea.svc.cluster.local:3000
+              value: http://192.168.2.2:30300
           volumeMounts:
             - name: runner-data
               mountPath: /data

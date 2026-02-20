@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          github-server-url: http://192.168.2.2:30300
 
       - name: Run tests
         working-directory: 01-connected-zone/app
@@ -40,6 +42,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          github-server-url: http://192.168.2.2:30300
 
       - name: Compute image tag
         id: meta
