@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "01-connected-zone/app/**"
+      - "01-connected-zone/Dockerfile"
+      - ".gitea/workflows/ci.yaml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "01-connected-zone/app/**"
+      - "01-connected-zone/Dockerfile"
+
+env:
+  REGISTRY: 192.168.2.2:5000
+  IMAGE_NAME: lumen-api
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run tests
+        working-directory: 01-connected-zone/app
+        run: go test ./... -v -count=1
+
+  build-push:
+    name: Build & Push
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute image tag
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}" \
+            -t "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" \
+            -f 01-connected-zone/Dockerfile \
+            01-connected-zone/
+
+      - name: Scan image with Trivy
+        run: |
+          docker run --rm \
+            -v /var/cache/trivy:/root/.cache/trivy \
+            ${{ env.REGISTRY }}/aquasec/trivy:0.59.1 \
+            image \
+            --skip-db-update \
+            --skip-java-db-update \
+            --exit-code 0 \
+            --severity HIGH,CRITICAL \
+            --format table \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
+
+      - name: Push Docker image
+        run: |
+          docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
+          docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+
+      - name: Summary
+        run: |
+          echo "### Image pushed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> "$GITHUB_STEP_SUMMARY"

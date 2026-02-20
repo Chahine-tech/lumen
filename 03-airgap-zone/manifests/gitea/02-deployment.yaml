@@ -40,6 +40,8 @@ spec:
           value: "22"
         - name: GITEA__security__INSTALL_LOCK
           value: "true"
+        - name: GITEA__actions__ENABLED
+          value: "true"
         volumeMounts:
         - name: gitea-data
           mountPath: /data

@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gitea-runner-token
+  namespace: gitea
+type: Opaque
+stringData:
+  token: "0bu8nCWzBk9Y3m4QX2Q6dbBlvZRLLh0wrIMJmkWB"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitea-runner-config
+  namespace: gitea
+data:
+  config.yaml: |
+    log:
+      level: info
+    runner:
+      file: .runner
+      capacity: 2
+      timeout: 3h
+      insecure: true
+    cache:
+      enabled: false
+    container:
+      network: host
+      privileged: false
+      valid_volumes:
+        - /var/cache/trivy
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea-runner
+  namespace: gitea
+  labels:
+    app: gitea-runner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitea-runner
+  template:
+    metadata:
+      labels:
+        app: gitea-runner
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: node-1
+      restartPolicy: Always
+      volumes:
+        - name: runner-data
+          emptyDir: {}
+        - name: runner-config
+          configMap:
+            name: gitea-runner-config
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
+        - name: trivy-cache
+          hostPath:
+            path: /var/cache/trivy
+            type: Directory
+      containers:
+        - name: runner
+          image: 192.168.2.2:5000/gitea/act_runner:0.2.11
+          command:
+            - sh
+            - -c
+            - |
+              act_runner register \
+                --no-interactive \
+                --instance http://gitea.gitea.svc.cluster.local:3000 \
+                --token $(RUNNER_TOKEN) \
+                --name k8s-runner \
+                --labels ubuntu-latest:docker://192.168.2.2:5000/lumen-api:builder \
+              && act_runner daemon --config /config/config.yaml
+          env:
+            - name: RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: gitea-runner-token
+                  key: token
+          volumeMounts:
+            - name: runner-data
+              mountPath: /data
+            - name: runner-config
+              mountPath: /config
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+            - name: trivy-cache
+              mountPath: /var/cache/trivy
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
