@@ -113,6 +113,18 @@ jobs:
           docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}"
           docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
 
+      - name: Update manifest
+        run: |
+          SEMVER="${{ github.ref_name }}"
+          MANIFEST="03-airgap-zone/manifests/app/03-lumen-api.yaml"
+          git config user.email "ci@airgap.local"
+          git config user.name "CI Bot"
+          git remote set-url origin "http://gitea-admin:${{ secrets.CI_TOKEN }}@192.168.2.2:30300/lumen/lumen.git"
+          sed -i "s|image: 192.168.2.2:5000/lumen-api:.*|image: 192.168.2.2:5000/lumen-api:${SEMVER}|" "${MANIFEST}"
+          git add "${MANIFEST}"
+          git commit -m "chore: update lumen-api image to ${SEMVER} [skip ci]"
+          git push origin HEAD:main
+
       - name: Summary
         run: |
           SEMVER="${{ github.ref_name }}"
