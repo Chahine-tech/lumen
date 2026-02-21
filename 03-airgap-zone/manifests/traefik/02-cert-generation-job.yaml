@@ -120,7 +120,9 @@ metadata:
   annotations:
     description: "Generates self-signed CA and wildcard TLS certificate for airgap environment"
 spec:
-  ttlSecondsAfterFinished: 86400  # Clean up after 24 hours
+  # ttlSecondsAfterFinished omitted intentionally: ArgoCD would recreate the Job
+  # after TTL expiry, causing a new CA+cert to be generated and breaking TLS trust.
+  # To regenerate certs manually: kubectl delete job cert-generation -n traefik
   template:
     metadata:
       labels:
