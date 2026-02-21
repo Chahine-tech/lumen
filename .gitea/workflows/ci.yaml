@@ -7,6 +7,8 @@ on:
       - "01-connected-zone/app/**"
       - "01-connected-zone/Dockerfile"
       - ".gitea/workflows/ci.yaml"
+    tags:
+      - "v*"
   pull_request:
     branches: ["main"]
     paths:
@@ -84,4 +86,39 @@ jobs:
           echo "### Image pushed" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          github-server-url: http://192.168.2.2:30300
+
+      - name: Build and push semver image
+        run: |
+          SEMVER="${{ github.ref_name }}"
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          docker build \
+            -t "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SEMVER}" \
+            -t "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}" \
+            -t "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" \
+            -f 01-connected-zone/Dockerfile \
+            01-connected-zone/
+          docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SEMVER}"
+          docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}"
+          docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+
+      - name: Summary
+        run: |
+          SEMVER="${{ github.ref_name }}"
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "### Release pushed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SEMVER}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest\`" >> "$GITHUB_STEP_SUMMARY"
