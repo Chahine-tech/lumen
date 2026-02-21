@@ -76,3 +76,24 @@ spec:
     # - Scoping egress to specific IPs is not possible with Flannel CNI for ClusterIPs
     - ports:
         - protocol: TCP
+---
+# Allow lumen-api to egress to PostgreSQL pods on port 5432
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-egress-to-postgres
+  namespace: lumen
+spec:
+  podSelector:
+    matchLabels:
+      app: lumen-api
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: lumen-db
+      ports:
+        - protocol: TCP
+          port: 5432
