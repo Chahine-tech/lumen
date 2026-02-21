@@ -61,7 +61,7 @@ spec:
     spec:
       containers:
         - name: lumen-api
-          image: 192.168.2.2:5000/lumen-api:053eab1
+          image: 192.168.2.2:5000/lumen-api:v1.3.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
