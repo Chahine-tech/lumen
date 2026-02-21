@@ -20,6 +20,7 @@ import (
 
 type App struct {
 	store   *store.RedisStore
+	pgStore *store.PostgresStore
 	metrics *metrics.Metrics
 	server  *http.Server
 }
@@ -29,6 +30,8 @@ func NewApp() (*App, error) {
 	redisMode       := getEnv("REDIS_MODE", "standalone")
 	sentinelAddrs   := getEnv("REDIS_SENTINEL_ADDRS", "")
 	redisMasterName := getEnv("REDIS_MASTER_NAME", "mymaster")
+	pgRWDSN         := getEnv("PG_RW_DSN", "")
+	pgRODSN         := getEnv("PG_RO_DSN", "")
 	port            := getEnv("PORT", "8080")
 
 	slog.Info("Connecting to Redis", "addr", redisAddr, "mode", redisMode)
@@ -38,15 +41,49 @@ func NewApp() (*App, error) {
 	}
 	slog.Info("Redis connected successfully")
 
+	var pgStore *store.PostgresStore
+	if pgRWDSN != "" && pgRODSN != "" {
+		slog.Info("Connecting to PostgreSQL", "rw", pgRWDSN)
+		pgStore, err = store.NewPostgresStore(context.Background(), pgRWDSN, pgRODSN)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize PostgreSQL: %w", err)
+		}
+		slog.Info("PostgreSQL connected successfully")
+	} else {
+		slog.Warn("PostgreSQL not configured (PG_RW_DSN/PG_RO_DSN not set), /items routes unavailable")
+	}
+
 	m := metrics.NewMetrics()
 	m.RedisConnectionStatus.Set(1)
 
-	h := handlers.NewHandler(redisStore, m)
+	h := handlers.NewHandler(redisStore, pgStore, m)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", h.Health)
 	mux.HandleFunc("/hello", h.Hello)
 	mux.Handle("/metrics", promhttp.Handler())
+
+	// Items CRUD routes (require PostgreSQL)
+	mux.HandleFunc("/items", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			h.CreateItem(w, r)
+		case http.MethodGet:
+			h.GetItems(w, r)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/items/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			h.GetItem(w, r)
+		case http.MethodDelete:
+			h.DeleteItem(w, r)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
 
 	// pprof endpoints for profiling (CPU, memory, goroutines)
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -73,6 +110,7 @@ func NewApp() (*App, error) {
 
 	return &App{
 		store:   redisStore,
+		pgStore: pgStore,
 		metrics: m,
 		server:  server,
 	}, nil
@@ -87,6 +125,7 @@ func (a *App) Run() error {
 		slog.Info("Endpoints available",
 			"health", "/health",
 			"hello", "/hello",
+			"items", "/items (POST/GET), /items/{id} (GET/DELETE)",
 			"metrics", "/metrics",
 			"pprof", "/debug/pprof/",
 		)
@@ -116,6 +155,10 @@ func (a *App) Run() error {
 
 		if err := a.store.Close(); err != nil {
 			slog.Error("Error closing Redis", "error", err)
+		}
+
+		if a.pgStore != nil {
+			a.pgStore.Close()
 		}
 
 		slog.Info("Server stopped gracefully")

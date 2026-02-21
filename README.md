@@ -235,9 +235,10 @@ make clean             # Remove everything
 **Optional Future Enhancements:**
 - [x] Add Helm charts (✅ Traefik + kube-prometheus-stack via Helm)
 - [x] Migrate monitoring to `kube-prometheus-stack` Helm chart
-- [ ] Add Vault for secrets management
-- [ ] Implement service mesh (Linkerd/Istio)
 - [x] Add Loki for centralized logging (✅ Loki 3.6.5 + Alloy + Tempo via Helm)
+- [ ] Add Vault for secrets management (Phase 19)
+- [ ] Infrastructure as Code with Ansible (Phase 20)
+- [ ] Migrate CNI to Cilium (eBPF, L7 NetworkPolicies, Hubble observability)
 - [ ] Add Falco for runtime security
 - [ ] Implement Chaos Mesh for resilience testing
 

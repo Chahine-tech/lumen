@@ -16,12 +16,14 @@ var tracer = otel.Tracer("lumen-api")
 
 type Handler struct {
 	store   *store.RedisStore
+	pgStore *store.PostgresStore
 	metrics *metrics.Metrics
 }
 
-func NewHandler(store *store.RedisStore, metrics *metrics.Metrics) *Handler {
+func NewHandler(store *store.RedisStore, pgStore *store.PostgresStore, metrics *metrics.Metrics) *Handler {
 	return &Handler{
 		store:   store,
+		pgStore: pgStore,
 		metrics: metrics,
 	}
 }
@@ -63,6 +65,21 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 		h.metrics.RedisConnectionStatus.Set(1)
 	}
 	redisSpan.End()
+
+	_, pgSpan := tracer.Start(ctx, "postgres.ping")
+	if h.pgStore != nil {
+		if err := h.pgStore.Ping(ctx); err != nil {
+			pgSpan.RecordError(err)
+			pgSpan.SetStatus(codes.Error, err.Error())
+			checks["postgres"] = "unhealthy"
+			status = "degraded"
+		} else {
+			checks["postgres"] = "healthy"
+		}
+	} else {
+		checks["postgres"] = "not configured"
+	}
+	pgSpan.End()
 
 	span.SetAttributes(attribute.String("health.status", status))
 

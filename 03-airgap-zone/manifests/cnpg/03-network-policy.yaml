@@ -1,0 +1,78 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-lumen-api-to-postgres
+  namespace: lumen
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: lumen-db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: lumen-api
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Allow CNPG operator (cnpg-system) to reach postgres pods for status collection
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-operator-to-postgres
+  namespace: lumen
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: lumen-db
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - protocol: TCP
+          port: 9187  # CNPG metrics/status port
+        - protocol: TCP
+          port: 8000  # CNPG instance manager port
+---
+# Allow CNPG pods to communicate with each other (replication)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-intracluster
+  namespace: lumen
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: lumen-db
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: lumen-db
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: lumen-db
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+    # Allow all TCP egress for CNPG pods — required because:
+    # - CNPG instance manager must reach K8s API server (10.43.0.1:443 ClusterIP)
+    # - Flannel does not evaluate ipBlock rules for ClusterIP destinations (pre-DNAT)
+    # - Scoping egress to specific IPs is not possible with Flannel CNI for ClusterIPs
+    - ports:
+        - protocol: TCP

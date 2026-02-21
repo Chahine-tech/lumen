@@ -1,0 +1,16 @@
+# CloudNativePG Operator
+# Source: https://github.com/cloudnative-pg/cloudnative-pg
+# Version: v1.25.1
+#
+# NOTE: This file is a placeholder. The actual operator manifest is downloaded
+# by 01-connected-zone/scripts/12-pull-cnpg.sh into:
+#   01-connected-zone/artifacts/cnpg/cnpg-operator.yaml
+#
+# To deploy in airgap:
+#   1. Load images into registry (02-transit-zone/push-cnpg.sh)
+#   2. Apply the operator manifest (images must be retagged to 192.168.2.2:5000)
+#
+# The operator runs in namespace: cnpg-system (created by the manifest)
+# It watches all namespaces for Cluster CRDs.
+#
+# Image used: 192.168.2.2:5000/cloudnative-pg:v1.25.1

@@ -1,0 +1,42 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: lumen-db
+  namespace: lumen
+spec:
+  instances: 3  # 1 master + 1 replica + 1 witness (quorum = 2, tolère 1 panne)
+
+  imageName: 192.168.2.2:5000/postgresql:16.6
+
+  # Credentials auto-générées par CNPG dans le Secret "lumen-db-app"
+  # DSN disponible dans: lumen-db-app -> host, user, password, dbname
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+
+  storage:
+    size: 1Gi
+    storageClass: local-path
+
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: "128MB"
+      log_min_duration_statement: "1000"  # log queries > 1s
+
+  # Métriques Prometheus intégrées
+  monitoring:
+    enablePodMonitor: true
+
+  # Anti-affinity : répartir les pods sur les nodes disponibles
+  affinity:
+    topologyKey: kubernetes.io/hostname
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
