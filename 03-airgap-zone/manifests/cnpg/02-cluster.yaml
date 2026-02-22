@@ -25,9 +25,11 @@ spec:
       shared_buffers: "128MB"
       log_min_duration_statement: "1000"  # log queries > 1s
 
-  # Métriques Prometheus intégrées
+  # Metrics: PodMonitor managed manually in 04-pod-monitor.yaml
+  # enablePodMonitor disabled: deprecated in CNPG v1.25+, operator-created PodMonitor
+  # lacks the `release: kube-prometheus-stack` label required by Prometheus CR selector
   monitoring:
-    enablePodMonitor: true
+    enablePodMonitor: false
 
   # Anti-affinity : répartir les pods sur les nodes disponibles
   affinity:

@@ -35,11 +35,14 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: cnpg-system
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
       ports:
         - protocol: TCP
-          port: 9187  # CNPG metrics/status port
+          port: 9187  # CNPG metrics exporter
         - protocol: TCP
-          port: 8000  # CNPG instance manager port
+          port: 8000  # CNPG instance manager
 ---
 # Allow CNPG pods to communicate with each other (replication)
 apiVersion: networking.k8s.io/v1

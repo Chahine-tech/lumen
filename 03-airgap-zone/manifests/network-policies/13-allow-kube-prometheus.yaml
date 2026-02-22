@@ -122,6 +122,8 @@ spec:
         - protocol: TCP
           port: 9153  # CoreDNS metrics
         - protocol: TCP
+          port: 9187  # CloudNativePG metrics exporter
+        - protocol: TCP
           port: 3000  # Gitea
         - protocol: TCP
           port: 6379  # Redis (optional)

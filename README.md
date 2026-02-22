@@ -11,7 +11,7 @@ A hands-on project to master distributed systems, network security, and Kubernet
 - **Advanced Kubernetes**: K3s, containerd registry mirrors, admission controllers
 - **Ingress Controllers**: Traefik v3 with CRDs, TLS termination, HTTP/2, middlewares
 - **Helm Package Management**: Production-ready chart deployment and configuration
-- **Observability**: Production monitoring with kube-prometheus-stack (Prometheus v3.5, Grafana v12.4, AlertManager v0.31)
+- **Observability**: Full 3-pillar stack — Metrics (kube-prometheus-stack), Logs (Loki + Alloy), Traces (Tempo + OpenTelemetry)
 - **Security**: OPA Gatekeeper + Pod Security Standards (PSS) for admission control and runtime security
 - **GitOps**: ArgoCD for declarative continuous deployment
 - **DevOps**: Build pipelines, artifact management, air-gap deployment
@@ -23,12 +23,15 @@ A hands-on project to master distributed systems, network security, and Kubernet
 │  Connected Zone     │────▶│  Transit Zone       │────▶│  Airgap Zone (K3s)          │
 │  (Internet access)  │     │  (Registry/Bridge)  │     │  (No Internet)              │
 ├─────────────────────┤     ├─────────────────────┤     ├─────────────────────────────┤
-│ • Build images      │     │ • Docker Registry   │     │ • Lumen API + Redis         │
-│ • Download Helm     │     │ • File server       │     │ • Gitea (Git server)        │
-│ • Run tests         │     │ • Image storage     │     │ • ArgoCD (GitOps)           │
-└─────────────────────┘     └─────────────────────┘     │ • Traefik Ingress (Helm)    │
-                                                        │ • OPA Gatekeeper            │
-                                    ┌──────────────────▶│ • kube-prometheus-stack     │
+│ • Build images      │     │ • Docker Registry   │     │ • Lumen API                 │
+│ • Download Helm     │     │ • File server       │     │ • Redis HA Sentinel         │
+│ • Run tests         │     │ • Image storage     │     │ • PostgreSQL (CloudNativePG)│
+└─────────────────────┘     └─────────────────────┘     │ • Gitea (Git server)        │
+                                                        │ • ArgoCD (GitOps)           │
+                                    ┌──────────────────▶│ • Traefik Ingress (Helm)    │
+                                    │                   │ • OPA Gatekeeper            │
+                                    │                   │ • kube-prometheus-stack     │
+                                    │                   │ • Loki + Alloy + Tempo      │
                                     │                   └─────────────────────────────┘
                               git push-all                          ▲
                            (GitHub + Gitea)             https://traefik.airgap.local
@@ -36,6 +39,8 @@ A hands-on project to master distributed systems, network security, and Kubernet
                                                         https://argocd.airgap.local
                                                         https://grafana.airgap.local
                                                         https://prometheus.airgap.local
+                                                        https://tempo.airgap.local
+                                                        https://lumen-api.airgap.local
 ```
 
 ## 🚀 Quick Start
@@ -107,7 +112,8 @@ https://argocd.airgap.local               # ArgoCD (admin/[from secret])
 ## 📦 Technology Stack
 
 - **API**: Go 1.26 (production-grade with graceful shutdown)
-- **Cache**: Redis 7 Alpine
+- **Cache**: Redis 7 Alpine (HA Sentinel — 1 master + 1 replica + 3 sentinels)
+- **Database**: PostgreSQL 16.6 via CloudNativePG (1 master + 1 replica + 1 witness, read/write splitting)
 - **Cluster**: K3s (lightweight, airgap-optimized)
 - **CNI**: Flannel (default K3s CNI, upgrade path to Cilium available)
 - **Registry**: Docker Registry v2
@@ -115,8 +121,10 @@ https://argocd.airgap.local               # ArgoCD (admin/[from secret])
 - **Git Server**: Gitea (internal Git repository for airgap)
 - **GitOps**: ArgoCD v3.2.0 (pulls from internal Gitea, not GitHub)
 - **Security**: OPA Gatekeeper v3.18.0 + Pod Security Standards (PSS restricted mode)
-- **Monitoring**: kube-prometheus-stack v69 (Prometheus v3.5.1, Grafana v12.4.0, Node Exporter v1.8.2, kube-state-metrics v2.15.0)
-- **Package Management**: Helm 3 (for Traefik)
+- **Monitoring**: kube-prometheus-stack v69 (Prometheus v3.5.1, Grafana v12.4.0, AlertManager v0.31, Node Exporter v1.8.2, kube-state-metrics v2.15.0)
+- **Logging**: Loki 3.6.5 + Alloy v1.13.1 (log aggregation + collection)
+- **Tracing**: Grafana Tempo 2.10.0 + OpenTelemetry SDK (distributed traces)
+- **Package Management**: Helm 3 (Traefik, kube-prometheus-stack, Loki, Alloy, Tempo)
 - **Isolation**: iptables + containerd mirrors
 
 ## 🔑 Key Implementations
@@ -138,7 +146,7 @@ mirrors:
 ### Zero Trust Networking
 - Default deny-all NetworkPolicies
 - Explicit allow rules for required communication
-- Cilium L7 HTTP filtering
+- Per-namespace isolation (lumen, monitoring, traefik, argocd, gitea, cnpg-system)
 
 ### Security (Defense in Depth)
 
@@ -190,6 +198,7 @@ make test-opa                  # Test admission control
 ## 📚 Documentation
 
 - [Airgap Multipass Setup](docs/AIRGAP-MULTIPASS.md) - Phase 16 setup guide (VMs, K3s, MetalLB, registry, ArgoCD)
+- [Databases](docs/databases.md) - Redis HA Sentinel + CloudNativePG PostgreSQL (architecture, failover, connection patterns)
 
 ## 🛠️ Common Commands
 
@@ -221,6 +230,8 @@ make clean             # Remove everything
 - ✅ Phase 15: Complete Observability Stack - Loki + Alloy + Tempo (logs + traces)
 - ✅ Phase 16: Multipass Migration - 2-node K3s cluster, MetalLB, arm64, full airgap on real Linux VMs
 - ✅ Phase 16.5: Gitea Actions CI — automated test → build → Trivy scan → push pipeline (fully airgapped)
+- ✅ Phase 17: Redis HA Sentinel — 1 master + 1 replica + 3 sentinels, automatic failover, PVC persistence
+- ✅ Phase 18: CloudNativePG — PostgreSQL 16 cluster (1 master + 1 replica + 1 witness), read/write splitting, CNPG operator
 
 **Current State:**
 - 🛡️ **3-Layer Security**: OPA Gatekeeper + PSS + NetworkPolicies
@@ -229,6 +240,7 @@ make clean             # Remove everything
 - 🔒 **Production-Grade**: TLS, RBAC, admission control, zero-trust networking, MetalLB LoadBalancer
 - 🖥️ **Multi-Node**: 2-node K3s cluster on Multipass VMs (arm64)
 - ⚙️ **CI Pipeline**: Gitea Actions — test → build → Trivy scan → push (100% airgapped)
+- 🗄️ **HA Databases**: Redis Sentinel (automatic failover) + CloudNativePG PostgreSQL (quorum-based, read/write splitting)
 
 ## 🚧 Extend This Project
 

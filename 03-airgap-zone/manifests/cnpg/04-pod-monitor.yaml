@@ -1,0 +1,23 @@
+# PodMonitor for CloudNativePG cluster metrics
+# Manually managed: enablePodMonitor is disabled in the Cluster spec (deprecated in v1.25+)
+# Name must differ from the cluster name ("lumen-db") to avoid deletion by the CNPG operator
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cnpg-lumen-db
+  namespace: lumen
+  labels:
+    release: kube-prometheus-stack  # required by Prometheus CR podMonitorSelector
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: lumen-db
+  podMetricsEndpoints:
+    - port: metrics  # port 9187 — cnpg exporter (pg_stat_*)
+      interval: 30s
+      scrapeTimeout: 10s
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
