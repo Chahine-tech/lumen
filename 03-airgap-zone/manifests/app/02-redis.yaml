@@ -301,6 +301,19 @@ spec:
             name: redis-replica-config
 
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-sentinel-pdb
+  namespace: lumen
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: redis
+      role: sentinel
+
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

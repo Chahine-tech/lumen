@@ -38,6 +38,18 @@ spec:
     app: lumen-api
 
 ---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: lumen-api-pdb
+  namespace: lumen
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: lumen-api
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
