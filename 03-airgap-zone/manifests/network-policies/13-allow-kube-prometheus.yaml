@@ -228,6 +228,20 @@ spec:
         - protocol: TCP
           port: 9090
 
+    # API server — required for grafana-sc-dashboard sidecar (watches ConfigMaps with grafana_dashboard label)
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+
+    # Loki (logs datasource)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3100
+
 ---
 # AlertManager egress
 apiVersion: networking.k8s.io/v1
