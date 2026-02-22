@@ -26,10 +26,15 @@ spec:
           port: 53
   egress:
     # Allow CoreDNS to forward queries to upstream DNS
-    # TODO: In Phase 8, restrict this to only internal DNS servers for full airgap
-    # Allow Google DNS (8.8.8.8, 8.8.4.4) for now
     - ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
+    # Allow CoreDNS to watch Kubernetes API server (required for kubernetes plugin)
+    # The kubernetes plugin watches /api/v1/services, /api/v1/namespaces, etc.
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443

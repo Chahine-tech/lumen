@@ -31,32 +31,16 @@ spec:
       ports:
         - protocol: TCP
           port: 26379
-    # sentinels → master/replica (healthcheck + failover promotion, port 6379)
+    # inter-redis: any redis pod → master/replica/sentinel (replication + healthcheck + failover)
     - from:
         - podSelector:
             matchLabels:
               app: redis
-              role: sentinel
       ports:
         - protocol: TCP
           port: 6379
-    # master/replica → sentinel (replication status, port 26379)
-    - from:
-        - podSelector:
-            matchLabels:
-              app: redis
-      ports:
         - protocol: TCP
           port: 26379
-    # replica → master (replication, port 6379)
-    - from:
-        - podSelector:
-            matchLabels:
-              app: redis
-              role: replica
-      ports:
-        - protocol: TCP
-          port: 6379
 
 ---
 # Redis pods egress: to each other + to lumen-api
