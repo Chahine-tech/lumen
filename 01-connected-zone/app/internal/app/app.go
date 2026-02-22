@@ -95,7 +95,9 @@ func NewApp() (*App, error) {
 	handler := middleware.Recovery(
 		middleware.Tracing("lumen-api")(
 			middleware.Logging(
-				middleware.Metrics(m)(mux),
+				middleware.Metrics(m)(
+					middleware.Idempotency(redisStore, http.MethodPost, http.MethodDelete)(mux),
+				),
 			),
 		),
 	)

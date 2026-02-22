@@ -56,6 +56,18 @@ func (s *RedisStore) IncrementCounter(ctx context.Context, key string) (int64, e
 	return s.client.Incr(ctx, key).Result()
 }
 
+func (s *RedisStore) GetIdempotencyResult(ctx context.Context, key string) ([]byte, error) {
+	val, err := s.client.Get(ctx, "idempotency:"+key).Bytes()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	return val, err
+}
+
+func (s *RedisStore) SetIdempotencyResult(ctx context.Context, key string, data []byte, ttl time.Duration) error {
+	return s.client.Set(ctx, "idempotency:"+key, data, ttl).Err()
+}
+
 func (s *RedisStore) Close() error {
 	return s.client.Close()
 }
