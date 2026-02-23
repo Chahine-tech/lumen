@@ -122,6 +122,12 @@ server:
                 component: server
             topologyKey: kubernetes.io/hostname
 
+  # NetworkPolicy managed by our own manifests (16-allow-vault.yaml)
+  networkPolicy:
+    enabled: false
+    egress: []
+    ingress: []
+
   serviceAccount:
     create: true
     name: vault
