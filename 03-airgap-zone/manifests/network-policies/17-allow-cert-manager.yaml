@@ -121,3 +121,24 @@ spec:
           port: 443
         - protocol: TCP
           port: 6443
+
+---
+# startupapicheck: one-shot Helm hook that verifies the cert-manager API is ready
+# Needs egress to API server only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cert-manager-startupapicheck-egress
+  namespace: cert-manager
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: startupapicheck
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
