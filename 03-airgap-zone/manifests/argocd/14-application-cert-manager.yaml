@@ -20,6 +20,7 @@ spec:
       releaseName: cert-manager
       valueFiles:
         - values.yaml
+        - values-airgap-override.yaml
 
   destination:
     server: https://kubernetes.default.svc
