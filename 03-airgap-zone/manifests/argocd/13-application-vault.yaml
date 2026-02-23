@@ -47,3 +47,12 @@ spec:
       kind: MutatingWebhookConfiguration
       jqPathExpressions:
         - '.webhooks[]?.clientConfig.caBundle'
+    # StatefulSet volumeClaimTemplates: K3s adds apiVersion/kind to VCT items at creation
+    # These are immutable fields — ArgoCD cannot change them after StatefulSet creation
+    - group: apps
+      kind: StatefulSet
+      name: vault
+      jqPathExpressions:
+        - '.spec.volumeClaimTemplates[]?.apiVersion'
+        - '.spec.volumeClaimTemplates[]?.kind'
+        - '.spec.volumeClaimTemplates[]?.status'
