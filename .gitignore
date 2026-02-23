@@ -51,5 +51,8 @@ temp/
 # Local only
 TODO.md
 
+# Vault unseal keys + root token (NEVER commit — contains master secrets)
+vault-keys.json
+
 # Generated cert artifacts (retrieve via: kubectl get cm airgap-ca -n traefik -o jsonpath='{.data.ca\.crt}')
 *.crt

@@ -1,0 +1,10 @@
+# VaultConnection — points VSO to the Vault cluster
+# Deployed in lumen namespace so VaultAuth can reference it
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata:
+  name: vault-connection
+  namespace: lumen
+spec:
+  address: http://vault.vault.svc.cluster.local:8200
+  skipTLSVerify: false

@@ -1,0 +1,26 @@
+# Vault Secrets Operator — airgap overrides
+# All images from local registry 192.168.2.2:5000
+
+controller:
+  manager:
+    image:
+      repository: 192.168.2.2:5000/hashicorp/vault-secrets-operator
+      tag: "1.3.0"
+
+  # Default VaultConnection for all VaultAuth resources in the cluster
+  defaultVaultConnection:
+    enabled: true
+    address: "http://vault.vault.svc.cluster.local:8200"
+    skipTLSVerify: false
+
+  # Default VaultAuth using Kubernetes auth method
+  defaultAuthMethod:
+    enabled: true
+    namespace: lumen
+    method: kubernetes
+    mount: kubernetes
+    kubernetes:
+      role: lumen-api
+      serviceAccount: default
+      tokenAudiences:
+        - vault

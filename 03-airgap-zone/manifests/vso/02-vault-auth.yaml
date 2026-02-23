@@ -1,0 +1,16 @@
+# VaultAuth — how VSO authenticates to Vault on behalf of the lumen namespace
+# Uses the same Kubernetes auth role as the Vault Agent Injector
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: lumen-vault-auth
+  namespace: lumen
+spec:
+  vaultConnectionRef: vault-connection
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: lumen-api
+    serviceAccount: default
+    audiences:
+      - vault

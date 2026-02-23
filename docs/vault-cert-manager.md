@@ -279,11 +279,15 @@ vault secrets enable -path=lumen kv-v2
 "
 
 # ── PKI Engine ─────────────────────────────────────────────────────────
-# Import existing airgap CA (same CA that macOS already trusts)
+# Generate CA inside Vault (preferred — no need to import private key)
 kubectl exec -n vault vault-0 -- sh -c "
 VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN
 vault secrets enable pki
-vault write pki/config/ca pem_bundle=@/path/to/ca.pem
+vault secrets tune -max-lease-ttl=87600h pki   # MUST tune BEFORE generating CA
+vault write pki/root/generate/internal \
+  common_name='Airgap Local CA' \
+  ttl=87600h key_type=rsa key_bits=4096
+
 vault write pki/roles/airgap-role \
   allowed_domains='airgap.local' \
   allow_subdomains=true \
@@ -294,6 +298,13 @@ vault write pki/config/urls \
   issuing_certificates='http://vault.vault.svc.cluster.local:8200/v1/pki/ca' \
   crl_distribution_points='http://vault.vault.svc.cluster.local:8200/v1/pki/crl'
 "
+
+# Export CA cert and import into macOS
+kubectl exec -n vault vault-0 -- sh -c \
+  'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN vault read -field=certificate pki/cert/ca' \
+  > 03-airgap-zone/airgap-ca.crt
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain 03-airgap-zone/airgap-ca.crt
 
 # ── Policies ───────────────────────────────────────────────────────────
 kubectl exec -n vault vault-0 -- sh -c "
@@ -609,6 +620,270 @@ helm template cert-manager 03-airgap-zone/manifests/cert-manager-helm/ \
 
 ---
 
+### Problem 12 — ArgoCD OutOfSync: `persistentVolumeClaimRetentionPolicy: {}`
+
+**Symptom**: Vault ArgoCD Application perpetually OutOfSync with diff:
+```
+...
+persistentVolumeClaimRetentionPolicy:
++  whenDeleted: Retain
++  whenScaled: Retain
+```
+
+**Root Cause**: `persistentVolumeClaimRetentionPolicy: {}` is an empty map — in Go templates it is falsy, so Helm doesn't render the field. K3s then defaults it to `{whenDeleted: Retain, whenScaled: Retain}`, creating a permanent drift.
+
+**Fix**: Set explicit values in `values-airgap-override.yaml` (inside `server.statefulSet`):
+```yaml
+server:
+  statefulSet:
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Retain
+      whenScaled: Retain
+```
+
+---
+
+### Problem 13 — ArgoCD OutOfSync: StatefulSet `volumeClaimTemplates` immutable fields
+
+**Symptom**: ArgoCD OutOfSync, diff shows K3s adding `apiVersion: v1`, `kind: PersistentVolumeClaim`, `status: {}` to volumeClaimTemplates items. ArgoCD cannot fix these — they are immutable after StatefulSet creation.
+
+**Root Cause**: When K3s creates the StatefulSet, it annotates each `volumeClaimTemplates` item with `apiVersion` and `kind` (making it a full object reference). Helm doesn't render these fields. The diff is permanent and unresolvable by ArgoCD.
+
+**Fix**: Add `ignoreDifferences` in `13-application-vault.yaml`:
+```yaml
+ignoreDifferences:
+  - group: apps
+    kind: StatefulSet
+    name: vault
+    jqPathExpressions:
+      - '.spec.volumeClaimTemplates[]?.apiVersion'
+      - '.spec.volumeClaimTemplates[]?.kind'
+      - '.spec.volumeClaimTemplates[]?.status'
+```
+
+---
+
+### Problem 14 — cert-manager startupapicheck: wrong image (quay.io) + NetworkPolicy timeout
+
+**Symptom**: Two issues in sequence:
+
+1. `startupapicheck` pod uses `quay.io/jetstack/cert-manager-startupapicheck:v1.17.1` (not the airgap registry) → `ImagePullBackOff` in airgap cluster.
+
+2. After fixing the image: pod exits with code 124 (timeout) → `CrashLoopBackOff`. The `check api` command timed out after 5m.
+
+**Root Cause**:
+
+1. The ArgoCD Application only had `values.yaml` in `helm.valueFiles`, not `values-airgap-override.yaml`. The image override for `startupapicheck` was in the override file.
+
+2. `startupapicheck` is a Helm post-install hook. It runs `cmctl check api`. With `default-deny-all` NetworkPolicy in `cert-manager` namespace, the pod couldn't reach the API server (ports 443/6443) → timeout.
+
+**Fix**:
+
+1. Add both valueFiles to cert-manager ArgoCD Application:
+```yaml
+helm:
+  valueFiles:
+    - values.yaml
+    - values-airgap-override.yaml
+```
+
+2. Add NetworkPolicy for startupapicheck in `17-allow-cert-manager.yaml`:
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cert-manager-startupapicheck-egress
+  namespace: cert-manager
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: startupapicheck
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+```
+
+**Note**: ArgoCD waits for all Helm hooks to complete during sync. If the hook is stuck (Terminating with `argocd.argoproj.io/hook-finalizer`), remove the finalizer manually:
+```bash
+kubectl patch job cert-manager-startupapicheck -n cert-manager \
+  -p '{"metadata":{"finalizers":null}}'
+```
+
+---
+
+### Problem 15 — vault.airgap.local: Bad Gateway (port 8200 missing from Traefik egress)
+
+**Symptom**: `https://vault.airgap.local` returns 502 Bad Gateway. Traefik logs show `dial tcp: connection refused`.
+
+**Root Cause**: `traefik-egress` NetworkPolicy in `11-allow-traefik.yaml` listed allowed backend ports (3000, 8080, 9090, 9093, 80) but did not include port 8200 (Vault UI).
+
+**Fix**: Add port 8200 to `traefik-egress` NetworkPolicy:
+```yaml
+egress:
+  - to:
+      - namespaceSelector: {}
+    ports:
+      - protocol: TCP
+        port: 8200  # Vault UI ← added
+```
+
+---
+
+### Problem 16 — Vault UI returns 404 (ui = true missing from HCL config)
+
+**Symptom**: After `vault.airgap.local` Bad Gateway was fixed, the UI returned 404 for all paths.
+
+**Root Cause**: `ui.enabled: true` in Helm `values.yaml` only controls whether the K8s `Service` named `vault-ui` is created. It does NOT enable the actual Vault Web UI server. The Vault HCL config must contain `ui = true` for Vault to serve the web interface.
+
+**Fix**: Add `ui = true` to the HCL config block in `values-airgap-override.yaml`:
+```hcl
+config: |
+  cluster_name = "lumen-vault"
+  storage "raft" {
+    path = "/vault/data"
+  }
+  listener "tcp" {
+    address         = "[::]:8200"
+    cluster_address = "[::]:8201"
+    tls_disable     = true
+  }
+  service_registration "kubernetes" {}
+  ui = true
+  disable_mlock = true
+```
+
+**Important**: Vault uses `updateStrategy: OnDelete` — pods must be **deleted manually** to pick up the ConfigMap change. ArgoCD selfHeal recreates them immediately (sealed). Unseal each pod after restart.
+
+---
+
+### Problem 17 — Full Vault reinit required (unseal keys lost)
+
+**Symptom**: vault-2 pod restarted and was sealed. Unseal keys were not saved from the initial `vault operator init` run.
+
+**Decision**: Full reinit (delete all pods + PVCs) to start fresh.
+
+**Procedure**:
+```bash
+# Scale down to 0 (ArgoCD selfHeals immediately to 3, but with fresh PVCs)
+kubectl scale statefulset vault -n vault --replicas=0
+kubectl delete pvc -n vault --all
+
+# Wait for new pods to be Running (Sealed, Initialized: false)
+kubectl exec -n vault vault-0 -- vault status | grep Initialized
+# → Initialized: false
+
+# Init (ONE TIME — save the output immediately!)
+kubectl exec -n vault vault-0 -- vault operator init \
+  -key-shares=5 -key-threshold=3 -format=json > vault-keys.json
+
+# ⚠️ vault-keys.json = your master key. Never commit to git. Keep it safe.
+
+# Unseal all 3 pods (3 keys needed out of 5)
+for pod in vault-0 vault-1 vault-2; do
+  for i in 0 1 2; do
+    key=$(python3 -c "import json; d=json.load(open('vault-keys.json')); print(d['unseal_keys_b64'][$i])")
+    kubectl exec -n vault $pod -- vault operator unseal "$key"
+  done
+done
+```
+
+---
+
+### Problem 18 — Vault PKI CA: cannot import (no private key available)
+
+**Symptom**: After full reinit, tried to import existing `airgap-ca.crt` into Vault PKI via `vault write pki/config/ca pem_bundle=...`. Vault requires the CA bundle to include the private key.
+
+**Root Cause**: The original CA private key only existed inside the old cluster (in a K8s Secret that was deleted along with the PVCs). The CA cert file (`03-airgap-zone/airgap-ca.crt`) contains only the public certificate.
+
+**Decision**: Generate a new CA entirely inside Vault PKI.
+
+**Procedure**:
+```bash
+export VAULT_TOKEN=$(python3 -c "import json; print(json.load(open('vault-keys.json'))['root_token'])")
+
+# 1. Enable PKI mount
+kubectl exec -n vault vault-0 -- sh -c "
+VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
+vault secrets enable pki"
+
+# 2. Tune max-lease-ttl BEFORE generating CA (critical! default=30d cap)
+kubectl exec -n vault vault-0 -- sh -c "
+VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
+vault secrets tune -max-lease-ttl=87600h pki"
+
+# 3. Generate root CA (10 years)
+kubectl exec -n vault vault-0 -- sh -c "
+VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
+vault write pki/root/generate/internal \
+  common_name='Airgap Local CA' \
+  ttl=87600h \
+  key_type=rsa \
+  key_bits=4096" | grep certificate
+
+# 4. Export new CA cert
+kubectl exec -n vault vault-0 -- sh -c "
+VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
+vault read -field=certificate pki/cert/ca" > /tmp/new-airgap-ca.crt
+
+# 5. Replace project CA file
+cp /tmp/new-airgap-ca.crt 03-airgap-zone/airgap-ca.crt
+
+# 6. Import into macOS System keychain (required for browser trust)
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain \
+  03-airgap-zone/airgap-ca.crt
+```
+
+**Important**: After generating a new CA:
+1. `airgap-ca.crt` must be updated in the git repo
+2. All nodes need the new CA (for inter-service TLS verification if any)
+3. The old `airgap-tls` Secret is now signed by the old (untrusted) CA — force-renew it:
+   ```bash
+   kubectl delete certificate airgap-tls -n traefik
+   kubectl apply -f 03-airgap-zone/manifests/vault/04-airgap-certificate.yaml
+   ```
+4. Copy renewed `airgap-tls` to other namespaces:
+   ```bash
+   for NS in vault monitoring argocd; do
+     kubectl get secret airgap-tls -n traefik -o json | python3 -c "
+   import json,sys; d=json.load(sys.stdin); d['metadata']['namespace']='$NS'
+   [d['metadata'].pop(k,None) for k in ['resourceVersion','uid','creationTimestamp','managedFields']]
+   print(json.dumps(d))" | kubectl apply -f -
+   done
+   ```
+
+---
+
+### Problem 19 — vault-keys.json: what it is and why it matters
+
+`vault-keys.json` is created during `vault operator init`. It contains:
+- **5 Shamir unseal keys** (any 3 needed to unseal Vault after each restart)
+- **Root token** (admin credential for Vault configuration)
+
+Vault encrypts all data at rest. On pod restart, it starts **Sealed** — it cannot serve any requests until unsealed. The keys are **never stored in the cluster** (that would defeat the purpose).
+
+**Unseal procedure after cluster restart**:
+```bash
+for pod in vault-0 vault-1 vault-2; do
+  for i in 0 1 2; do
+    key=$(python3 -c "import json; d=json.load(open('vault-keys.json')); print(d['unseal_keys_b64'][$i])")
+    kubectl exec -n vault $pod -- vault operator unseal "$key"
+  done
+done
+```
+
+**Security rules**:
+- NEVER commit `vault-keys.json` to git (it's in `.gitignore`)
+- Store it securely (password manager, encrypted volume, or printed and stored physically)
+- In production: use Vault Auto Unseal (AWS KMS, GCP KMS, etc.) to avoid manual unsealing
+
+---
+
 ## Operational Reference
 
 ### Check Vault Status
@@ -726,19 +1001,26 @@ done
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Vault HA (3 pods Raft) | ✅ Running | vault-0 leader, vault-1/2 followers |
+| Vault HA (3 pods Raft) | ✅ Running | vault-0/1/2 unsealed (1/1 Ready) |
+| Vault Web UI | ✅ Accessible | `https://vault.airgap.local/ui/` |
 | Vault Agent Injector | ✅ Running | MutatingWebhook active |
-| cert-manager controller | ✅ Running | node-2 |
-| cert-manager webhook | ✅ Running | node-1, port 10260 |
-| cert-manager cainjector | ✅ Running | node-2 |
+| cert-manager controller | ✅ Running | Synced/Healthy |
+| cert-manager webhook | ✅ Running | port 10260 (K3s compatible) |
+| cert-manager cainjector | ✅ Running | — |
 | ClusterIssuer `vault-issuer` | ✅ Ready | → Vault PKI `pki/sign/airgap-role` |
-| Certificate `airgap-tls` | ✅ Ready | expires Feb 21, 2027 |
+| Certificate `airgap-tls` | ✅ Ready | signed by new Vault CA, expires Feb 2027 |
+| Vault PKI CA | ✅ Active | generated inside Vault, TTL 10yr (→ Feb 2036) |
 | Vault KV `lumen/db` | ✅ Seeded | username, password, dbname |
 | Vault K8s auth `cert-manager` | ✅ Ready | SA: cert-manager, cert-manager-vault-auth |
 | Vault K8s auth `lumen-api` | ✅ Ready | SA: default (ns: lumen) |
-| IngressRoute `vault.airgap.local` | ✅ Applied | requires `/etc/hosts` entry |
+| IngressRoute `vault.airgap.local` | ✅ Active | HTTPS, no `-k` needed |
+| macOS trust | ✅ Imported | new CA in System keychain |
 
-### `/etc/hosts` entry needed
+### `vault-keys.json` (local file, never committed)
+
+Located at project root. Contains unseal keys + root token. Needed after every pod restart.
+
+### `/etc/hosts` entry
 
 ```
 192.168.2.100 vault.airgap.local
