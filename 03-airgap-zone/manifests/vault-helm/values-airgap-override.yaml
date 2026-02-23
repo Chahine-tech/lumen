@@ -103,6 +103,9 @@ server:
         # Register with Kubernetes for health checks
         service_registration "kubernetes" {}
 
+        # Enable Vault Web UI
+        ui = true
+
         # Audit logging
         # audit "file" {
         #   path = "file"
