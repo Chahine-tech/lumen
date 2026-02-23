@@ -105,6 +105,9 @@ https://grafana.airgap.local              # Grafana (admin/admin)
 https://prometheus.airgap.local           # Prometheus
 https://alertmanager.airgap.local         # AlertManager
 https://argocd.airgap.local               # ArgoCD (admin/[from secret])
+https://tempo.airgap.local                # Grafana Tempo (distributed traces)
+https://vault.airgap.local               # HashiCorp Vault UI (root token from vault-init-job)
+https://lumen-api.airgap.local           # Lumen API
 ```
 
 **Legacy port-forward (for troubleshooting only):**

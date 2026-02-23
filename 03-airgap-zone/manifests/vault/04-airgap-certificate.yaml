@@ -23,6 +23,5 @@ spec:
   dnsNames:
     - "*.airgap.local"
     - "airgap.local"
-    - "traefik.traefik.svc.cluster.local"
-  duration: 8760h    # 1 year
+  duration: 8700h    # ~362 days (< CA lifetime of ~1yr from Feb 2026)
   renewBefore: 720h  # Renew 30 days before expiry
