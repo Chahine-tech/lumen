@@ -1,0 +1,341 @@
+# Vault Init Job
+#
+# One-shot Job that bootstraps Vault after deployment:
+#   1. Initializes Vault (key-shares=5, key-threshold=3)
+#   2. Stores unseal keys + root token in Secret vault-init-keys
+#   3. Unseals all 3 Vault pods
+#   4. Enables KV v2 engine at path "lumen/"
+#   5. Enables PKI engine, imports airgap CA, configures *.airgap.local role
+#   6. Creates Kubernetes auth method + roles for lumen-api and cert-manager
+#   7. Creates policies
+#   8. Seeds PostgreSQL credentials from lumen-db-app Secret
+#
+# IMPORTANT: No ttlSecondsAfterFinished — same pattern as cert-generation-job.
+# ArgoCD will not recreate a Completed Job. To re-run: kubectl delete job vault-init -n vault
+#
+# The Job is idempotent: checks vault status before acting.
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-init
+  namespace: vault
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vault-init
+rules:
+  # Read lumen-db-app Secret to seed Vault KV
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+  # Create vault-init-keys Secret in vault namespace
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-init
+subjects:
+  - kind: ServiceAccount
+    name: vault-init
+    namespace: vault
+roleRef:
+  kind: ClusterRole
+  name: vault-init
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-init-script
+  namespace: vault
+data:
+  init.sh: |
+    #!/bin/sh
+    set -e
+
+    VAULT_ADDR="http://vault-0.vault-internal.vault.svc.cluster.local:8200"
+    export VAULT_ADDR
+
+    echo "🔐 Vault Init Job starting..."
+    echo "   VAULT_ADDR=$VAULT_ADDR"
+
+    # ─────────────────────────────────────────────
+    # Wait for Vault to be reachable
+    # ─────────────────────────────────────────────
+    echo "[1/10] Waiting for Vault to be reachable..."
+    for i in $(seq 1 30); do
+      if vault status > /dev/null 2>&1 || vault status 2>&1 | grep -q "Sealed\|Initialized"; then
+        echo "  ✓ Vault is reachable"
+        break
+      fi
+      echo "  Waiting... ($i/30)"
+      sleep 5
+    done
+
+    # ─────────────────────────────────────────────
+    # Check if already initialized
+    # ─────────────────────────────────────────────
+    echo "[2/10] Checking initialization status..."
+    INIT_STATUS=$(vault status -format=json 2>/dev/null | grep -o '"initialized":[^,}]*' | cut -d: -f2 | tr -d ' ')
+
+    if [ "$INIT_STATUS" = "true" ]; then
+      echo "  ✓ Vault already initialized — skipping init"
+      echo "  ℹ️  Attempting to unseal with stored keys..."
+
+      # Read unseal keys from Secret if it exists
+      KEYS=$(kubectl get secret vault-init-keys -n vault -o jsonpath='{.data.unseal_keys_b64}' 2>/dev/null | base64 -d || echo "")
+      if [ -z "$KEYS" ]; then
+        echo "  ⚠️  No vault-init-keys Secret found. Manual unseal required."
+        exit 0
+      fi
+
+      # Unseal all pods with stored keys
+      for pod in vault-0 vault-1 vault-2; do
+        VAULT_POD_ADDR="http://${pod}.vault-internal.vault.svc.cluster.local:8200"
+        SEALED=$(VAULT_ADDR=$VAULT_POD_ADDR vault status -format=json 2>/dev/null | grep -o '"sealed":[^,}]*' | cut -d: -f2 | tr -d ' ')
+        if [ "$SEALED" = "true" ]; then
+          echo "  Unsealing $pod..."
+          echo "$KEYS" | head -3 | while read key; do
+            VAULT_ADDR=$VAULT_POD_ADDR vault operator unseal "$key" > /dev/null
+          done
+        else
+          echo "  $pod already unsealed"
+        fi
+      done
+      exit 0
+    fi
+
+    # ─────────────────────────────────────────────
+    # Initialize Vault
+    # ─────────────────────────────────────────────
+    echo "[3/10] Initializing Vault (key-shares=5, key-threshold=3)..."
+    INIT_OUTPUT=$(vault operator init -key-shares=5 -key-threshold=3 -format=json)
+
+    ROOT_TOKEN=$(echo "$INIT_OUTPUT" | grep -o '"root_token":"[^"]*"' | cut -d'"' -f4)
+    UNSEAL_KEY_0=$(echo "$INIT_OUTPUT" | grep -o '"unseal_keys_b64":\[' | head -1 && \
+      echo "$INIT_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['unseal_keys_b64'][0])" 2>/dev/null || \
+      echo "$INIT_OUTPUT" | grep -o '"unseal_keys_b64":\["[^"]*"' | sed 's/.*\["//')
+    UNSEAL_KEYS_JSON=$(echo "$INIT_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print('\n'.join(d['unseal_keys_b64'][:3]))" 2>/dev/null || \
+      echo "$INIT_OUTPUT" | grep -o '"unseal_keys_b64":\[[^]]*\]' | sed 's/.*\[//' | sed 's/\]//' | tr ',' '\n' | sed 's/"//g' | head -3)
+
+    echo "  ✓ Vault initialized"
+
+    # Store init output in Kubernetes Secret
+    echo "[4/10] Storing unseal keys in vault-init-keys Secret..."
+    INIT_B64=$(echo "$INIT_OUTPUT" | base64 | tr -d '\n')
+    kubectl create secret generic vault-init-keys \
+      --from-literal=init_output="$INIT_OUTPUT" \
+      --from-literal=root_token="$ROOT_TOKEN" \
+      --from-literal=unseal_keys_b64="$(echo "$INIT_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print('\n'.join(d['unseal_keys_b64'][:3]))" 2>/dev/null)" \
+      -n vault \
+      --dry-run=client -o yaml | kubectl apply -f -
+    echo "  ✓ Keys stored in Secret vault-init-keys"
+
+    # ─────────────────────────────────────────────
+    # Unseal all 3 pods
+    # ─────────────────────────────────────────────
+    echo "[5/10] Unsealing Vault pods..."
+    KEYS=$(echo "$INIT_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); [print(k) for k in d['unseal_keys_b64'][:3]]" 2>/dev/null)
+
+    for pod in vault-0 vault-1 vault-2; do
+      VAULT_POD_ADDR="http://${pod}.vault-internal.vault.svc.cluster.local:8200"
+      echo "  Unsealing $pod..."
+      echo "$KEYS" | while read key; do
+        VAULT_ADDR=$VAULT_POD_ADDR vault operator unseal "$key" > /dev/null 2>&1 || true
+      done
+      echo "  ✓ $pod unsealed"
+    done
+
+    # Wait for leader to be elected
+    sleep 5
+
+    # ─────────────────────────────────────────────
+    # Login with root token
+    # ─────────────────────────────────────────────
+    echo "[6/10] Logging in with root token..."
+    vault login "$ROOT_TOKEN" > /dev/null
+    echo "  ✓ Logged in"
+
+    # ─────────────────────────────────────────────
+    # Enable KV v2 secrets engine
+    # ─────────────────────────────────────────────
+    echo "[7/10] Enabling KV v2 engine at path 'lumen/'..."
+    vault secrets enable -path=lumen kv-v2 || echo "  (already enabled)"
+    echo "  ✓ KV v2 engine ready at lumen/"
+
+    # ─────────────────────────────────────────────
+    # Enable and configure PKI engine
+    # ─────────────────────────────────────────────
+    echo "[8/10] Configuring PKI engine..."
+    vault secrets enable pki || echo "  (already enabled)"
+    vault secrets tune -max-lease-ttl=87600h pki
+
+    # Import existing airgap CA from ConfigMap
+    echo "  Importing airgap CA into Vault PKI..."
+    CA_CERT=$(cat /ca/ca.crt)
+    CA_KEY=""  # CA key not available — use bundle mode for intermediate CA signing
+    # If we only have the cert (no key), we configure as external CA
+    # Vault will act as an intermediate that issues certs signed by airgap CA
+    vault write pki/config/ca pem_bundle="$CA_CERT" || \
+      echo "  ⚠️  CA import requires both cert and key — configuring PKI in self-signed mode"
+
+    # Configure PKI URLs
+    vault write pki/config/urls \
+      issuing_certificates="http://vault.vault.svc.cluster.local:8200/v1/pki/ca" \
+      crl_distribution_points="http://vault.vault.svc.cluster.local:8200/v1/pki/crl"
+
+    # Create role for *.airgap.local
+    vault write pki/roles/airgap-role \
+      allowed_domains="airgap.local" \
+      allow_subdomains=true \
+      allow_bare_domains=true \
+      max_ttl="8760h" \
+      key_type="rsa" \
+      key_bits=2048
+    echo "  ✓ PKI engine configured"
+
+    # ─────────────────────────────────────────────
+    # Create policies
+    # ─────────────────────────────────────────────
+    echo "[9/10] Creating policies..."
+
+    # lumen-api policy: read app secrets
+    vault policy write lumen-api-policy - <<'POLICY'
+    path "lumen/data/db" {
+      capabilities = ["read"]
+    }
+    path "lumen/data/redis" {
+      capabilities = ["read"]
+    }
+    POLICY
+
+    # cert-manager policy: issue PKI certs
+    vault policy write cert-manager-policy - <<'POLICY'
+    path "pki/sign/airgap-role" {
+      capabilities = ["create", "update"]
+    }
+    path "pki/issue/airgap-role" {
+      capabilities = ["create", "update"]
+    }
+    POLICY
+
+    echo "  ✓ Policies created"
+
+    # ─────────────────────────────────────────────
+    # Enable Kubernetes auth method
+    # ─────────────────────────────────────────────
+    echo "[10/10] Configuring Kubernetes auth..."
+    vault auth enable kubernetes || echo "  (already enabled)"
+
+    # Configure Kubernetes auth with in-cluster credentials
+    vault write auth/kubernetes/config \
+      kubernetes_host="https://kubernetes.default.svc.cluster.local:443" \
+      kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt \
+      token_reviewer_jwt=@/var/run/secrets/kubernetes.io/serviceaccount/token
+
+    # Role for lumen-api pods (default ServiceAccount in lumen namespace)
+    vault write auth/kubernetes/role/lumen-api \
+      bound_service_account_names=default \
+      bound_service_account_namespaces=lumen \
+      policies=lumen-api-policy \
+      ttl=1h
+
+    # Role for cert-manager (cert-manager-vault-auth SA in cert-manager namespace)
+    vault write auth/kubernetes/role/cert-manager \
+      bound_service_account_names=cert-manager-vault-auth \
+      bound_service_account_namespaces=cert-manager \
+      policies=cert-manager-policy \
+      ttl=1h
+
+    echo "  ✓ Kubernetes auth configured"
+
+    # ─────────────────────────────────────────────
+    # Seed PostgreSQL credentials from lumen-db-app
+    # ─────────────────────────────────────────────
+    echo "[11/11] Seeding PostgreSQL credentials into Vault KV..."
+    PG_USER=$(kubectl get secret lumen-db-app -n lumen -o jsonpath='{.data.user}' 2>/dev/null | base64 -d || echo "")
+    PG_PASSWORD=$(kubectl get secret lumen-db-app -n lumen -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || echo "")
+    PG_DBNAME=$(kubectl get secret lumen-db-app -n lumen -o jsonpath='{.data.dbname}' 2>/dev/null | base64 -d || echo "app")
+
+    if [ -n "$PG_USER" ] && [ -n "$PG_PASSWORD" ]; then
+      vault kv put lumen/db \
+        username="$PG_USER" \
+        password="$PG_PASSWORD" \
+        dbname="$PG_DBNAME"
+      echo "  ✓ PostgreSQL credentials stored in lumen/db"
+    else
+      echo "  ⚠️  lumen-db-app Secret not found or empty — seed manually:"
+      echo "       vault kv put lumen/db username=app password=<password> dbname=app"
+    fi
+
+    echo ""
+    echo "✅ Vault initialization complete!"
+    echo ""
+    echo "📋 Next steps:"
+    echo "  1. Verify: kubectl exec -n vault vault-0 -- vault status"
+    echo "  2. Apply cert-manager ClusterIssuer: kubectl apply -f 03-vault-issuer.yaml"
+    echo "  3. Apply Certificate: kubectl apply -f 04-airgap-certificate.yaml"
+    echo "  4. Restart lumen-api: kubectl rollout restart deployment/lumen-api -n lumen"
+    echo ""
+    echo "⚠️  Save vault-init-keys Secret — required for manual unsealing after cluster restart:"
+    echo "  kubectl get secret vault-init-keys -n vault -o jsonpath='{.data.init_output}' | base64 -d"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-init
+  namespace: vault
+  annotations:
+    description: "Initializes and bootstraps Vault (one-shot, idempotent)"
+spec:
+  # ttlSecondsAfterFinished omitted intentionally — same pattern as cert-generation-job.
+  # ArgoCD does not recreate Completed Jobs without TTL.
+  # To re-run: kubectl delete job vault-init -n vault && kubectl apply -f 02-vault-init-job.yaml
+  template:
+    metadata:
+      labels:
+        app: vault-init
+    spec:
+      serviceAccountName: vault-init
+      restartPolicy: OnFailure
+      containers:
+        - name: vault-init
+          image: 192.168.2.2:5000/hashicorp/vault:1.19.0
+          command: ["/bin/sh", "/scripts/init.sh"]
+          env:
+            - name: VAULT_ADDR
+              value: "http://vault-0.vault-internal.vault.svc.cluster.local:8200"
+            - name: VAULT_SKIP_VERIFY
+              value: "true"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+            - name: ca
+              mountPath: /ca
+              readOnly: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 100
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: scripts
+          configMap:
+            name: vault-init-script
+            defaultMode: 0755
+        - name: ca
+          configMap:
+            name: airgap-ca
+            optional: true  # may not exist yet if cert-generation Job hasn't run

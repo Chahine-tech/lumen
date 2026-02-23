@@ -1,0 +1,90 @@
+# cert-manager Helm values — airgap configuration
+# cert-manager v1.17.1
+# All images served from internal registry 192.168.2.2:5000
+#
+# Role: Automates TLS certificate lifecycle
+#   - Issues *.airgap.local cert via Vault PKI Engine
+#   - Renews automatically 30 days before expiry
+#   - Replaces manual OpenSSL Job for future renewals
+
+# Install CRDs with the chart (Certificate, Issuer, ClusterIssuer, etc.)
+crds:
+  enabled: true
+
+# ─────────────────────────────────────────────
+# cert-manager controller
+# ─────────────────────────────────────────────
+image:
+  repository: 192.168.2.2:5000/jetstack/cert-manager-controller
+  tag: v1.17.1
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+# ─────────────────────────────────────────────
+# Webhook
+# ─────────────────────────────────────────────
+webhook:
+  image:
+    repository: 192.168.2.2:5000/jetstack/cert-manager-webhook
+    tag: v1.17.1
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+# ─────────────────────────────────────────────
+# CA Injector
+# ─────────────────────────────────────────────
+cainjector:
+  image:
+    repository: 192.168.2.2:5000/jetstack/cert-manager-cainjector
+    tag: v1.17.1
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+
+# ─────────────────────────────────────────────
+# Startup API Check (one-shot job)
+# ─────────────────────────────────────────────
+startupapicheck:
+  image:
+    repository: 192.168.2.2:5000/jetstack/cert-manager-startupapicheck
+    tag: v1.17.1
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
+
+# ─────────────────────────────────────────────
+# Airgap-specific settings
+# ─────────────────────────────────────────────
+# Disable ACME DNS solver (no external DNS in airgap)
+# We use Vault PKI as the issuer instead
+featureGates: ""
+
+# Prometheus metrics
+prometheus:
+  enabled: false  # Enable later via PodMonitor if needed

@@ -1,0 +1,203 @@
+# NetworkPolicies for Vault namespace
+#
+# Vault requires:
+#   Ingress: from traefik (UI 8200), from lumen (Agent Injector webhook 8200),
+#            from cert-manager (PKI requests 8200), inter-pod Raft (8200/8201)
+#   Egress:  DNS, API server (Kubernetes auth), inter-pod Raft (8200/8201)
+
+---
+# Default deny all in vault namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: vault
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# DNS egress for all vault pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: vault
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# Vault server: ingress from Traefik (UI), lumen (Agent Injector), cert-manager
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-server-ingress
+  namespace: vault
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      component: server
+  policyTypes:
+    - Ingress
+  ingress:
+    # From Traefik (Vault UI access)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: traefik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 8200
+
+    # From lumen namespace (Vault Agent Injector webhook + lumen-api agent sidecar)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: lumen
+      ports:
+        - protocol: TCP
+          port: 8200
+
+    # From cert-manager namespace (PKI cert issuance)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: cert-manager
+      ports:
+        - protocol: TCP
+          port: 8200
+
+    # From monitoring namespace (Prometheus scraping vault metrics)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8200
+
+    # From vault-init Job (same namespace, any pod)
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8200
+
+---
+# Vault server: inter-pod Raft cluster communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-raft-cluster
+  namespace: vault
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      component: server
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Raft peer communication
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+              component: server
+      ports:
+        - protocol: TCP
+          port: 8200  # API + Raft leader forwarding
+        - protocol: TCP
+          port: 8201  # Raft cluster port
+  egress:
+    # Raft peer communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+              component: server
+      ports:
+        - protocol: TCP
+          port: 8200
+        - protocol: TCP
+          port: 8201
+
+---
+# Vault server: egress to API server (Kubernetes auth method)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-api-server-egress
+  namespace: vault
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      component: server
+  policyTypes:
+    - Egress
+  egress:
+    # Kubernetes API server (for Kubernetes auth TokenReview)
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+
+---
+# Vault Agent Injector: ingress for MutatingWebhookConfiguration
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-injector-ingress
+  namespace: vault
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault-agent-injector
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # From API server (webhook calls on pod creation)
+    - ports:
+        - protocol: TCP
+          port: 8080  # Injector webhook port
+  egress:
+    # To Vault server (Agent Injector talks to Vault)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+              component: server
+      ports:
+        - protocol: TCP
+          port: 8200
+    # API server
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443

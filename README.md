@@ -13,6 +13,7 @@ A hands-on project to master distributed systems, network security, and Kubernet
 - **Helm Package Management**: Production-ready chart deployment and configuration
 - **Observability**: Full 3-pillar stack — Metrics (kube-prometheus-stack), Logs (Loki + Alloy), Traces (Tempo + OpenTelemetry)
 - **Security**: OPA Gatekeeper + Pod Security Standards (PSS) for admission control and runtime security
+- **Secrets Management**: HashiCorp Vault HA + cert-manager PKI (Vault Agent Injector, dynamic credentials, automatic TLS renewal)
 - **GitOps**: ArgoCD for declarative continuous deployment
 - **DevOps**: Build pipelines, artifact management, air-gap deployment
 
@@ -32,6 +33,7 @@ A hands-on project to master distributed systems, network security, and Kubernet
                                     │                   │ • OPA Gatekeeper            │
                                     │                   │ • kube-prometheus-stack     │
                                     │                   │ • Loki + Alloy + Tempo      │
+                                    │                   │ • Vault HA + cert-manager   │
                                     │                   └─────────────────────────────┘
                               git push-all                          ▲
                            (GitHub + Gitea)             https://traefik.airgap.local
@@ -40,6 +42,7 @@ A hands-on project to master distributed systems, network security, and Kubernet
                                                         https://grafana.airgap.local
                                                         https://prometheus.airgap.local
                                                         https://tempo.airgap.local
+                                                        https://vault.airgap.local
                                                         https://lumen-api.airgap.local
 ```
 
@@ -115,16 +118,18 @@ https://argocd.airgap.local               # ArgoCD (admin/[from secret])
 - **Cache**: Redis 7 Alpine (HA Sentinel — 1 master + 1 replica + 3 sentinels)
 - **Database**: PostgreSQL 16.6 via CloudNativePG (1 master + 1 replica + 1 witness, read/write splitting)
 - **Cluster**: K3s (lightweight, airgap-optimized)
-- **CNI**: Flannel (default K3s CNI, upgrade path to Cilium available)
+- **CNI**: Flannel (default K3s overlay CNI) + kube-router (NetworkPolicy controller, upgrade path to Cilium available)
 - **Registry**: Docker Registry v2
 - **Ingress**: Traefik v3.6.8 (Helm chart, TLS termination, HTTP/2)
 - **Git Server**: Gitea (internal Git repository for airgap)
 - **GitOps**: ArgoCD v3.2.0 (pulls from internal Gitea, not GitHub)
 - **Security**: OPA Gatekeeper v3.18.0 + Pod Security Standards (PSS restricted mode)
+- **Secrets**: HashiCorp Vault 1.19.0 HA (3-replica Raft, KV v2, PKI Engine, Agent Injector)
+- **TLS PKI**: cert-manager v1.17.1 (ClusterIssuer → Vault PKI, automatic renewal)
 - **Monitoring**: kube-prometheus-stack v69 (Prometheus v3.5.1, Grafana v12.4.0, AlertManager v0.31, Node Exporter v1.8.2, kube-state-metrics v2.15.0)
 - **Logging**: Loki 3.6.5 + Alloy v1.13.1 (log aggregation + collection)
 - **Tracing**: Grafana Tempo 2.10.0 + OpenTelemetry SDK (distributed traces)
-- **Package Management**: Helm 3 (Traefik, kube-prometheus-stack, Loki, Alloy, Tempo)
+- **Package Management**: Helm 3 (Traefik, kube-prometheus-stack, Loki, Alloy, Tempo, Vault, cert-manager)
 - **Isolation**: iptables + containerd mirrors
 
 ## 🔑 Key Implementations
@@ -232,15 +237,21 @@ make clean             # Remove everything
 - ✅ Phase 16.5: Gitea Actions CI — automated test → build → Trivy scan → push pipeline (fully airgapped)
 - ✅ Phase 17: Redis HA Sentinel — 1 master + 1 replica + 3 sentinels, automatic failover, PVC persistence
 - ✅ Phase 18: CloudNativePG — PostgreSQL 16 cluster (1 master + 1 replica + 1 witness), read/write splitting, CNPG operator
+- ✅ v1.5.0: Idempotency middleware (Redis-backed, 24h TTL, `Idempotency-Key` header)
+- ✅ SRE hardening: PodDisruptionBudgets (lumen-api + redis-sentinel), NetworkPolicy fixes (CoreDNS + Grafana egress → API server)
+- ✅ Phase 19: Vault HA + cert-manager — PKI engine, Vault Agent Injector, automatic TLS renewal, lumen-api v1.6.0
 
 **Current State:**
 - 🛡️ **3-Layer Security**: OPA Gatekeeper + PSS + NetworkPolicies
+- 🔐 **Secrets Management**: Vault HA (3-replica Raft) — KV v2, PKI engine, Agent Injector (no plaintext K8s secrets)
+- 📜 **Automatic TLS**: cert-manager → Vault PKI — `*.airgap.local` renewed automatically 30 days before expiry
 - 📊 **Complete Observability**: Metrics + Logs + Traces (Prometheus, Grafana, Loki, Alloy, Tempo)
 - 🔄 **Full GitOps**: ArgoCD syncing from internal Gitea
-- 🔒 **Production-Grade**: TLS, RBAC, admission control, zero-trust networking, MetalLB LoadBalancer
+- 🔒 **Production-Grade**: TLS, RBAC, admission control, zero-trust networking, MetalLB LoadBalancer, PodDisruptionBudgets
 - 🖥️ **Multi-Node**: 2-node K3s cluster on Multipass VMs (arm64)
 - ⚙️ **CI Pipeline**: Gitea Actions — test → build → Trivy scan → push (100% airgapped)
 - 🗄️ **HA Databases**: Redis Sentinel (automatic failover) + CloudNativePG PostgreSQL (quorum-based, read/write splitting)
+- 🔁 **Idempotency**: Redis-backed middleware deduplication (POST/DELETE, 24h TTL)
 
 ## 🚧 Extend This Project
 
@@ -248,9 +259,10 @@ make clean             # Remove everything
 - [x] Add Helm charts (✅ Traefik + kube-prometheus-stack via Helm)
 - [x] Migrate monitoring to `kube-prometheus-stack` Helm chart
 - [x] Add Loki for centralized logging (✅ Loki 3.6.5 + Alloy + Tempo via Helm)
-- [ ] Add Vault for secrets management (Phase 19)
+- [x] Add Vault for secrets management + cert-manager PKI (✅ Phase 19 — Vault HA + cert-manager v1.17.1)
 - [ ] Infrastructure as Code with Ansible (Phase 20)
 - [ ] Migrate CNI to Cilium (eBPF, L7 NetworkPolicies, Hubble observability)
+- [ ] Renovate Bot for automated dependency updates (Helm charts, images, Go deps)
 - [ ] Add Falco for runtime security
 - [ ] Implement Chaos Mesh for resilience testing
 

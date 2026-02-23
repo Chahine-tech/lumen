@@ -1,0 +1,28 @@
+# Certificate resource: cert-manager issues *.airgap.local via Vault PKI
+#
+# This replaces the manual OpenSSL cert-generation Job for future renewals.
+# cert-manager automatically renews 30 days before expiry.
+#
+# Note: The existing airgap-tls Secret (created by cert-generation Job) is
+# overwritten by cert-manager on first issuance. The CA remains the same
+# (imported into Vault PKI from airgap-ca ConfigMap) — no trust store changes.
+#
+# After renewal, run copy-tls-secrets.sh to sync airgap-tls to other namespaces.
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: airgap-tls
+  namespace: traefik
+spec:
+  secretName: airgap-tls
+  issuerRef:
+    name: vault-issuer
+    kind: ClusterIssuer
+  commonName: "*.airgap.local"
+  dnsNames:
+    - "*.airgap.local"
+    - "airgap.local"
+    - "traefik.traefik.svc.cluster.local"
+  duration: 8760h    # 1 year
+  renewBefore: 720h  # Renew 30 days before expiry

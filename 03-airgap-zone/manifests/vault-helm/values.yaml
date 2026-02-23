@@ -1,0 +1,135 @@
+# Vault HA Helm values — airgap configuration
+# HashiCorp Vault 1.19.0 — Raft HA (3 replicas)
+# All images served from internal registry 192.168.2.2:5000
+#
+# Architecture:
+#   - 3 Vault pods (Raft consensus, no external storage)
+#   - Vault Agent Injector (MutatingWebhookConfiguration)
+#   - TLS disabled at pod level (Traefik handles edge TLS)
+#   - UI accessible via vault.airgap.local
+
+global:
+  enabled: true
+  # TLS handled by Traefik edge termination
+  tlsDisable: true
+
+# ─────────────────────────────────────────────
+# Vault Agent Injector
+# Injects vault-agent sidecar into annotated pods
+# ─────────────────────────────────────────────
+injector:
+  enabled: true
+
+  image:
+    repository: 192.168.2.2:5000/hashicorp/vault-k8s
+    tag: "1.6.2"
+    pullPolicy: IfNotPresent
+
+  agentImage:
+    repository: 192.168.2.2:5000/hashicorp/vault
+    tag: "1.19.0"
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+  # Webhook configuration
+  failurePolicy: Ignore  # Don't block pod creation if injector is down
+
+# ─────────────────────────────────────────────
+# Vault Server — HA with Raft storage
+# ─────────────────────────────────────────────
+server:
+  image:
+    repository: 192.168.2.2:5000/hashicorp/vault
+    tag: "1.19.0"
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Persistent storage for Raft data
+  dataStorage:
+    enabled: true
+    size: 1Gi
+    storageClass: local-path
+    accessMode: ReadWriteOnce
+
+  # Readiness probe — Vault is ready only when unsealed
+  readinessProbe:
+    enabled: true
+    path: "/v1/sys/health?standbyok=true"
+
+  # HA configuration with Raft integrated storage
+  ha:
+    enabled: true
+    replicas: 3
+    raft:
+      enabled: true
+      setNodeId: true
+
+      config: |
+        cluster_name = "lumen-vault"
+
+        storage "raft" {
+          path    = "/vault/data"
+          node_id = "{{ env "HOSTNAME" }}"
+
+          retry_join {
+            leader_api_addr = "http://vault-0.vault-internal:8200"
+          }
+          retry_join {
+            leader_api_addr = "http://vault-1.vault-internal:8200"
+          }
+          retry_join {
+            leader_api_addr = "http://vault-2.vault-internal:8200"
+          }
+        }
+
+        listener "tcp" {
+          address         = "[::]:8200"
+          cluster_address = "[::]:8201"
+          tls_disable     = true
+        }
+
+        # Register with Kubernetes for health checks
+        service_registration "kubernetes" {}
+
+        # Audit logging
+        # audit "file" {
+        #   path = "file"
+        #   file_path = "/vault/audit/audit.log"
+        # }
+
+  # Anti-affinity: spread pods across nodes
+  affinity: |
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: vault
+                component: server
+            topologyKey: kubernetes.io/hostname
+
+  serviceAccount:
+    create: true
+    name: vault
+
+# ─────────────────────────────────────────────
+# Vault UI — accessible via Traefik IngressRoute
+# ─────────────────────────────────────────────
+ui:
+  enabled: true
+  serviceType: ClusterIP
+  servicePort: 8200

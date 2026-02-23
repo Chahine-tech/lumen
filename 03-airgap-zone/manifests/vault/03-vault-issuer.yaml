@@ -1,0 +1,49 @@
+# cert-manager ClusterIssuer backed by Vault PKI Engine
+#
+# Flow:
+#   cert-manager → authenticates to Vault via Kubernetes auth
+#               → requests cert from pki/sign/airgap-role
+#               → Vault signs with CA imported from airgap-ca ConfigMap
+#               → cert-manager stores result as K8s Secret airgap-tls
+#
+# Prerequisites:
+#   - Vault initialized and unsealed
+#   - vault-init-job completed (PKI engine + K8s auth configured)
+#   - cert-manager deployed
+
+---
+# ServiceAccount used by cert-manager to authenticate to Vault
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cert-manager-vault-auth
+  namespace: cert-manager
+
+---
+# Long-lived token for cert-manager → Vault Kubernetes auth
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cert-manager-vault-token
+  namespace: cert-manager
+  annotations:
+    kubernetes.io/service-account.name: cert-manager-vault-auth
+type: kubernetes.io/service-account-token
+
+---
+# ClusterIssuer: cert-manager issues certs via Vault PKI
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: vault-issuer
+spec:
+  vault:
+    server: http://vault.vault.svc.cluster.local:8200
+    path: pki/sign/airgap-role
+    auth:
+      kubernetes:
+        role: cert-manager
+        mountPath: /v1/auth/kubernetes
+        secretRef:
+          name: cert-manager-vault-token
+          key: token

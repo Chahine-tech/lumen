@@ -30,9 +30,10 @@ func NewApp() (*App, error) {
 	redisMode       := getEnv("REDIS_MODE", "standalone")
 	sentinelAddrs   := getEnv("REDIS_SENTINEL_ADDRS", "")
 	redisMasterName := getEnv("REDIS_MASTER_NAME", "mymaster")
-	pgRWDSN         := getEnv("PG_RW_DSN", "")
-	pgRODSN         := getEnv("PG_RO_DSN", "")
 	port            := getEnv("PORT", "8080")
+
+	pgRWDSN := getEnv("PG_RW_DSN", "")
+	pgRODSN := getEnv("PG_RO_DSN", "")
 
 	slog.Info("Connecting to Redis", "addr", redisAddr, "mode", redisMode)
 	redisStore, err := store.NewRedisStore(redisAddr, redisMode, sentinelAddrs, redisMasterName)
@@ -43,7 +44,7 @@ func NewApp() (*App, error) {
 
 	var pgStore *store.PostgresStore
 	if pgRWDSN != "" && pgRODSN != "" {
-		slog.Info("Connecting to PostgreSQL", "rw", pgRWDSN)
+		slog.Info("Connecting to PostgreSQL")
 		pgStore, err = store.NewPostgresStore(context.Background(), pgRWDSN, pgRODSN)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize PostgreSQL: %w", err)
