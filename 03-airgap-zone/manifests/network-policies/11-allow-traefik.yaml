@@ -74,6 +74,8 @@ spec:
         - protocol: TCP
           port: 8080  # Lumen API
         - protocol: TCP
+          port: 8200  # Vault UI
+        - protocol: TCP
           port: 9090  # Prometheus
         - protocol: TCP
           port: 9093  # AlertManager
