@@ -31,6 +31,11 @@ resources:
 # Webhook
 # ─────────────────────────────────────────────
 webhook:
+  # K3s compatibility: default port 10250 clashes with kubelet port,
+  # causing cross-node webhook calls to fail with "connection refused".
+  # See: https://cert-manager.io/docs/installation/compatibility/
+  securePort: 10260
+
   image:
     repository: 192.168.2.2:5000/jetstack/cert-manager-webhook
     tag: v1.17.1

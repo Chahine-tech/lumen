@@ -88,9 +88,10 @@ spec:
     - Egress
   ingress:
     # From API server (ValidatingWebhookConfiguration calls)
+    # Port 10260: K3s-compatible webhook port (10250 clashes with kubelet)
     - ports:
         - protocol: TCP
-          port: 10250
+          port: 10260
         - protocol: TCP
           port: 443
   egress:
