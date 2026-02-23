@@ -97,6 +97,15 @@ spec:
         - protocol: TCP
           port: 8200
 
+    # From vault-secrets-operator namespace (VSO syncs secrets from Vault KV)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: vault-secrets-operator
+      ports:
+        - protocol: TCP
+          port: 8200
+
     # From vault-init Job (same namespace, any pod)
     - from:
         - podSelector: {}
