@@ -82,7 +82,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: cert-manager-webhook
+      app.kubernetes.io/name: webhook  # Helm chart label: app.kubernetes.io/name=webhook
   policyTypes:
     - Ingress
     - Egress
@@ -112,7 +112,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: cert-manager-cainjector
+      app.kubernetes.io/name: cainjector  # Helm chart label: app.kubernetes.io/name=cainjector
   policyTypes:
     - Egress
   egress:
