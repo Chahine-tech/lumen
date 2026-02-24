@@ -58,6 +58,7 @@ spec:
         - name: k8s-metacollector
           image: 192.168.2.2:5000/falcosecurity/k8s-metacollector:latest
           imagePullPolicy: IfNotPresent
+          args: ["run"]
           ports:
             - name: grpc
               containerPort: 45000
