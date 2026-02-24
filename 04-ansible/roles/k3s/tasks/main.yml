@@ -92,3 +92,21 @@
 - name: Show cluster nodes
   ansible.builtin.debug:
     msg: "{{ all_nodes.stdout_lines }}"
+
+# Falco requires enough inotify instances on node-1 (control-plane hosts many pods).
+# Default fs.inotify.max_user_instances=128 is exhausted → "could not initialize inotify handler"
+- name: Set inotify limits for Falco on node-1
+  ansible.builtin.command: >
+    multipass exec node-1 -- bash -c "
+      sysctl -w fs.inotify.max_user_instances=512 &&
+      echo 'fs.inotify.max_user_instances=512' | tee /etc/sysctl.d/99-falco.conf
+    "
+  changed_when: true
+
+- name: Set inotify limits for Falco on node-2
+  ansible.builtin.command: >
+    multipass exec node-2 -- bash -c "
+      sysctl -w fs.inotify.max_user_instances=512 &&
+      echo 'fs.inotify.max_user_instances=512' | tee /etc/sysctl.d/99-falco.conf
+    "
+  changed_when: true

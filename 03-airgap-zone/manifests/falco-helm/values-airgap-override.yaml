@@ -17,21 +17,16 @@ falco:
       initContainer:
         enabled: false  # No driver-loader needed with modern_ebpf
 
-  # Collectors: K3s uses containerd at /run/k3s/containerd/containerd.sock
+  # Collectors: disabled — container metadata comes from the container plugin (cri engine)
+  # The "collectors" feature is the old pre-plugin metadata system; we use the new plugin.
   collectors:
-    enabled: true
-    docker:
-      enabled: false
-    containerd:
-      enabled: true
-      socket: /run/k3s/containerd/containerd.sock
-    crio:
-      enabled: false
+    enabled: false
 
   # The image ships /etc/falco/config.d/falco.container_plugin.yaml which does:
   #   load_plugins: [container]
-  # We override falco.yaml to declare the container plugin with the K3s socket.
-  # The config.d file is overridden via extraVolumeMounts below to avoid duplication.
+  # We override it via ConfigMap to use the CRI engine (not containerd engine).
+  # K3s cgroups use "cri-containerd-HASH.scope" format → only the cri engine can parse them.
+  # The config.d file is overridden via mounts.volumeMounts below to avoid duplication.
   falco:
     # Plugin config is in config.d/falco.container_plugin.yaml (overridden via ConfigMap)
     # No plugins/load_plugins here to avoid duplicate registration

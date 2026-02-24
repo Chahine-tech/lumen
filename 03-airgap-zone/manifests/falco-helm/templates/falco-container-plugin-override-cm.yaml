@@ -1,7 +1,8 @@
 # ConfigMap: overrides the builtin /etc/falco/config.d/falco.container_plugin.yaml
-# The image ships: load_plugins: [container]
-# We replace it with an empty file — the plugin is declared in falco.yaml instead,
-# pointing to the K3s containerd socket at /host/run/k3s/containerd/containerd.sock
+# K3s uses cgroup paths with "cri-containerd-HASH.scope" format.
+# Only the "cri" engine can parse this format → use cri engine (not containerd engine).
+# The "containerd" engine uses native containerd gRPC but cannot match K8s cgroup paths,
+# causing container.id to always be empty (GitHub issue #3587).
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -17,17 +18,17 @@ data:
           label_max_len: 100
           engines:
             containerd:
-              enabled: true
+              enabled: false
               sockets:
-                - /host/run/k3s/containerd/containerd.sock
+                - /var/run/containerd/containerd.sock
             docker:
               enabled: false
               sockets:
                 - /var/run/docker.sock
             cri:
-              enabled: false
+              enabled: true
               sockets:
-                - /run/crio/crio.sock
+                - /host/run/k3s/containerd/containerd.sock
             podman:
               enabled: false
               sockets:

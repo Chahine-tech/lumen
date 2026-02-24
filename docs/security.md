@@ -11,6 +11,7 @@ This document covers the complete security implementation in the Lumen airgap Ku
 - [Layer 1: OPA Gatekeeper](#layer-1-opa-gatekeeper)
 - [Layer 2: Pod Security Standards](#layer-2-pod-security-standards)
 - [Layer 3: NetworkPolicies](#layer-3-networkpolicies)
+- [Layer 4: Falco Runtime Security](#layer-4-falco-runtime-security)
 - [How Layers Work Together](#how-layers-work-together)
 - [Deployment Guide](#deployment-guide)
 - [Testing & Verification](#testing--verification)
@@ -27,6 +28,7 @@ The Lumen project implements **defense-in-depth security** using three complemen
 | **1** | OPA Gatekeeper | Custom business policies | Admission webhook |
 | **2** | Pod Security Standards (PSS) | System security baselines | Built-in admission |
 | **3** | NetworkPolicies | Zero-trust networking | CNI (Flannel) |
+| **4** | Falco | Runtime threat detection | Kernel syscalls (eBPF) |
 
 **Why 3 Layers?**
 - **Redundancy**: If one layer fails, others protect the cluster
@@ -804,6 +806,144 @@ curl -k https://traefik.airgap.local/api/http/routers
 
 ---
 
+## Layer 4: Falco Runtime Security
+
+**What is Falco?**
+- Runtime security tool that monitors kernel syscalls via eBPF
+- Detects suspicious behavior **after** a pod is running (OPA/PSS guard admission; Falco guards runtime)
+- Sends alerts as JSON to stdout → collected by Alloy → stored in Loki → visible in Grafana
+
+**Why Falco completes the stack?**
+- OPA + PSS prevent bad *deployments* — Falco detects bad *behavior at runtime*
+- Example: a container that passes all admission checks but then opens a shell, reads `/etc/shadow`, or makes an unexpected network connection
+
+### Driver: modern_ebpf
+
+Falco 0.43.0 ships three driver options. We use `modern_ebpf`:
+
+| Driver | Airgap | ARM64 | Kernel req | Notes |
+|--------|--------|-------|------------|-------|
+| `kmod` | ❌ | ❌ | any | Downloads + compiles kernel module |
+| `ebpf` | ❌ | ✅ | ≥4.14 | Downloads pre-compiled probe |
+| `modern_ebpf` | ✅ | ✅ | ≥5.8 | CO-RE, self-contained in binary |
+
+`modern_ebpf` is the only option that works airgap out-of-the-box (no runtime downloads).
+
+### Architecture
+
+```
+Falco DaemonSet (1 pod / node)
+  └── modern_ebpf probe (CO-RE, kernel ≥5.8)
+      └── container plugin (libcontainer.so)
+          └── containerd socket at /host/run/k3s/containerd/containerd.sock
+              └── enriches alerts with container name / namespace / image
+
+Falco stdout (JSON)
+  └── Alloy (already deployed, scrapes falco pod logs)
+      └── Loki
+          └── Grafana → query: {namespace="falco"} | json
+```
+
+### Deployment: Airgap Challenges Encountered
+
+Falco 0.43.0 + K3s has several non-obvious pitfalls:
+
+**1. Helm chart uses `mounts.volumes`, not `extraVolumes`**
+
+The upstream `falco` Helm chart (4.21.2) does not support `extraVolumes`/`extraVolumeMounts`. The correct keys are:
+```yaml
+falco:
+  mounts:
+    volumes:
+      - name: my-vol
+        configMap:
+          name: my-cm
+    volumeMounts:
+      - name: my-vol
+        mountPath: /etc/falco/config.d/some.yaml
+        subPath: some.yaml
+```
+
+**2. Builtin `config.d/falco.container_plugin.yaml` causes duplicate plugin registration**
+
+The Falco 0.43.0 image ships `/etc/falco/config.d/falco.container_plugin.yaml` which auto-loads:
+```yaml
+load_plugins: [container]
+```
+If you also declare the plugin in `falco.yaml` (via Helm values), Falco crashes:
+```
+Runtime error: cannot register plugin: found another plugin with name container. Aborting.
+```
+
+**Fix:** Mount an override ConfigMap at that exact path with full plugin config, and set `load_plugins: []` in `falco.yaml`:
+```yaml
+# templates/falco-container-plugin-override-cm.yaml (in templates/ for Helm to deploy it)
+data:
+  falco.container_plugin.yaml: |
+    plugins:
+      - name: container
+        library_path: libcontainer.so
+        init_config:
+          engines:
+            containerd:
+              enabled: true
+              sockets:
+                - /host/run/k3s/containerd/containerd.sock
+            # All other engines required by JSON schema — disabled with placeholder sockets
+            docker:
+              enabled: false
+              sockets: [/var/run/docker.sock]
+            ...
+    load_plugins: [container]
+```
+
+**3. `engines` JSON schema requires ALL engines**
+
+The plugin's JSON schema marks `bpm`, `containerd`, `cri`, `docker`, `libvirt_lxc`, `lxc`, `podman` as `required`. If you define `engines` at all, you must include every engine — even disabled ones. Each `SocketsContainer` engine also requires a non-empty `sockets` array.
+
+**4. K3s containerd socket path**
+
+K3s uses `/run/k3s/containerd/containerd.sock` (not the standard `/run/containerd/containerd.sock`). The chart mounts it with a `/host/` prefix:
+```
+hostPath: /run/k3s/containerd  →  mountPath: /host/run/k3s/containerd
+```
+So the socket path in `init_config` must be `/host/run/k3s/containerd/containerd.sock`.
+
+**5. `fs.inotify.max_user_instances` exhausted on node-1**
+
+node-1 (control-plane) runs many pods (ArgoCD, Vault, monitoring...). The default kernel limit `fs.inotify.max_user_instances=128` is exhausted, causing Falco to crash on node-1 only:
+```
+Error: could not initialize inotify handler
+```
+
+**Fix:** Applied via Ansible `k3s` role (persistent across reboots):
+```bash
+sysctl -w fs.inotify.max_user_instances=512
+echo 'fs.inotify.max_user_instances=512' > /etc/sysctl.d/99-falco.conf
+```
+
+### Verification
+
+```bash
+# Both pods running (1 per node)
+kubectl get pods -n falco
+# → falco-xxxx  1/1 Running  (node-1)
+# → falco-xxxx  1/1 Running  (node-2)
+
+# Trigger an alert — open a shell in a container
+kubectl exec -it -n lumen <lumen-api-pod> -- sh
+# → Falco logs: "Terminal shell in container"
+
+# View alerts
+kubectl logs -n falco -l app.kubernetes.io/name=falco -f
+
+# In Grafana / Loki
+# Query: {namespace="falco"} | json
+# Filter: rule="Terminal Shell in container"
+```
+
+---
+
 ## How Layers Work Together
 
 ### Example: Deploying a Pod
@@ -1456,6 +1596,11 @@ spec:
 - Explicit allow rules per service
 - Zero-trust networking
 
+✅ **Layer 4: Falco Runtime Security**
+- DaemonSet on node-1 + node-2 (modern_ebpf driver)
+- Container plugin enriches alerts with K8s metadata
+- JSON alerts → Alloy → Loki → Grafana
+
 ### Security Posture
 
 **Before:**
@@ -1478,7 +1623,8 @@ spec:
 | **Runtime security** | ✅ | NetworkPolicies + securityContext |
 | **Audit logging** | ✅ | PSS audit + Gatekeeper audit |
 | **Compliance** | ✅ | CIS Kubernetes Benchmark |
-| **Defense in depth** | ✅ | 3 independent layers |
+| **Defense in depth** | ✅ | 4 independent layers |
+| **Runtime detection** | ✅ | Falco (syscall monitoring) |
 
 ---
 
@@ -1491,10 +1637,7 @@ spec:
    - Enable L7 HTTP NetworkPolicies
    - Add eBPF performance benefits
 
-2. **Runtime Security** (Falco)
-   - Detect runtime anomalies (unexpected processes, file access)
-   - Alert on suspicious syscalls
-   - Kubernetes audit log integration
+2. ~~**Runtime Security** (Falco)~~ ✅ Implemented (Phase 22)
 
 3. **Secrets Management** (HashiCorp Vault)
    - External secrets operator

@@ -247,7 +247,7 @@ make clean             # Remove everything
 - [ ] Infrastructure as Code with Ansible (Phase 20)
 - [ ] Migrate CNI to Cilium (eBPF, L7 NetworkPolicies, Hubble observability)
 - [ ] Renovate Bot for automated dependency updates (Helm charts, images, Go deps)
-- [ ] Add Falco for runtime security
+- [x] Add Falco for runtime security
 - [ ] Implement Chaos Mesh for resilience testing
 
 ## 📖 Resources
