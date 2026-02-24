@@ -1,0 +1,74 @@
+---
+# Role: opa — Install OPA Gatekeeper and apply constraint templates
+# Gatekeeper enforces admission policies (registry, labels, resources, no-latest)
+
+- name: Check if Gatekeeper is already installed
+  ansible.builtin.command: kubectl get namespace gatekeeper-system --no-headers
+  register: gk_check
+  changed_when: false
+  failed_when: false
+
+- name: Apply Gatekeeper install manifest
+  ansible.builtin.command: >
+    kubectl apply -f {{ opa_manifests_dir }}/01-gatekeeper-install.yaml
+  when: gk_check.rc != 0
+  changed_when: true
+
+- name: Wait for Gatekeeper controller to be Ready
+  ansible.builtin.command: >
+    kubectl wait pods -l control-plane=controller-manager
+    -n gatekeeper-system --for=condition=Ready --timeout=120s
+  changed_when: false
+
+- name: Wait for Gatekeeper audit to be Ready
+  ansible.builtin.command: >
+    kubectl wait pods -l control-plane=audit-controller
+    -n gatekeeper-system --for=condition=Ready --timeout=120s
+  changed_when: false
+  failed_when: false
+
+- name: Pause for webhook to stabilize
+  ansible.builtin.pause:
+    seconds: 15
+
+- name: Apply constraint template — registry
+  ansible.builtin.command: >
+    kubectl apply -f {{ opa_manifests_dir }}/02-constraint-template-registry.yaml
+  changed_when: false
+
+- name: Pause between constraint templates
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: Apply constraint template — labels
+  ansible.builtin.command: >
+    kubectl apply -f {{ opa_manifests_dir }}/03-constraint-template-labels.yaml
+  changed_when: false
+
+- name: Pause between constraint templates
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: Apply constraint template — resources
+  ansible.builtin.command: >
+    kubectl apply -f {{ opa_manifests_dir }}/04-constraint-template-resources.yaml
+  changed_when: false
+
+- name: Pause between constraint templates
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: Apply constraint template — no-latest
+  ansible.builtin.command: >
+    kubectl apply -f {{ opa_manifests_dir }}/05-constraint-template-no-latest.yaml
+  changed_when: false
+
+- name: Verify constraints
+  ansible.builtin.command: kubectl get constraints -A --no-headers
+  register: constraints
+  changed_when: false
+  failed_when: false
+
+- name: Show constraints
+  ansible.builtin.debug:
+    msg: "{{ constraints.stdout_lines }}"

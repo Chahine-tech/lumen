@@ -1,0 +1,33 @@
+---
+# Role: vault — Wait for Vault pods, then unseal
+# Full Vault init is a one-time manual operation (see docs/vault-cert-manager.md)
+# This role only handles the unseal step that must happen after every restart
+
+- name: Wait for Vault pods to exist
+  ansible.builtin.command: kubectl get pods -n vault --no-headers
+  register: vault_pods
+  until: vault_pods.rc == 0 and vault_pods.stdout_lines | length >= 3
+  retries: 30
+  delay: 10
+  changed_when: false
+
+- name: Show Vault pod status
+  ansible.builtin.debug:
+    msg: "{{ vault_pods.stdout_lines }}"
+
+- name: Check vault-keys.json exists
+  ansible.builtin.stat:
+    path: "{{ vault_keys_file }}"
+  register: vault_keys_stat
+
+- name: Skip unseal if vault-keys.json not found
+  ansible.builtin.debug:
+    msg: |
+      vault-keys.json not found — skipping unseal.
+      Vault init is a one-time manual operation.
+      See: docs/vault-cert-manager.md for instructions.
+  when: not vault_keys_stat.stat.exists
+
+- name: Unseal Vault
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/../unseal.yml"
+  when: vault_keys_stat.stat.exists

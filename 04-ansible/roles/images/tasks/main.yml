@@ -1,0 +1,63 @@
+---
+# Role: images — Transfer all registry data to node-1 and restart registry
+#
+# Assumption: The transit zone registry data directory has been copied to
+# {{ project_root }}/02-transit-zone/registry-data/ or similar.
+# This role transfers the registry data volume and restarts the registry container.
+
+- name: Check if registry data exists locally
+  ansible.builtin.stat:
+    path: "{{ project_root }}/02-transit-zone/registry-data"
+  register: registry_data_stat
+
+- name: Warn if registry data directory not found
+  ansible.builtin.debug:
+    msg: |
+      WARNING: {{ project_root }}/02-transit-zone/registry-data not found.
+      Images must be pushed to the registry separately.
+      To push images manually: see 02-transit-zone/push-*.sh scripts.
+  when: not registry_data_stat.stat.exists
+
+- name: Create tar archive of registry data
+  ansible.builtin.command: >
+    tar -czf /tmp/registry-data.tar.gz -C {{ project_root }}/02-transit-zone registry-data
+  when: registry_data_stat.stat.exists
+  changed_when: true
+
+- name: Transfer registry data to node-1
+  ansible.builtin.command: >
+    multipass transfer /tmp/registry-data.tar.gz node-1:/tmp/registry-data.tar.gz
+  when: registry_data_stat.stat.exists
+  changed_when: true
+
+- name: Extract registry data on node-1
+  ansible.builtin.command: >
+    multipass exec node-1 -- bash -c "
+      sudo tar -xzf /tmp/registry-data.tar.gz -C /var/lib/ &&
+      sudo mv /var/lib/registry-data /var/lib/registry 2>/dev/null || true
+    "
+  when: registry_data_stat.stat.exists
+  changed_when: true
+
+- name: Restart registry to load new images
+  ansible.builtin.command: multipass exec node-1 -- docker restart registry
+  when: registry_data_stat.stat.exists
+  changed_when: true
+
+- name: Wait for registry to be healthy again
+  ansible.builtin.command: multipass exec node-1 -- curl -sf http://localhost:5000/v2/
+  register: registry_health
+  until: registry_health.rc == 0
+  retries: 10
+  delay: 3
+  changed_when: false
+
+- name: List available images in registry
+  ansible.builtin.command: >
+    multipass exec node-1 -- curl -s http://localhost:5000/v2/_catalog
+  register: catalog
+  changed_when: false
+
+- name: Show registry catalog
+  ansible.builtin.debug:
+    msg: "Registry catalog: {{ catalog.stdout | from_json }}"

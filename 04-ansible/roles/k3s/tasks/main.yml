@@ -1,0 +1,94 @@
+---
+# Role: k3s — Install K3s on node-1 (control plane) and node-2 (worker)
+# Prerequisites: registry running on node-1:5000
+
+- name: Check if K3s is installed on node-1
+  ansible.builtin.command: multipass exec node-1 -- which k3s
+  register: k3s_check
+  changed_when: false
+  failed_when: false
+
+- name: Copy registries.yaml to node-1
+  ansible.builtin.command: >
+    multipass transfer
+    {{ project_root }}/03-airgap-zone/config/registries.yaml
+    node-1:/tmp/registries.yaml
+  changed_when: true
+
+- name: Install K3s on node-1 (control plane)
+  ansible.builtin.command: >
+    multipass exec node-1 -- bash -c "
+      mkdir -p /etc/rancher/k3s &&
+      cp /tmp/registries.yaml /etc/rancher/k3s/registries.yaml &&
+      curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s_version }}
+        sh -s - --write-kubeconfig-mode 644
+        --disable traefik
+        --disable servicelb
+    "
+  when: k3s_check.rc != 0
+  changed_when: true
+
+- name: Wait for K3s node-1 to be Ready
+  ansible.builtin.command: multipass exec node-1 -- kubectl get nodes --no-headers
+  register: node1_status
+  until: "'Ready' in node1_status.stdout and 'NotReady' not in node1_status.stdout"
+  retries: 20
+  delay: 5
+  changed_when: false
+
+- name: Get K3s node token from node-1
+  ansible.builtin.command: multipass exec node-1 -- cat /var/lib/rancher/k3s/server/node-token
+  register: k3s_token
+  changed_when: false
+
+- name: Check if K3s is installed on node-2
+  ansible.builtin.command: multipass exec node-2 -- which k3s
+  register: k3s_check_node2
+  changed_when: false
+  failed_when: false
+
+- name: Copy registries.yaml to node-2
+  ansible.builtin.command: >
+    multipass transfer
+    {{ project_root }}/03-airgap-zone/config/registries.yaml
+    node-2:/tmp/registries.yaml
+  changed_when: true
+
+- name: Install K3s on node-2 (worker)
+  ansible.builtin.command: >
+    multipass exec node-2 -- bash -c "
+      mkdir -p /etc/rancher/k3s &&
+      cp /tmp/registries.yaml /etc/rancher/k3s/registries.yaml &&
+      curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s_version }}
+        K3S_URL=https://{{ node1_ip }}:6443
+        K3S_TOKEN={{ k3s_token.stdout | trim }}
+        sh -
+    "
+  when: k3s_check_node2.rc != 0
+  changed_when: true
+
+- name: Fetch kubeconfig from node-1
+  ansible.builtin.command: multipass exec node-1 -- cat /etc/rancher/k3s/k3s.yaml
+  register: kubeconfig_raw
+  changed_when: false
+
+- name: Write kubeconfig with correct server address
+  ansible.builtin.copy:
+    content: "{{ kubeconfig_raw.stdout | replace('127.0.0.1', node1_ip) }}"
+    dest: "{{ ansible_env.HOME }}/.kube/config"
+    mode: '0600'
+
+- name: Wait for both nodes to be Ready
+  ansible.builtin.command: kubectl get nodes --no-headers
+  register: all_nodes
+  until: >
+    all_nodes.rc == 0 and
+    all_nodes.stdout_lines | length == 2 and
+    'NotReady' not in all_nodes.stdout
+  retries: 20
+  delay: 5
+  changed_when: false
+
+- name: Show cluster nodes
+  ansible.builtin.debug:
+    msg: "{{ all_nodes.stdout_lines }}"

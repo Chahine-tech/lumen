@@ -1,0 +1,71 @@
+---
+# Role: verify — Health checks on all airgap services
+
+- name: Wait for lumen-api to be ready
+  ansible.builtin.command: >
+    kubectl wait deploy/lumen-api -n lumen
+    --for=condition=Available --timeout=120s
+  changed_when: false
+  failed_when: false
+
+- name: Check lumen-api /health
+  ansible.builtin.uri:
+    url: "https://lumen-api.airgap.local/health"
+    validate_certs: false
+    status_code: 200
+  register: lumen_health
+  failed_when: false
+
+- name: Check ArgoCD
+  ansible.builtin.uri:
+    url: "https://argocd.airgap.local"
+    validate_certs: false
+    status_code: 200
+  register: argocd_health
+  failed_when: false
+
+- name: Check Grafana
+  ansible.builtin.uri:
+    url: "https://grafana.airgap.local"
+    validate_certs: false
+    status_code: 200
+  register: grafana_health
+  failed_when: false
+
+- name: Check Gitea
+  ansible.builtin.uri:
+    url: "https://gitea.airgap.local"
+    validate_certs: false
+    status_code: 200
+  register: gitea_health
+  failed_when: false
+
+- name: Check Vault
+  ansible.builtin.uri:
+    url: "https://vault.airgap.local/v1/sys/health"
+    validate_certs: false
+    status_code: [200, 429, 473, 501, 503]  # 200=active, 429=standby, 503=sealed
+  register: vault_health
+  failed_when: false
+
+- name: Show health check results
+  ansible.builtin.debug:
+    msg:
+      - "lumen-api  : {{ 'OK' if lumen_health.status == 200 else 'FAIL (' + (lumen_health.status | string) + ')' }}"
+      - "argocd     : {{ 'OK' if argocd_health.status == 200 else 'FAIL (' + (argocd_health.status | string) + ')' }}"
+      - "grafana    : {{ 'OK' if grafana_health.status == 200 else 'FAIL (' + (grafana_health.status | string) + ')' }}"
+      - "gitea      : {{ 'OK' if gitea_health.status == 200 else 'FAIL (' + (gitea_health.status | string) + ')' }}"
+      - "vault      : {{ 'OK' if vault_health.status in [200, 429, 473] else 'FAIL/SEALED (' + (vault_health.status | string) + ')' }}"
+
+- name: Show ArgoCD application sync status
+  ansible.builtin.command: >
+    kubectl get applications -n argocd
+    -o custom-columns='NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status'
+    --no-headers
+  register: argocd_status
+  changed_when: false
+  failed_when: false
+
+- name: Display ArgoCD applications
+  ansible.builtin.debug:
+    msg: "{{ argocd_status.stdout_lines }}"

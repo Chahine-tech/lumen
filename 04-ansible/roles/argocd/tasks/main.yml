@@ -1,0 +1,54 @@
+---
+# Role: argocd — Install ArgoCD and register all applications
+# ArgoCD is the GitOps controller that manages all subsequent deployments
+
+- name: Check if ArgoCD is already installed
+  ansible.builtin.command: kubectl get namespace argocd --no-headers
+  register: argocd_check
+  changed_when: false
+  failed_when: false
+
+- name: Apply ArgoCD namespace
+  ansible.builtin.command: >
+    kubectl apply -f {{ manifests_dir }}/argocd/01-namespace.yaml
+  changed_when: false
+
+- name: Apply ArgoCD install manifest
+  ansible.builtin.command: >
+    kubectl apply -f {{ manifests_dir }}/argocd/02-install-airgap.yaml
+  when: argocd_check.rc != 0
+  changed_when: true
+
+- name: Wait for ArgoCD server to be Ready
+  ansible.builtin.command: >
+    kubectl wait deploy/argocd-server -n argocd
+    --for=condition=Available --timeout=180s
+  changed_when: false
+
+- name: Wait for ArgoCD repo-server to be Ready
+  ansible.builtin.command: >
+    kubectl wait deploy/argocd-repo-server -n argocd
+    --for=condition=Available --timeout=180s
+  changed_when: false
+
+- name: Apply ArgoCD ConfigMap (repo config, etc.)
+  ansible.builtin.command: >
+    kubectl apply -f {{ manifests_dir }}/argocd/03-argocd-cm.yaml
+  changed_when: false
+  failed_when: false
+
+- name: Apply all ArgoCD Applications
+  ansible.builtin.command: >
+    kubectl apply -f {{ argocd_apps_dir }}/{{ item }}
+  loop: "{{ argocd_apps }}"
+  changed_when: false
+
+- name: Show ArgoCD Applications
+  ansible.builtin.command: kubectl get applications -n argocd
+  register: argocd_apps_status
+  changed_when: false
+  failed_when: false
+
+- name: Display Applications
+  ansible.builtin.debug:
+    msg: "{{ argocd_apps_status.stdout_lines }}"

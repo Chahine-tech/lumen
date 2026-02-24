@@ -1,0 +1,54 @@
+---
+# Role: multipass — Create Multipass VMs if they don't exist
+# Idempotent: skips creation if VM already exists
+
+- name: Check if node-1 exists
+  ansible.builtin.command: multipass info node-1
+  register: node1_info
+  changed_when: false
+  failed_when: false
+
+- name: Launch node-1 (control plane)
+  ansible.builtin.command: >
+    multipass launch
+    --name node-1
+    --cpus {{ node1_cpus }}
+    --memory {{ node1_memory }}
+    --disk {{ node1_disk }}
+  when: node1_info.rc != 0
+  register: node1_launch
+
+- name: Check if node-2 exists
+  ansible.builtin.command: multipass info node-2
+  register: node2_info
+  changed_when: false
+  failed_when: false
+
+- name: Launch node-2 (worker)
+  ansible.builtin.command: >
+    multipass launch
+    --name node-2
+    --cpus {{ node2_cpus }}
+    --memory {{ node2_memory }}
+    --disk {{ node2_disk }}
+  when: node2_info.rc != 0
+  register: node2_launch
+
+- name: Ensure node-1 is running
+  ansible.builtin.command: multipass start node-1
+  when: node1_info.rc == 0 and 'Stopped' in node1_info.stdout
+  changed_when: true
+
+- name: Ensure node-2 is running
+  ansible.builtin.command: multipass start node-2
+  when: node2_info.rc == 0 and 'Stopped' in node2_info.stdout
+  changed_when: true
+
+- name: Show VM list
+  ansible.builtin.command: multipass list
+  register: vm_list
+  changed_when: false
+
+- name: Display VMs
+  ansible.builtin.debug:
+    msg: "{{ vm_list.stdout_lines }}"

@@ -1,0 +1,83 @@
+---
+# Role: gitea — Create Gitea org + repo and push the lumen repository
+# Gitea serves as the GitOps source for ArgoCD (in-cluster git)
+
+- name: Wait for Gitea pod to be ready
+  ansible.builtin.command: >
+    kubectl wait pod -l app=gitea -n gitea
+    --for=condition=Ready --timeout=180s
+  changed_when: false
+
+- name: Start port-forward to Gitea
+  ansible.builtin.command: >
+    kubectl port-forward -n gitea svc/gitea {{ gitea_local_port }}:3000
+  async: 30
+  poll: 0
+  register: pf_job
+
+- name: Wait for port-forward to establish
+  ansible.builtin.pause:
+    seconds: 5
+
+- name: Create Gitea organization 'lumen'
+  ansible.builtin.uri:
+    url: "http://localhost:{{ gitea_local_port }}/api/v1/orgs"
+    method: POST
+    user: "{{ gitea_admin_user }}"
+    password: "{{ gitea_admin_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      username: "{{ gitea_org }}"
+      full_name: "Lumen Organization"
+      description: "Lumen airgap project"
+    status_code: [201, 422]  # 422 = already exists
+  register: create_org
+
+- name: Create Gitea repository 'lumen'
+  ansible.builtin.uri:
+    url: "http://localhost:{{ gitea_local_port }}/api/v1/orgs/{{ gitea_org }}/repos"
+    method: POST
+    user: "{{ gitea_admin_user }}"
+    password: "{{ gitea_admin_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      name: "{{ gitea_repo }}"
+      description: "Lumen airgap Kubernetes project"
+      private: false
+      auto_init: false
+    status_code: [201, 409]  # 409 = already exists
+  register: create_repo
+
+- name: Add Gitea remote to local git repo
+  ansible.builtin.command: >
+    git -C {{ project_root }} remote remove gitea
+  failed_when: false
+  changed_when: false
+
+- name: Add Gitea remote
+  ansible.builtin.command: >
+    git -C {{ project_root }} remote add gitea
+    http://{{ gitea_admin_user }}:{{ gitea_admin_password }}@localhost:{{ gitea_local_port }}/{{ gitea_org }}/{{ gitea_repo }}.git
+  changed_when: true
+
+- name: Push to Gitea
+  ansible.builtin.command: >
+    git -C {{ project_root }} push gitea main --force
+  changed_when: true
+
+- name: Stop port-forward
+  ansible.builtin.command: "kill {{ pf_job.ansible_job_id }}"
+  failed_when: false
+  changed_when: false
+
+- name: Clean up Gitea remote (optional, avoids credentials in git config)
+  ansible.builtin.command: >
+    git -C {{ project_root }} remote remove gitea
+  failed_when: false
+  changed_when: false
+
+- name: Confirm Gitea ready
+  ansible.builtin.debug:
+    msg: "Gitea repo: https://gitea.airgap.local/{{ gitea_org }}/{{ gitea_repo }}"

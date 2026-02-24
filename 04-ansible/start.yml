@@ -1,0 +1,122 @@
+---
+# start.yml — Start the lumen airgap cluster after a Mac or VM reboot
+#
+# Usage:
+#   ansible-playbook 04-ansible/start.yml
+#   ansible-playbook 04-ansible/start.yml --ask-become-pass  # if sudo needs password
+#
+# What it does:
+#   1. Start Multipass VMs (node-1, node-2)
+#   2. Wait for K3s nodes to be Ready
+#   3. Restore ARP entry for MetalLB VIP (lost on reboot)
+#   4. Reinstall OPA Gatekeeper constraints (admission webhook, not in ArgoCD)
+#   5. Unseal Vault (includes unseal.yml)
+
+- name: Start Multipass VMs
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Start node-1 and node-2
+      ansible.builtin.command: multipass start node-1 node-2
+      register: start_result
+      changed_when: true
+      failed_when: start_result.rc != 0
+
+    - name: Wait for K3s API to be reachable
+      ansible.builtin.command: kubectl get nodes --no-headers
+      register: nodes_status
+      until: >
+        nodes_status.rc == 0 and
+        nodes_status.stdout_lines | selectattr('contains', 'NotReady') | list | length == 0
+      retries: 30
+      delay: 5
+      changed_when: false
+
+    - name: Show nodes
+      ansible.builtin.debug:
+        msg: "{{ nodes_status.stdout_lines }}"
+
+- name: Restore ARP entry for MetalLB VIP
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Get node-1 MAC address
+      ansible.builtin.command: multipass exec node-1 -- cat /sys/class/net/eth0/address
+      register: node1_mac
+      changed_when: false
+
+    - name: Set ARP entry for MetalLB VIP
+      ansible.builtin.command: sudo arp -s {{ metallb_vip }} {{ node1_mac.stdout | trim }}
+      changed_when: true
+
+    - name: Confirm ARP entry
+      ansible.builtin.debug:
+        msg: "ARP entry set: {{ metallb_vip }} -> {{ node1_mac.stdout | trim }}"
+
+- name: Reinstall OPA Gatekeeper constraints
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Apply Gatekeeper install manifest
+      ansible.builtin.command: >
+        kubectl apply -f {{ opa_manifests_dir }}/01-gatekeeper-install.yaml
+      register: gk_install
+      changed_when: "'created' in gk_install.stdout or 'configured' in gk_install.stdout"
+
+    - name: Wait for Gatekeeper controller to be Ready
+      ansible.builtin.command: >
+        kubectl wait pods -l control-plane=controller-manager
+        -n gatekeeper-system --for=condition=Ready --timeout=120s
+      changed_when: false
+
+    - name: Wait for webhook to stabilize
+      ansible.builtin.pause:
+        seconds: 15
+
+    - name: Apply constraint template — registry
+      ansible.builtin.command: >
+        kubectl apply -f {{ opa_manifests_dir }}/02-constraint-template-registry.yaml
+      changed_when: false
+
+    - name: Pause between constraint templates
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Apply constraint template — labels
+      ansible.builtin.command: >
+        kubectl apply -f {{ opa_manifests_dir }}/03-constraint-template-labels.yaml
+      changed_when: false
+
+    - name: Pause between constraint templates
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Apply constraint template — resources
+      ansible.builtin.command: >
+        kubectl apply -f {{ opa_manifests_dir }}/04-constraint-template-resources.yaml
+      changed_when: false
+
+    - name: Pause between constraint templates
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Apply constraint template — no-latest
+      ansible.builtin.command: >
+        kubectl apply -f {{ opa_manifests_dir }}/05-constraint-template-no-latest.yaml
+      changed_when: false
+
+    - name: Show OPA constraints
+      ansible.builtin.command: kubectl get constraints -A --no-headers
+      register: constraints
+      changed_when: false
+      failed_when: false
+
+    - name: Display constraints
+      ansible.builtin.debug:
+        msg: "{{ constraints.stdout_lines }}"
+
+- name: Unseal Vault
+  ansible.builtin.import_playbook: unseal.yml

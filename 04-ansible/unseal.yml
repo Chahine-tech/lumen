@@ -1,0 +1,157 @@
+---
+# unseal.yml — Unseal all Vault pods after a VM restart
+#
+# Usage (daily, after rebooting Mac or VMs):
+#   ansible-playbook 04-ansible/unseal.yml
+#
+# Prerequisites:
+#   - VMs must be running (multipass start node-1 node-2)
+#   - vault-keys.json must exist at project root
+#   - kubectl context pointing to the cluster (auto-set by K3s via multipass)
+
+- name: Unseal Vault HA cluster
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    vault_keys_file: "{{ playbook_dir }}/../vault-keys.json"
+
+  tasks:
+    - name: Check vault-keys.json exists
+      ansible.builtin.stat:
+        path: "{{ vault_keys_file }}"
+      register: vault_keys_stat
+
+    - name: Fail if vault-keys.json is missing
+      ansible.builtin.fail:
+        msg: |
+          vault-keys.json not found at {{ vault_keys_file }}
+          This file is generated during Vault init and must be kept safe.
+          If the cluster is new, run: kubectl exec -n vault vault-0 -- vault operator init \
+            -key-shares=5 -key-threshold=3 -format=json > vault-keys.json
+      when: not vault_keys_stat.stat.exists
+
+    - name: Load Vault unseal keys
+      ansible.builtin.set_fact:
+        vault_keys: "{{ lookup('file', vault_keys_file) | from_json }}"
+
+    - name: Check Vault pods status
+      ansible.builtin.command: kubectl get pods -n vault --no-headers -o custom-columns='NAME:.metadata.name,READY:.status.containerStatuses[0].ready'
+      register: vault_pods_status
+      changed_when: false
+      failed_when: false
+
+    - name: Show Vault pods status
+      ansible.builtin.debug:
+        msg: "{{ vault_pods_status.stdout_lines }}"
+
+    - name: Unseal vault-0 (key 0)
+      ansible.builtin.command: >
+        kubectl exec -n vault vault-0 --
+        vault operator unseal {{ vault_keys.unseal_keys_b64[0] }}
+      register: unseal_result
+      changed_when: "'Sealed' in unseal_result.stdout and 'false' in unseal_result.stdout"
+      failed_when: false
+
+    - name: Unseal vault-0 (key 1)
+      ansible.builtin.command: >
+        kubectl exec -n vault vault-0 --
+        vault operator unseal {{ vault_keys.unseal_keys_b64[1] }}
+      register: unseal_result
+      changed_when: "'Sealed' in unseal_result.stdout and 'false' in unseal_result.stdout"
+      failed_when: false
+
+    - name: Unseal vault-0 (key 2)
+      ansible.builtin.command: >
+        kubectl exec -n vault vault-0 --
+        vault operator unseal {{ vault_keys.unseal_keys_b64[2] }}
+      register: unseal_result
+      changed_when: "'Sealed' in unseal_result.stdout and 'false' in unseal_result.stdout"
+      failed_when: false
+
+    - name: Unseal vault-1 (key 0)
+      ansible.builtin.command: >
+        kubectl exec -n vault vault-1 --
+        vault operator unseal {{ vault_keys.unseal_keys_b64[0] }}
+      register: unseal_result
+      changed_when: "'Sealed' in unseal_result.stdout and 'false' in unseal_result.stdout"
+      failed_when: false
+
+    - name: Unseal vault-1 (key 1)
+      ansible.builtin.command: >
+        kubectl exec -n vault vault-1 --
+        vault operator unseal {{ vault_keys.unseal_keys_b64[1] }}
+      register: unseal_result
+      changed_when: "'Sealed' in unseal_result.stdout and 'false' in unseal_result.stdout"
+      failed_when: false
+
+    - name: Unseal vault-1 (key 2)
+      ansible.builtin.command: >
+        kubectl exec -n vault vault-1 --
+        vault operator unseal {{ vault_keys.unseal_keys_b64[2] }}
+      register: unseal_result
+      changed_when: "'Sealed' in unseal_result.stdout and 'false' in unseal_result.stdout"
+      failed_when: false
+
+    - name: Unseal vault-2 (key 0)
+      ansible.builtin.command: >
+        kubectl exec -n vault vault-2 --
+        vault operator unseal {{ vault_keys.unseal_keys_b64[0] }}
+      register: unseal_result
+      changed_when: "'Sealed' in unseal_result.stdout and 'false' in unseal_result.stdout"
+      failed_when: false
+
+    - name: Unseal vault-2 (key 1)
+      ansible.builtin.command: >
+        kubectl exec -n vault vault-2 --
+        vault operator unseal {{ vault_keys.unseal_keys_b64[1] }}
+      register: unseal_result
+      changed_when: "'Sealed' in unseal_result.stdout and 'false' in unseal_result.stdout"
+      failed_when: false
+
+    - name: Unseal vault-2 (key 2)
+      ansible.builtin.command: >
+        kubectl exec -n vault vault-2 --
+        vault operator unseal {{ vault_keys.unseal_keys_b64[2] }}
+      register: unseal_result
+      changed_when: "'Sealed' in unseal_result.stdout and 'false' in unseal_result.stdout"
+      failed_when: false
+
+    - name: Wait for vault-0 to be Ready
+      ansible.builtin.command: kubectl wait pod/vault-0 -n vault --for=condition=Ready --timeout=60s
+      register: wait_result
+      failed_when: false
+      changed_when: false
+
+    - name: Wait for vault-1 to be Ready
+      ansible.builtin.command: kubectl wait pod/vault-1 -n vault --for=condition=Ready --timeout=60s
+      register: wait_result
+      failed_when: false
+      changed_when: false
+
+    - name: Wait for vault-2 to be Ready
+      ansible.builtin.command: kubectl wait pod/vault-2 -n vault --for=condition=Ready --timeout=60s
+      register: wait_result
+      failed_when: false
+      changed_when: false
+
+    - name: Show final Vault status
+      ansible.builtin.command: kubectl get pods -n vault
+      register: final_status
+      changed_when: false
+
+    - name: Print Vault pod status
+      ansible.builtin.debug:
+        msg: "{{ final_status.stdout_lines }}"
+
+    - name: Verify Vault is unsealed (vault-0)
+      ansible.builtin.command: kubectl exec -n vault vault-0 -- vault status -format=json
+      register: vault_status_json
+      changed_when: false
+      failed_when: false
+
+    - name: Show Vault seal status
+      ansible.builtin.debug:
+        msg: >-
+          vault-0 sealed={{ (vault_status_json.stdout | from_json).sealed | default('unknown') }}
+      when: vault_status_json.rc == 0

@@ -1,0 +1,68 @@
+---
+# Role: metallb — Install MetalLB via Helm and configure ARP on macOS
+# MetalLB provides LoadBalancer IPs to Traefik (VIP 192.168.2.100)
+
+- name: Check if MetalLB is already installed
+  ansible.builtin.command: kubectl get namespace metallb-system --no-headers
+  register: metallb_check
+  changed_when: false
+  failed_when: false
+
+- name: Add MetalLB Helm repo on node-1
+  ansible.builtin.command: multipass exec node-1 -- helm repo add metallb https://metallb.github.io/metallb
+  when: metallb_check.rc != 0
+  changed_when: true
+  failed_when: false
+
+- name: Update Helm repos on node-1
+  ansible.builtin.command: multipass exec node-1 -- helm repo update
+  when: metallb_check.rc != 0
+  changed_when: true
+
+- name: Install MetalLB via Helm on node-1
+  ansible.builtin.command: >
+    multipass exec node-1 -- helm install metallb metallb/metallb
+    --namespace metallb-system
+    --create-namespace
+    --version {{ metallb_version }}
+    --set controller.image.repository={{ registry_url }}/metallb/controller
+    --set controller.image.tag=v{{ metallb_version }}
+    --set speaker.image.repository={{ registry_url }}/metallb/speaker
+    --set speaker.image.tag=v{{ metallb_version }}
+    --set speaker.frr.image.repository={{ registry_url }}/frrouting/frr
+    --set speaker.frr.image.tag=9.1.0
+    --wait
+  when: metallb_check.rc != 0
+  changed_when: true
+
+- name: Apply MetalLB IPAddressPool
+  ansible.builtin.command: >
+    kubectl apply -f {{ manifests_dir }}/metallb/01-ipaddresspool.yaml
+  changed_when: false
+
+- name: Apply MetalLB L2Advertisement
+  ansible.builtin.command: >
+    kubectl apply -f {{ manifests_dir }}/metallb/02-l2advertisement.yaml
+  changed_when: false
+
+- name: Get node-1 MAC address for ARP
+  ansible.builtin.command: multipass exec node-1 -- cat /sys/class/net/eth0/address
+  register: node1_mac
+  changed_when: false
+
+- name: Set ARP entry for MetalLB VIP on macOS
+  ansible.builtin.command: sudo arp -s {{ metallb_vip }} {{ node1_mac.stdout | trim }}
+  changed_when: true
+
+- name: Confirm ARP entry
+  ansible.builtin.debug:
+    msg: "ARP: {{ metallb_vip }} -> {{ node1_mac.stdout | trim }}"
+
+- name: Verify MetalLB pods
+  ansible.builtin.command: kubectl get pods -n metallb-system
+  register: metallb_pods
+  changed_when: false
+
+- name: Show MetalLB pods
+  ansible.builtin.debug:
+    msg: "{{ metallb_pods.stdout_lines }}"

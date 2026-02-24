@@ -1,0 +1,46 @@
+---
+# Role: registry — Start Docker registry on node-1
+# The registry serves all container images for the airgap cluster
+
+- name: Check if Docker is installed on node-1
+  ansible.builtin.command: multipass exec node-1 -- which docker
+  register: docker_check
+  changed_when: false
+  failed_when: false
+
+- name: Install Docker on node-1
+  ansible.builtin.command: >
+    multipass exec node-1 -- bash -c
+    "curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker ubuntu"
+  when: docker_check.rc != 0
+  changed_when: true
+
+- name: Check if registry container is running
+  ansible.builtin.command: multipass exec node-1 -- docker inspect --format='{{ "{{" }}.State.Running{{ "}}" }}' registry
+  register: registry_running
+  changed_when: false
+  failed_when: false
+
+- name: Start registry container
+  ansible.builtin.command: >
+    multipass exec node-1 -- docker run -d
+    --name registry
+    --restart always
+    -p 5000:5000
+    -v /var/lib/registry:/var/lib/registry
+    registry:2
+  when: registry_running.rc != 0 or registry_running.stdout | trim != 'true'
+  changed_when: true
+
+- name: Wait for registry to be healthy
+  ansible.builtin.command: >
+    multipass exec node-1 -- curl -sf http://localhost:5000/v2/
+  register: registry_health
+  until: registry_health.rc == 0
+  retries: 10
+  delay: 3
+  changed_when: false
+
+- name: Confirm registry is running
+  ansible.builtin.debug:
+    msg: "Registry running at {{ registry_url }}"

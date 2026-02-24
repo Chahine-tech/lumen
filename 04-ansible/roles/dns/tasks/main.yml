@@ -1,0 +1,32 @@
+---
+# Role: dns — Configure /etc/hosts and macOS CA trust for airgap domains
+# Idempotent: only adds entries that don't already exist
+
+- name: Check each airgap domain in /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ metallb_vip }}    {{ item }}"
+    regexp: ".*{{ item }}.*"
+    state: present
+    backup: false
+  loop: "{{ airgap_domains }}"
+  become: true
+
+- name: Trust airgap CA certificate on macOS
+  ansible.builtin.command: >
+    sudo security add-trusted-cert
+    -d -r trustRoot
+    -k /Library/Keychains/System.keychain
+    {{ ca_cert_path }}
+  register: trust_result
+  changed_when: trust_result.rc == 0
+  failed_when: false
+
+- name: Show DNS entries
+  ansible.builtin.command: grep "airgap.local" /etc/hosts
+  register: dns_entries
+  changed_when: false
+
+- name: Display DNS entries
+  ansible.builtin.debug:
+    msg: "{{ dns_entries.stdout_lines }}"

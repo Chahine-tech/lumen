@@ -1,0 +1,102 @@
+---
+# site.yml — Bootstrap complet du cluster lumen airgap from scratch
+#
+# Usage:
+#   ansible-playbook 04-ansible/site.yml
+#   ansible-playbook 04-ansible/site.yml --ask-become-pass  # for sudo operations
+#   ansible-playbook 04-ansible/site.yml --tags "k3s,metallb"  # partial run
+#
+# Duration: ~20 minutes on first run
+#
+# Order of operations:
+#   1.  multipass  — Create VMs (node-1: 4CPU/6G, node-2: 2CPU/4G)
+#   2.  registry   — Start Docker registry on node-1:5000
+#   3.  images     — Transfer registry data to node-1 (all container images)
+#   4.  k3s        — Install K3s + configure kubeconfig
+#   5.  metallb    — Install MetalLB + ARP macOS
+#   6.  opa        — Install Gatekeeper + constraint templates
+#   7.  argocd     — Install ArgoCD + register all Applications
+#   8.  gitea      — Create org/repo + push code (ArgoCD source)
+#   9.  vault      — Wait for Vault pods + unseal
+#   10. dns        — Configure /etc/hosts + macOS CA trust
+#   11. verify     — Health checks on all services
+#
+# NOTE: Vault must be initialized manually (one-time, produces vault-keys.json).
+# See docs/vault-cert-manager.md for the full init procedure.
+
+- name: "[1/11] Create Multipass VMs"
+  hosts: localhost
+  gather_facts: false
+  tags: [multipass, vms]
+  roles:
+    - multipass
+
+- name: "[2/11] Start Docker registry on node-1"
+  hosts: localhost
+  gather_facts: false
+  tags: [registry]
+  roles:
+    - registry
+
+- name: "[3/11] Transfer container images to registry"
+  hosts: localhost
+  gather_facts: false
+  tags: [images]
+  roles:
+    - images
+
+- name: "[4/11] Install K3s cluster"
+  hosts: localhost
+  gather_facts: false
+  tags: [k3s]
+  roles:
+    - k3s
+
+- name: "[5/11] Install MetalLB + configure ARP"
+  hosts: localhost
+  gather_facts: false
+  tags: [metallb]
+  roles:
+    - metallb
+
+- name: "[6/11] Install OPA Gatekeeper"
+  hosts: localhost
+  gather_facts: false
+  tags: [opa, gatekeeper]
+  roles:
+    - opa
+
+- name: "[7/11] Install ArgoCD + register Applications"
+  hosts: localhost
+  gather_facts: false
+  tags: [argocd]
+  roles:
+    - argocd
+
+- name: "[8/11] Configure Gitea + push code"
+  hosts: localhost
+  gather_facts: false
+  tags: [gitea]
+  roles:
+    - gitea
+
+- name: "[9/11] Wait for Vault + unseal"
+  hosts: localhost
+  gather_facts: false
+  tags: [vault, unseal]
+  roles:
+    - vault
+
+- name: "[10/11] Configure DNS + CA trust"
+  hosts: localhost
+  gather_facts: false
+  tags: [dns]
+  roles:
+    - dns
+
+- name: "[11/11] Verify all services"
+  hosts: localhost
+  gather_facts: false
+  tags: [verify, check]
+  roles:
+    - verify
