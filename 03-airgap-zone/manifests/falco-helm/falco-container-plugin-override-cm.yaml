@@ -1,0 +1,13 @@
+# ConfigMap: overrides the builtin /etc/falco/config.d/falco.container_plugin.yaml
+# The image ships: load_plugins: [container]
+# We replace it with an empty file — the plugin is declared in falco.yaml instead,
+# pointing to the K3s containerd socket at /host/run/k3s/containerd/containerd.sock
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-container-plugin-override
+  namespace: falco
+data:
+  falco.container_plugin.yaml: |
+    # Intentionally empty — container plugin is configured in falco.yaml
+    # via the Helm chart values (plugins + load_plugins)

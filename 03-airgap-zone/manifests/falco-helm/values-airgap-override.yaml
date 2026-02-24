@@ -28,18 +28,40 @@ falco:
     crio:
       enabled: false
 
-  # JSON output for structured parsing in Loki/Grafana
+  # The image ships /etc/falco/config.d/falco.container_plugin.yaml which does:
+  #   load_plugins: [container]
+  # We override falco.yaml to declare the container plugin with the K3s socket.
+  # The config.d file is overridden via extraVolumeMounts below to avoid duplication.
   falco:
+    plugins:
+      - name: container
+        library_path: libcontainer.so
+        init_config:
+          socket: "unix:///host/run/k3s/containerd/containerd.sock"
+          with_size: false
+          label_max_len: 100
+    load_plugins:
+      - container
     json_output: true
     json_include_output_property: true
     log_level: info
     log_stderr: true
     log_syslog: false
-    # Send all alerts to stdout — Alloy DaemonSet collects them
     stdout_output:
       enabled: true
-    # container plugin is auto-loaded via falco.container_plugin.yaml
-    # socket is configured via collectors.containerd above
+
+  # Override the builtin config.d/falco.container_plugin.yaml with an empty file
+  # to avoid "found another plugin with name container" duplicate registration error.
+  extraVolumes:
+    - name: container-plugin-override
+      configMap:
+        name: falco-container-plugin-override
+
+  extraVolumeMounts:
+    - name: container-plugin-override
+      mountPath: /etc/falco/config.d/falco.container_plugin.yaml
+      subPath: falco.container_plugin.yaml
+      readOnly: true
 
   # Falcosidekick disabled — using stdout → Alloy → Loki pipeline
   falcosidekick:
@@ -58,8 +80,6 @@ falco:
       cpu: 500m
       memory: 512Mi
 
-  # Falco needs privileged access to monitor kernel syscalls via eBPF
-  # hostPID and capabilities are set by the chart automatically for modern_ebpf
   podSecurityContext: {}
 
   # Disable falco-talon (automated remediation engine — not needed)
