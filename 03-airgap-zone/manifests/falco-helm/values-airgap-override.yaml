@@ -43,7 +43,7 @@ falco:
   extra:
     initContainers:
       - name: k8smeta-plugin-install
-        image: 192.168.2.2:5000/falcosecurity/k8smeta-plugin:0.2.1
+        image: 192.168.2.2:5000/falcosecurity/k8smeta-plugin:0.4.1
         imagePullPolicy: IfNotPresent
         command: ["cp", "/plugins/libk8smeta.so", "/falco-plugins/libk8smeta.so"]
         volumeMounts:
