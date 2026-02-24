@@ -33,36 +33,9 @@ falco:
   # We override falco.yaml to declare the container plugin with the K3s socket.
   # The config.d file is overridden via extraVolumeMounts below to avoid duplication.
   falco:
-    plugins:
-      - name: container
-        library_path: libcontainer.so
-        init_config:
-          with_size: false
-          label_max_len: 100
-          # All engines required by schema — only containerd enabled, pointing to K3s socket
-          # (chart mounts /run/k3s/containerd at /host/run/k3s/containerd in the container)
-          engines:
-            containerd:
-              enabled: true
-              sockets:
-                - /host/run/k3s/containerd/containerd.sock
-            docker:
-              enabled: false
-              sockets: []
-            cri:
-              enabled: false
-              sockets: []
-            podman:
-              enabled: false
-              sockets: []
-            lxc:
-              enabled: false
-            libvirt_lxc:
-              enabled: false
-            bpm:
-              enabled: false
-    load_plugins:
-      - container
+    # Plugin config is in config.d/falco.container_plugin.yaml (overridden via ConfigMap)
+    # No plugins/load_plugins here to avoid duplicate registration
+    load_plugins: []
     json_output: true
     json_include_output_property: true
     log_level: info

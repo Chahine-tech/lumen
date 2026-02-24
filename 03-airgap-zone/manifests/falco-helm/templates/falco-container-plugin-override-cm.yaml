@@ -9,5 +9,34 @@ metadata:
   namespace: falco
 data:
   falco.container_plugin.yaml: |
-    # Intentionally empty — container plugin is configured in falco.yaml
-    # via the Helm chart values (plugins + load_plugins)
+    plugins:
+      - name: container
+        library_path: libcontainer.so
+        init_config:
+          with_size: false
+          label_max_len: 100
+          engines:
+            containerd:
+              enabled: true
+              sockets:
+                - /host/run/k3s/containerd/containerd.sock
+            docker:
+              enabled: false
+              sockets:
+                - /var/run/docker.sock
+            cri:
+              enabled: false
+              sockets:
+                - /run/crio/crio.sock
+            podman:
+              enabled: false
+              sockets:
+                - /run/podman/podman.sock
+            lxc:
+              enabled: false
+            libvirt_lxc:
+              enabled: false
+            bpm:
+              enabled: false
+    load_plugins:
+      - container
