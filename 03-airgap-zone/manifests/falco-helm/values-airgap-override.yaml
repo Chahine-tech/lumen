@@ -35,9 +35,10 @@ falco:
 
   # Plugin config loaded via config.d/ (overridden ConfigMaps):
   #   - k8smeta.yaml → k8smeta plugin (gRPC → k8s-metacollector)
-  # container plugin is loaded natively by Falco (no config.d needed — controlled by container_engines above)
+  # container plugin loaded here; container_engines (above) provides the CRI socket config.
   falco:
-    load_plugins: []
+    load_plugins:
+      - container
     json_output: true
     json_include_output_property: true
     log_level: info
