@@ -37,9 +37,11 @@ falco:
       - name: container
         library_path: libcontainer.so
         init_config:
-          socket: "unix:///host/run/k3s/containerd/containerd.sock"
           with_size: false
           label_max_len: 100
+          engines:
+            containerd:
+              socket: /host/run/k3s/containerd/containerd.sock
     load_plugins:
       - container
     json_output: true
