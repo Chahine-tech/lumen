@@ -18,15 +18,24 @@ falco:
       initContainer:
         enabled: false  # No driver-loader needed with modern_ebpf
 
-  # Collectors: disabled — container metadata comes from the container plugin (cri engine)
-  # The "collectors" feature is the old pre-plugin metadata system; we use the new plugin.
+  # Collectors: use containerd socket pointing to K3s socket path.
+  # The chart automatically:
+  #   1. Mounts /run/k3s/containerd/containerd.sock → /host/run/k3s/containerd/containerd.sock
+  #   2. Sets container_engines.cri.enabled=true with the correct socket in falco.yaml
+  # This enables container.id, container.image.* enrichment via the built-in container plugin.
   collectors:
-    enabled: false
+    enabled: true
+    docker:
+      enabled: false
+    containerd:
+      enabled: true
+      socket: /run/k3s/containerd/containerd.sock
+    crio:
+      enabled: false
 
   # Plugin config loaded via config.d/ (overridden ConfigMaps):
-  #   - falco.container_plugin.yaml → container plugin (cri engine, K3s socket)
-  #   - k8smeta.yaml               → k8smeta plugin (gRPC → k8s-metacollector)
-  # No load_plugins here — each config.d file declares its own load_plugins.
+  #   - k8smeta.yaml → k8smeta plugin (gRPC → k8s-metacollector)
+  # container plugin is loaded natively by Falco (no config.d needed — controlled by container_engines above)
   falco:
     load_plugins: []
     json_output: true
@@ -50,23 +59,16 @@ falco:
           - name: falco-plugins
             mountPath: /falco-plugins
 
-  # Volumes + mounts for plugin override ConfigMaps and libk8smeta.so
+  # Volumes + mounts for k8smeta plugin ConfigMap and libk8smeta.so
+  # Note: container plugin socket mount is handled by collectors.containerd above
   mounts:
     volumes:
-      - name: container-plugin-override
-        configMap:
-          name: falco-container-plugin-override
       - name: k8smeta-plugin-config
         configMap:
           name: falco-k8smeta-plugin
       - name: falco-plugins
         emptyDir: {}
     volumeMounts:
-      # Override builtin container plugin config → use cri engine (not containerd)
-      - name: container-plugin-override
-        mountPath: /etc/falco/config.d/falco.container_plugin.yaml
-        subPath: falco.container_plugin.yaml
-        readOnly: true
       # Add k8smeta plugin config into config.d/
       - name: k8smeta-plugin-config
         mountPath: /etc/falco/config.d/k8smeta.yaml
