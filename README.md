@@ -225,25 +225,6 @@ make clean             # Remove everything
 
 ## ✅ Project Status
 
-**Completed Phases:**
-- ✅ Phase 1-4: Build, Transit, K3s, Application Deployment
-- ✅ Phase 5: NetworkPolicies - Zero Trust Security
-- ✅ Phase 6-7: Basic Monitoring + ArgoCD GitOps with Redis Persistence
-- ✅ Phase 8: Gitea - Internal Git Server for True Airgap GitOps
-- ✅ Phase 9: Traefik Ingress Controller - Production-Grade Service Exposure (Helm)
-- ✅ Phase 10: Production Observability - kube-prometheus-stack (Prometheus, Grafana, AlertManager)
-- ✅ Phase 11/12: Version Upgrades
-- ✅ Phase 13: OPA Gatekeeper v3.18.0 - Admission Control (4 custom policies)
-- ✅ Phase 14: Pod Security Standards (PSS) - Restricted Mode Security
-- ✅ Phase 15: Complete Observability Stack - Loki + Alloy + Tempo (logs + traces)
-- ✅ Phase 16: Multipass Migration - 2-node K3s cluster, MetalLB, arm64, full airgap on real Linux VMs
-- ✅ Phase 16.5: Gitea Actions CI — automated test → build → Trivy scan → push pipeline (fully airgapped)
-- ✅ Phase 17: Redis HA Sentinel — 1 master + 1 replica + 3 sentinels, automatic failover, PVC persistence
-- ✅ Phase 18: CloudNativePG — PostgreSQL 16 cluster (1 master + 1 replica + 1 witness), read/write splitting, CNPG operator
-- ✅ v1.5.0: Idempotency middleware (Redis-backed, 24h TTL, `Idempotency-Key` header)
-- ✅ SRE hardening: PodDisruptionBudgets (lumen-api + redis-sentinel), NetworkPolicy fixes (CoreDNS + Grafana egress → API server)
-- ✅ Phase 19: Vault HA + cert-manager — PKI engine, Vault Agent Injector, automatic TLS renewal, lumen-api v1.6.0
-
 **Current State:**
 - 🛡️ **3-Layer Security**: OPA Gatekeeper + PSS + NetworkPolicies
 - 🔐 **Secrets Management**: Vault HA (3-replica Raft) — KV v2, PKI engine, Agent Injector (no plaintext K8s secrets)

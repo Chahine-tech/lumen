@@ -52,16 +52,17 @@ falco:
 
   # Override the builtin config.d/falco.container_plugin.yaml with an empty file
   # to avoid "found another plugin with name container" duplicate registration error.
-  extraVolumes:
-    - name: container-plugin-override
-      configMap:
-        name: falco-container-plugin-override
-
-  extraVolumeMounts:
-    - name: container-plugin-override
-      mountPath: /etc/falco/config.d/falco.container_plugin.yaml
-      subPath: falco.container_plugin.yaml
-      readOnly: true
+  # Note: this chart uses mounts.volumes / mounts.volumeMounts (not extraVolumes)
+  mounts:
+    volumes:
+      - name: container-plugin-override
+        configMap:
+          name: falco-container-plugin-override
+    volumeMounts:
+      - name: container-plugin-override
+        mountPath: /etc/falco/config.d/falco.container_plugin.yaml
+        subPath: falco.container_plugin.yaml
+        readOnly: true
 
   # Falcosidekick disabled — using stdout → Alloy → Loki pipeline
   falcosidekick:
