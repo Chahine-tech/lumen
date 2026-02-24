@@ -65,8 +65,10 @@ spec:
           ports:
             - name: grpc
               containerPort: 45000
-            - name: healthz
+            - name: metrics
               containerPort: 8080
+            - name: healthz
+              containerPort: 8081
           livenessProbe:
             httpGet:
               path: /healthz
