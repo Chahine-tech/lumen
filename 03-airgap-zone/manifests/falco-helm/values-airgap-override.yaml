@@ -1,0 +1,70 @@
+# Falco 0.43.0 — Airgap override values
+# All images redirected to internal registry (192.168.2.2:5000)
+# Driver: modern_ebpf — self-contained, no runtime downloads needed
+
+falco:
+  image:
+    registry: 192.168.2.2:5000
+    repository: falcosecurity/falco
+    tag: "0.43.0"
+    pullPolicy: IfNotPresent
+
+  # modern_ebpf: self-contained eBPF probe, no kernel module download
+  # Works on Ubuntu 24.04 ARM64 (kernel ≥5.8) — perfect for airgap
+  driver:
+    kind: modern_ebpf
+    loader:
+      initContainer:
+        enabled: false  # No driver-loader needed with modern_ebpf
+
+  # JSON output for structured parsing in Loki/Grafana
+  falco:
+    json_output: true
+    json_include_output_property: true
+    log_level: info
+    log_stderr: true
+    log_syslog: false
+    # Send all alerts to stdout — Alloy DaemonSet collects them
+    stdout_output:
+      enabled: true
+
+  # Falcosidekick disabled — using stdout → Alloy → Loki pipeline
+  falcosidekick:
+    enabled: false
+
+  # DaemonSet tolerations — run on all nodes (control-plane + worker)
+  tolerations:
+    - operator: Exists
+
+  # Resources tuned for 2-node cluster (node-1: 4CPU/6G, node-2: 2CPU/4G)
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Falco needs privileged access to monitor kernel syscalls via eBPF
+  # hostPID and capabilities are set by the chart automatically for modern_ebpf
+  podSecurityContext: {}
+
+  # Disable falco-talon (automated remediation engine — not needed)
+  falcotalon:
+    enabled: false
+
+  # Disable telemetry (airgap — no outbound connections)
+  falcoctl:
+    artifact:
+      install:
+        enabled: false
+      follow:
+        enabled: false
+
+  # Metrics endpoint for Prometheus scraping
+  metrics:
+    enabled: true
+    listen: "0.0.0.0"
+    port: 8765
+    interval: 15s
+    output_rule: true
