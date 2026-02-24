@@ -39,11 +39,28 @@ falco:
         init_config:
           with_size: false
           label_max_len: 100
+          # All engines required by schema — only containerd enabled, pointing to K3s socket
+          # (chart mounts /run/k3s/containerd at /host/run/k3s/containerd in the container)
           engines:
             containerd:
               enabled: true
               sockets:
                 - /host/run/k3s/containerd/containerd.sock
+            docker:
+              enabled: false
+              sockets: []
+            cri:
+              enabled: false
+              sockets: []
+            podman:
+              enabled: false
+              sockets: []
+            lxc:
+              enabled: false
+            libvirt_lxc:
+              enabled: false
+            bpm:
+              enabled: false
     load_plugins:
       - container
     json_output: true
