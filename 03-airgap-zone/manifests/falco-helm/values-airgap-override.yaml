@@ -33,10 +33,14 @@ falco:
     crio:
       enabled: false
 
-  # Plugin config loaded via config.d/ (overridden ConfigMaps):
-  #   - k8smeta.yaml → k8smeta plugin (gRPC → k8s-metacollector)
-  # container plugin loaded here; container_engines (above) provides the CRI socket config.
+  # Plugin config:
+  #   - container plugin: registered here, socket configured via container_engines (above)
+  #   - k8smeta plugin: config.d/k8smeta.yaml adds it to load_plugins
   falco:
+    plugins:
+      - name: container
+        library_path: libcontainer.so
+        init_config: {}
     load_plugins:
       - container
     json_output: true
