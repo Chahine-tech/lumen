@@ -1,0 +1,97 @@
+# k8s-metacollector: server component that watches the K8s API and streams pod metadata
+# to the Falco k8smeta plugin via gRPC. Required for k8s.pod.name, k8s.ns.name fields.
+# Docs: https://falco.org/blog/falco-k8smeta-plugin/
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8s-metacollector
+  namespace: falco
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k8s-metacollector
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "namespaces", "replicationcontrollers", "services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets", "deployments", "daemonsets", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-metacollector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k8s-metacollector
+subjects:
+  - kind: ServiceAccount
+    name: k8s-metacollector
+    namespace: falco
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-metacollector
+  namespace: falco
+  labels:
+    app: k8s-metacollector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: k8s-metacollector
+  template:
+    metadata:
+      labels:
+        app: k8s-metacollector
+    spec:
+      serviceAccountName: k8s-metacollector
+      containers:
+        - name: k8s-metacollector
+          image: 192.168.2.2:5000/falcosecurity/k8s-metacollector:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: grpc
+              containerPort: 45000
+            - name: healthz
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: healthz
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: k8s-metacollector
+  namespace: falco
+spec:
+  selector:
+    app: k8s-metacollector
+  ports:
+    - name: grpc
+      port: 45000
+      targetPort: 45000

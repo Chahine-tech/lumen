@@ -1,6 +1,7 @@
 # Falco 0.43.0 — Airgap override values
 # All images redirected to internal registry (192.168.2.2:5000)
 # Driver: modern_ebpf — self-contained, no runtime downloads needed
+# Plugins: container (cri engine) + k8smeta → full container + K8s metadata
 
 falco:
   image:
@@ -22,14 +23,11 @@ falco:
   collectors:
     enabled: false
 
-  # The image ships /etc/falco/config.d/falco.container_plugin.yaml which does:
-  #   load_plugins: [container]
-  # We override it via ConfigMap to use the CRI engine (not containerd engine).
-  # K3s cgroups use "cri-containerd-HASH.scope" format → only the cri engine can parse them.
-  # The config.d file is overridden via mounts.volumeMounts below to avoid duplication.
+  # Plugin config loaded via config.d/ (overridden ConfigMaps):
+  #   - falco.container_plugin.yaml → container plugin (cri engine, K3s socket)
+  #   - k8smeta.yaml               → k8smeta plugin (gRPC → k8s-metacollector)
+  # No load_plugins here — each config.d file declares its own load_plugins.
   falco:
-    # Plugin config is in config.d/falco.container_plugin.yaml (overridden via ConfigMap)
-    # No plugins/load_plugins here to avoid duplicate registration
     load_plugins: []
     json_output: true
     json_include_output_property: true
@@ -39,19 +37,44 @@ falco:
     stdout_output:
       enabled: true
 
-  # Override the builtin config.d/falco.container_plugin.yaml with an empty file
-  # to avoid "found another plugin with name container" duplicate registration error.
-  # Note: this chart uses mounts.volumes / mounts.volumeMounts (not extraVolumes)
+  # Init container: copy libk8smeta.so from plugin image into shared emptyDir
+  # The Falco container then loads it from /plugins/libk8smeta.so
+  # Note: sub-chart key = falco.extra.initContainers
+  extra:
+    initContainers:
+      - name: k8smeta-plugin-install
+        image: 192.168.2.2:5000/falcosecurity/k8smeta-plugin:0.2.1
+        imagePullPolicy: IfNotPresent
+        command: ["cp", "/plugins/libk8smeta.so", "/falco-plugins/libk8smeta.so"]
+        volumeMounts:
+          - name: falco-plugins
+            mountPath: /falco-plugins
+
+  # Volumes + mounts for plugin override ConfigMaps and libk8smeta.so
   mounts:
     volumes:
       - name: container-plugin-override
         configMap:
           name: falco-container-plugin-override
+      - name: k8smeta-plugin-config
+        configMap:
+          name: falco-k8smeta-plugin
+      - name: falco-plugins
+        emptyDir: {}
     volumeMounts:
+      # Override builtin container plugin config → use cri engine (not containerd)
       - name: container-plugin-override
         mountPath: /etc/falco/config.d/falco.container_plugin.yaml
         subPath: falco.container_plugin.yaml
         readOnly: true
+      # Add k8smeta plugin config into config.d/
+      - name: k8smeta-plugin-config
+        mountPath: /etc/falco/config.d/k8smeta.yaml
+        subPath: k8smeta.yaml
+        readOnly: true
+      # libk8smeta.so copied by init container
+      - name: falco-plugins
+        mountPath: /plugins
 
   # Falcosidekick disabled — using stdout → Alloy → Loki pipeline
   falcosidekick:

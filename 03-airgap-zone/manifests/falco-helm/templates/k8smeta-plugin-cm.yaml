@@ -1,0 +1,19 @@
+# ConfigMap: config for the k8smeta plugin
+# k8smeta connects to k8s-metacollector gRPC server to enrich events with:
+#   k8s.pod.name, k8s.ns.name, k8s.deployment.name, k8s.node.name, etc.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-k8smeta-plugin
+  namespace: falco
+data:
+  k8smeta.yaml: |
+    plugins:
+      - name: k8smeta
+        library_path: /plugins/libk8smeta.so
+        init_config:
+          collectorPort: 45000
+          collectorHostname: k8s-metacollector.falco.svc.cluster.local
+          nodeName: ""
+    load_plugins:
+      - k8smeta
