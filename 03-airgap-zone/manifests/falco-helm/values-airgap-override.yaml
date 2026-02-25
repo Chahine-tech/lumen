@@ -66,13 +66,16 @@ falco:
           - name: falco-plugins
             mountPath: /falco-plugins
 
-  # Volumes + mounts for k8smeta plugin ConfigMap and libk8smeta.so
+  # Volumes + mounts for k8smeta plugin ConfigMap, local rules, and libk8smeta.so
   # Note: container plugin socket mount is handled by collectors.containerd above
   mounts:
     volumes:
       - name: k8smeta-plugin-config
         configMap:
           name: falco-k8smeta-plugin
+      - name: falco-local-rules
+        configMap:
+          name: falco-local-rules
       - name: falco-plugins
         emptyDir: {}
     volumeMounts:
@@ -80,6 +83,11 @@ falco:
       - name: k8smeta-plugin-config
         mountPath: /etc/falco/config.d/k8smeta.yaml
         subPath: k8smeta.yaml
+        readOnly: true
+      # Override local rules to include container.id + k8s.pod.name in output_fields
+      - name: falco-local-rules
+        mountPath: /etc/falco/falco_rules.local.yaml
+        subPath: falco_rules.local.yaml
         readOnly: true
       # libk8smeta.so copied by init container
       - name: falco-plugins

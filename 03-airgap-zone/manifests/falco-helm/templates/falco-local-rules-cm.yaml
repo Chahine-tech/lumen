@@ -1,0 +1,36 @@
+# ConfigMap: local Falco rules override
+# Adds container.id, k8s.pod.name, container.image.repository to rule outputs
+# so these fields appear in output_fields and are visible in alerts/Loki.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-local-rules
+  namespace: falco
+data:
+  falco_rules.local.yaml: |
+    # Override existing rules to include container + k8s metadata in output_fields.
+    # The container plugin provides: container.id, container.name, container.image.repository
+    # The k8smeta plugin provides: k8s.pod.name, k8s.ns.name, k8s.deployment.name
+
+    - rule: Contact K8S API Server From Container
+      desc: >
+        Detect attempts to communicate with the K8S API Server from a container by non-profiled users.
+      condition: >
+        evt.type=connect
+        and (fd.typechar=4 or fd.typechar=6)
+        and container
+        and k8s_api_server
+        and not k8s_containers
+        and not user_known_contact_k8s_api_server_activities
+      output: >
+        Unexpected connection to K8s API Server from container |
+        connection=%fd.name lport=%fd.lport rport=%fd.rport
+        fd_type=%fd.type fd_proto=%fd.l4proto evt_type=%evt.type
+        user=%user.name user_uid=%user.uid user_loginuid=%user.loginuid
+        process=%proc.name proc_exepath=%proc.exepath parent=%proc.pname
+        command=%proc.cmdline terminal=%proc.tty
+        container_id=%container.id container_name=%container.name
+        image=%container.image.repository
+        k8s_pod=%k8s.pod.name k8s_ns=%k8s.ns.name
+      priority: NOTICE
+      tags: [maturity_stable, container, network, k8s, mitre_discovery, T1565]
