@@ -43,7 +43,7 @@ falco:
     plugins:
       - name: container
         library_path: libcontainer.so
-        init_config: {}
+        init_config: ~
     load_plugins: []
     json_output: true
     json_include_output_property: true
