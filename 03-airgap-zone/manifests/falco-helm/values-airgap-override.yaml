@@ -33,11 +33,17 @@ falco:
     crio:
       enabled: false
 
-  # Falco 0.43.0 image ships /etc/falco/config.d/falco.container_plugin.yaml with
-  # `load_plugins: [container]` — no need to add it here.
-  # container_engines.cri (configured by collectors above) is what activates the CRI socket.
-  # k8smeta plugin: loaded via our config.d/k8smeta.yaml mount.
+  # Plugin registration:
+  #   - container: registered here so Falco can resolve it when the image's builtin
+  #     config.d/falco.container_plugin.yaml fires `load_plugins: [container]`
+  #     The CRI socket comes from container_engines (set by collectors.containerd above).
+  #   - k8smeta: registered + loaded by our config.d/k8smeta.yaml mount.
+  # load_plugins: [] here avoids double-loading (image config.d handles container).
   falco:
+    plugins:
+      - name: container
+        library_path: libcontainer.so
+        init_config: {}
     load_plugins: []
     json_output: true
     json_include_output_property: true
