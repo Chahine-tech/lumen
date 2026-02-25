@@ -833,113 +833,336 @@ Falco 0.43.0 ships three driver options. We use `modern_ebpf`:
 
 ```
 Falco DaemonSet (1 pod / node)
-  └── modern_ebpf probe (CO-RE, kernel ≥5.8)
-      └── container plugin (libcontainer.so)
-          └── containerd socket at /host/run/k3s/containerd/containerd.sock
-              └── enriches alerts with container name / namespace / image
+  ├── modern_ebpf probe (CO-RE, kernel ≥5.8)
+  ├── container plugin (libcontainer.so v0.6.1, bundled in image)
+  │     └── CRI socket: /host/run/k3s/containerd/containerd.sock
+  │         → enriches: container.id, container.name, container.image.repository
+  └── k8smeta plugin (libk8smeta.so v0.4.1, copied by init container)
+        └── gRPC → k8s-metacollector:45000
+            → enriches: k8s.pod.name, k8s.ns.name, k8s.deployment.name
+
+k8s-metacollector Deployment (1 replica)
+  └── watches K8s API for pod/namespace events
+      └── streams metadata to all Falco pods via gRPC
 
 Falco stdout (JSON)
-  └── Alloy (already deployed, scrapes falco pod logs)
+  └── Alloy (scrapes falco pod logs)
       └── Loki
           └── Grafana → query: {namespace="falco"} | json
 ```
 
-### Deployment: Airgap Challenges Encountered
+### Plugin: container (metadata enrichment)
 
-Falco 0.43.0 + K3s has several non-obvious pitfalls:
+**What it provides:** `container.id`, `container.name`, `container.image.repository`, `container.start_ts`
 
-**1. Helm chart uses `mounts.volumes`, not `extraVolumes`**
+**Why it matters:** Without this plugin, Falco can't tell which container triggered a syscall. Rules with condition `container` (macro = `container.id != host`) would never fire.
 
-The upstream `falco` Helm chart (4.21.2) does not support `extraVolumes`/`extraVolumeMounts`. The correct keys are:
-```yaml
-falco:
-  mounts:
-    volumes:
-      - name: my-vol
-        configMap:
-          name: my-cm
-    volumeMounts:
-      - name: my-vol
-        mountPath: /etc/falco/config.d/some.yaml
-        subPath: some.yaml
+### Plugin: k8smeta (Kubernetes metadata enrichment)
+
+**What it provides:** `k8s.pod.name`, `k8s.ns.name`, `k8s.deployment.name`, `k8s.node.name`
+
+**Why it's needed:** Falco 0.43.0 removed the internal Kubernetes client. K8s metadata is now provided by the k8smeta plugin, which connects to k8s-metacollector via gRPC.
+
+**Components:**
+- `libk8smeta.so` v0.4.1 — the Falco plugin (must match event schema version ≥4.0.0 for Falco 0.43.0)
+- `k8s-metacollector` v0.1.1 — a Deployment that watches the K8s API and streams pod metadata
+
+**Custom image for airgap:** `libk8smeta.so` is distributed as an OCI artifact. In airgap we wrap it:
+```bash
+oras pull ghcr.io/falcosecurity/plugins/plugin/k8smeta:0.4.1 --platform linux/arm64
+# Extract libk8smeta.so from the tar, build image based on alpine:3.19
+docker build -t 192.168.2.2:5000/falcosecurity/k8smeta-plugin:0.4.1 .
 ```
 
-**2. Builtin `config.d/falco.container_plugin.yaml` causes duplicate plugin registration**
+---
 
-The Falco 0.43.0 image ships `/etc/falco/config.d/falco.container_plugin.yaml` which auto-loads:
+### Deployment: Full Debugging Journey
+
+Getting Falco to work correctly on K3s ARM64 in airgap required solving 9 distinct problems. Documented here to avoid repeating them.
+
+---
+
+#### Problem 1 — `container.id = <NA>` (wrong CRI engine)
+
+**Symptom:** All Falco events show `container.id=<NA>`. The rule condition `container` (macro = `container.id != host`) never fires.
+
+**Root cause:** K3s uses cgroup path format `cri-containerd-HASH.scope`. Only the `cri` engine can parse this. The `containerd` engine (native gRPC) cannot match K3s cgroup paths, resulting in all containers appearing as "host".
+
+**Fix:** Use CRI engine via the chart's `collectors` mechanism:
+```yaml
+collectors:
+  containerd:
+    enabled: true
+    socket: /run/k3s/containerd/containerd.sock
+```
+This auto-mounts `/run/k3s/containerd/` → `/host/run/k3s/containerd/` and sets `container_engines.cri.enabled: true` in `falco.yaml`.
+
+---
+
+#### Problem 2 — `k8s.pod.name = <NA>` (k8smeta plugin missing)
+
+**Symptom:** Even after fixing `container.id`, `k8s.pod.name`, `k8s.ns.name` etc. are still `<NA>`.
+
+**Root cause:** Falco 0.43.0 removed the internal Kubernetes client that previously populated these fields. You must now deploy the k8smeta plugin + k8s-metacollector explicitly.
+
+**Fix:**
+1. Build custom image with `libk8smeta.so` v0.4.1 (see above)
+2. Deploy `k8s-metacollector` v0.1.1 as a separate Deployment
+3. Configure k8smeta plugin to connect to it via gRPC
+
+---
+
+#### Problem 3 — k8smeta plugin version incompatibility
+
+**Symptom:**
+```
+plugin k8smeta required event schema version '3.0.0' not compatible
+with the event schema version in use '4.1.0'
+```
+
+**Root cause:** k8smeta v0.2.1 requires event schema 3.0.0. Falco 0.43.0 uses schema 4.1.0. They are incompatible.
+
+**Fix:** Upgrade to k8smeta v0.4.1 (requires schema 4.0.0 — compatible with 4.1.0 via minor-version rule):
+```bash
+oras pull ghcr.io/falcosecurity/plugins/plugin/k8smeta:0.4.1 --platform linux/arm64
+```
+
+---
+
+#### Problem 4 — k8s-metacollector CrashLoopBackOff (wrong base image + missing subcommand)
+
+**Symptom:** `exec: "cp": executable file not found in $PATH` on the init container, then the metacollector itself keeps crashing.
+
+**Two root causes:**
+- Init container image was built `FROM scratch` — no shell, no `cp`. Rebuild `FROM alpine:3.19`.
+- Metacollector binary requires `run` subcommand: `args: ["run"]`
+
+---
+
+#### Problem 5 — k8s-metacollector RBAC missing endpoints/endpointslices
+
+**Symptom:**
+```
+endpointslices.discovery.k8s.io is forbidden: User "system:serviceaccount:falco:k8s-metacollector" cannot list resource
+endpoints is forbidden
+```
+
+**Fix:** Add to ClusterRole:
+```yaml
+- apiGroups: [""]
+  resources: ["endpoints"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["discovery.k8s.io"]
+  resources: ["endpointslices"]
+  verbs: ["get", "list", "watch"]
+```
+
+---
+
+#### Problem 6 — k8s-metacollector health probe 404 (wrong port)
+
+**Symptom:** `Liveness probe failed: HTTP probe failed with statuscode: 404`
+
+**Root cause:** Port 8080 = metrics, port 8081 = health probes. The initial config probed 8080 for `/healthz`.
+
+**Evidence from logs:**
+```
+"starting server","kind":"health probe","addr":"[::]:8081"
+```
+
+**Fix:**
+```yaml
+ports:
+  - name: metrics
+    containerPort: 8080
+  - name: healthz
+    containerPort: 8081   # was 8080
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: healthz         # resolves to 8081
+```
+
+---
+
+#### Problem 7 — NetworkPolicies not applied (ArgoCD Helm mode)
+
+**Symptom:** Falco pods can't reach k8s-metacollector. NetworkPolicies were defined but not deployed.
+
+**Root cause:** The `19-allow-falco.yaml` file was in the `falco-helm/` directory root. ArgoCD in Helm mode **only processes files inside `templates/`**. Files at the chart root are ignored.
+
+**Fix:** Move/copy NetworkPolicies into `templates/network-policies.yaml`.
+
+---
+
+#### Problem 8 — `collectors.enabled: false` silently disables container plugin
+
+**Symptom:** Falco starts, loads plugins (`container@0.6.1` and `k8smeta@0.4.1`), but `falcosecurity_plugins_container_n_containers_total = 0`. Container plugin detects nothing.
+
+**Root cause:** `collectors.enabled: false` causes the Helm chart to generate `container_engines.cri.enabled: false` in `falco.yaml`. The plugin is loaded but never connects to any socket.
+
+**Debugging path:**
+```bash
+# Metric revealed the problem:
+kubectl exec -n falco <pod> -- curl -s http://localhost:8765/metrics | grep container_n_containers
+# → falcosecurity_plugins_container_n_containers_total 0
+
+# ConfigMap confirmed it:
+kubectl get configmap falco -n falco -o jsonpath='{.data.falco\.yaml}' | grep -A5 container_engines
+# → cri.enabled: false  ← root cause
+```
+
+**Fix:** Use `collectors.containerd` instead of disabling collectors entirely:
+```yaml
+collectors:
+  enabled: true
+  docker:
+    enabled: false
+  containerd:
+    enabled: true
+    socket: /run/k3s/containerd/containerd.sock   # K3s-specific path
+  crio:
+    enabled: false
+```
+
+---
+
+#### Problem 9 — `Cannot load plugin 'container': plugin config not found`
+
+**Symptom:** Falco crashes immediately after the collectors fix with:
+```
+Error: Cannot load plugin 'container': plugin config not found for given name
+```
+
+**Root cause:** The Falco 0.43.0 image ships a builtin `config.d/falco.container_plugin.yaml` containing only:
 ```yaml
 load_plugins: [container]
 ```
-If you also declare the plugin in `falco.yaml` (via Helm values), Falco crashes:
+This fires `load_plugins: [container]` but there is no `plugins: [{name: container}]` entry in `falco.yaml` to resolve the name. When `collectors.enabled: false` was set, our custom override ConfigMap provided the plugin registration. Removing that ConfigMap broke the resolution.
+
+**The trap:** If you add `plugins: [{name: container}]` AND also have `load_plugins: [container]` in the values, Falco crashes with:
 ```
 Runtime error: cannot register plugin: found another plugin with name container. Aborting.
 ```
+Because the image's builtin config.d file also loads it → double registration.
 
-**Fix:** Mount an override ConfigMap at that exact path with full plugin config, and set `load_plugins: []` in `falco.yaml`:
+**Final fix:** Register the plugin in values (so the name resolves), but do NOT add it to `load_plugins` (the builtin config.d handles that), and use `init_config: ~` (null, not `{}` — empty object fails JSON schema validation):
 ```yaml
-# templates/falco-container-plugin-override-cm.yaml (in templates/ for Helm to deploy it)
-data:
-  falco.container_plugin.yaml: |
+falco:
+  plugins:
+    - name: container
+      library_path: libcontainer.so
+      init_config: ~          # null, not {} — schema requires null or structured object
+  load_plugins: []            # image's config.d already does load_plugins: [container]
+```
+
+---
+
+#### Problem 10 — `container.id` and `k8s.pod.name` absent from `output_fields`
+
+**Symptom:** Everything works (113 containers detected, gRPC connected), but the JSON events have no `container.id` or `k8s.pod.name` in `output_fields`.
+
+**Root cause:** This is **expected behavior**. Falco only puts fields in `output_fields` that are explicitly referenced in the rule's `output:` format string. Default rules like "Contact K8S API Server From Container" don't include `%container.id` in their output.
+
+**Proof that the plugins work:** The rule condition `container` = `container.id != host` fires successfully → the plugin resolves `container.id` correctly. The field just isn't emitted in the JSON output.
+
+**Fix:** Override default rules via `falco_rules.local.yaml` to add the fields:
+```yaml
+# templates/falco-local-rules-cm.yaml
+- rule: Contact K8S API Server From Container
+  # ... same condition ...
+  output: >
+    Unexpected connection to K8s API Server from container |
+    ... (existing fields) ...
+    container_id=%container.id container_name=%container.name
+    image=%container.image.repository
+    k8s_pod=%k8s.pod.name k8s_ns=%k8s.ns.name
+  priority: NOTICE
+```
+
+Mount it as `/etc/falco/falco_rules.local.yaml` via a volume mount.
+
+---
+
+### Working Configuration Summary
+
+**Key files:**
+
+| File | Purpose |
+|------|---------|
+| `values-airgap-override.yaml` | Helm values: collectors, plugin registration, mounts |
+| `templates/k8smeta-plugin-cm.yaml` | k8smeta plugin config (gRPC endpoint) |
+| `templates/k8s-metacollector.yaml` | k8s-metacollector Deployment + RBAC + Service |
+| `templates/network-policies.yaml` | NetworkPolicies for Falco ↔ metacollector ↔ API server |
+| `templates/falco-local-rules-cm.yaml` | Rule overrides adding container/k8s fields to output |
+
+**Critical values:**
+```yaml
+# values-airgap-override.yaml (relevant excerpt)
+falco:
+  collectors:
+    enabled: true
+    docker:
+      enabled: false
+    containerd:
+      enabled: true
+      socket: /run/k3s/containerd/containerd.sock   # K3s socket (not /run/containerd/)
+    crio:
+      enabled: false
+
+  falco:
     plugins:
       - name: container
         library_path: libcontainer.so
-        init_config:
-          engines:
-            containerd:
-              enabled: true
-              sockets:
-                - /host/run/k3s/containerd/containerd.sock
-            # All other engines required by JSON schema — disabled with placeholder sockets
-            docker:
-              enabled: false
-              sockets: [/var/run/docker.sock]
-            ...
-    load_plugins: [container]
+        init_config: ~    # Must be null, not {} — JSON schema constraint
+    load_plugins: []      # Image builtin config.d handles container; k8smeta.yaml handles k8smeta
 ```
 
-**3. `engines` JSON schema requires ALL engines**
+**Plugin versions:**
 
-The plugin's JSON schema marks `bpm`, `containerd`, `cri`, `docker`, `libvirt_lxc`, `lxc`, `podman` as `required`. If you define `engines` at all, you must include every engine — even disabled ones. Each `SocketsContainer` engine also requires a non-empty `sockets` array.
-
-**4. K3s containerd socket path**
-
-K3s uses `/run/k3s/containerd/containerd.sock` (not the standard `/run/containerd/containerd.sock`). The chart mounts it with a `/host/` prefix:
-```
-hostPath: /run/k3s/containerd  →  mountPath: /host/run/k3s/containerd
-```
-So the socket path in `init_config` must be `/host/run/k3s/containerd/containerd.sock`.
-
-**5. `fs.inotify.max_user_instances` exhausted on node-1**
-
-node-1 (control-plane) runs many pods (ArgoCD, Vault, monitoring...). The default kernel limit `fs.inotify.max_user_instances=128` is exhausted, causing Falco to crash on node-1 only:
-```
-Error: could not initialize inotify handler
-```
-
-**Fix:** Applied via Ansible `k3s` role (persistent across reboots):
-```bash
-sysctl -w fs.inotify.max_user_instances=512
-echo 'fs.inotify.max_user_instances=512' > /etc/sysctl.d/99-falco.conf
-```
+| Plugin | Version | Compatibility |
+|--------|---------|---------------|
+| `libcontainer.so` | 0.6.1 | Bundled in Falco 0.43.0 image |
+| `libk8smeta.so` | 0.4.1 | Event schema 4.0.0 → compatible with Falco 0.43.0 (schema 4.1.0) |
+| `k8s-metacollector` | 0.1.1 | Works with k8smeta 0.4.1 |
 
 ### Verification
 
 ```bash
 # Both pods running (1 per node)
-kubectl get pods -n falco
-# → falco-xxxx  1/1 Running  (node-1)
-# → falco-xxxx  1/1 Running  (node-2)
+kubectl get pods -n falco -o wide
+# → falco-xxxx  1/1 Running  node-1
+# → falco-xxxx  1/1 Running  node-2
 
-# Trigger an alert — open a shell in a container
-kubectl exec -it -n lumen <lumen-api-pod> -- sh
-# → Falco logs: "Terminal shell in container"
+# Container plugin is discovering containers
+kubectl exec -n falco <pod> -- curl -s http://localhost:8765/metrics | grep n_containers
+# → falcosecurity_plugins_container_n_containers_total 113
 
-# View alerts
-kubectl logs -n falco -l app.kubernetes.io/name=falco -f
+# k8smeta plugin is connected to metacollector
+kubectl logs -n falco <pod> | grep k8smeta
+# → Wed Feb 25 09:36:54 2026: [info] [k8smeta] gRPC connected...
+
+# Events include container.id and k8s.pod.name
+kubectl logs -n falco <pod> | grep '"rule"' | python3 -c "
+import sys, json
+for l in sys.stdin:
+    try:
+        d = json.loads(l.strip())
+        f = d.get('output_fields', {})
+        if 'container.id' in f:
+            print('container.id:', f['container.id'])
+            print('k8s.pod.name:', f.get('k8s.pod.name'))
+            print('image:', f.get('container.image.repository'))
+            break
+    except: pass
+"
+# → container.id: c6775a2bfbd8
+# → k8s.pod.name: kube-prometheus-stack-grafana-64f7698d6c-xtss5
+# → image: quay.io/kiwigrid/k8s-sidecar
 
 # In Grafana / Loki
 # Query: {namespace="falco"} | json
-# Filter: rule="Terminal Shell in container"
+# Fields available: rule, container_id, k8s_pod, k8s_ns, image
 ```
 
 ---
