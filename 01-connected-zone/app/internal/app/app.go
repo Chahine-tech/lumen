@@ -65,26 +65,10 @@ func NewApp() (*App, error) {
 	mux.Handle("/metrics", promhttp.Handler())
 
 	// Items CRUD routes (require PostgreSQL)
-	mux.HandleFunc("/items", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodPost:
-			h.CreateItem(w, r)
-		case http.MethodGet:
-			h.GetItems(w, r)
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-	})
-	mux.HandleFunc("/items/", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			h.GetItem(w, r)
-		case http.MethodDelete:
-			h.DeleteItem(w, r)
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-	})
+	mux.HandleFunc("GET /items", h.GetItems)
+	mux.HandleFunc("POST /items", h.CreateItem)
+	mux.HandleFunc("GET /items/{id}", h.GetItem)
+	mux.HandleFunc("DELETE /items/{id}", h.DeleteItem)
 
 	// pprof endpoints for profiling (CPU, memory, goroutines)
 	mux.HandleFunc("/debug/pprof/", pprof.Index)

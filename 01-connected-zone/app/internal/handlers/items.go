@@ -73,7 +73,7 @@ func (h *Handler) GetItem(w http.ResponseWriter, r *http.Request) {
 	ctx, span := tracer.Start(r.Context(), "items.get")
 	defer span.End()
 
-	id, err := parseID(r)
+	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
 		return
@@ -99,7 +99,7 @@ func (h *Handler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 	ctx, span := tracer.Start(r.Context(), "items.delete")
 	defer span.End()
 
-	id, err := parseID(r)
+	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
 		return
@@ -118,9 +118,4 @@ func (h *Handler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 
 	span.SetAttributes(attribute.Int("item.id", id))
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func parseID(r *http.Request) (int, error) {
-	parts := strings.Split(strings.TrimSuffix(r.URL.Path, "/"), "/")
-	return strconv.Atoi(parts[len(parts)-1])
 }
