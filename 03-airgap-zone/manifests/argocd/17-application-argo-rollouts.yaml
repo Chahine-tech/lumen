@@ -1,22 +1,29 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: lumen-app
+  name: argo-rollouts
   namespace: argocd
   annotations:
-    # Wave 3: after argo-rollouts (wave 2) — Rollout CRD must exist first
-    argocd.argoproj.io/sync-wave: "3"
+    # Wave 2: before lumen-app (wave 3) — CRDs must exist before Rollout resource
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
 
   source:
     repoURL: http://gitea.gitea.svc.cluster.local:3000/lumen/lumen.git
     targetRevision: HEAD
-    path: 03-airgap-zone/manifests/app
+    path: 03-airgap-zone/manifests/argo-rollouts-helm
+
+    helm:
+      releaseName: argo-rollouts
+      valueFiles:
+        - values-airgap-override.yaml
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: lumen
+    namespace: argo-rollouts
 
   syncPolicy:
     automated:
@@ -25,6 +32,7 @@ spec:
       allowEmpty: false
     syncOptions:
       - CreateNamespace=true
+      - ServerSideApply=true  # Argo Rollouts installs CRDs (Rollout, AnalysisRun, etc.)
     retry:
       limit: 5
       backoff:

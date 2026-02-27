@@ -1,0 +1,29 @@
+argo-rollouts:
+  controller:
+    image:
+      registry: 192.168.2.2:5000
+      repository: argoproj/argo-rollouts
+      tag: v1.8.0
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+  dashboard:
+    enabled: true
+    image:
+      registry: 192.168.2.2:5000
+      repository: argoproj/argo-rollouts
+      tag: v1.8.0
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  installCRDs: true

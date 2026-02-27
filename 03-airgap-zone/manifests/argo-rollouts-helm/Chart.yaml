@@ -1,0 +1,10 @@
+apiVersion: v2
+name: argo-rollouts
+description: Argo Rollouts — airgap deployment wrapper
+type: application
+version: 2.39.0
+appVersion: "v1.8.0"
+dependencies:
+  - name: argo-rollouts
+    version: "2.39.0"
+    repository: "https://argoproj.github.io/argo-helm"

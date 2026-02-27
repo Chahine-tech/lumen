@@ -1,0 +1,105 @@
+# NetworkPolicies for Argo Rollouts namespace
+
+---
+# Default deny all in argo-rollouts namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: argo-rollouts
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# DNS egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: argo-rollouts
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+---
+# Controller: egress to Kubernetes API server
+# Watches Rollouts, ReplicaSets, Services, Pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: argo-rollouts-egress-apiserver
+  namespace: argo-rollouts
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: argo-rollouts
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+
+---
+# Controller: egress to lumen namespace
+# Patches Service selectors (canary vs stable pod routing)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: argo-rollouts-egress-lumen
+  namespace: argo-rollouts
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: argo-rollouts
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lumen
+      ports:
+        - protocol: TCP
+          port: 8080
+
+---
+# ArgoCD: ingress to argo-rollouts controller (webhook status updates)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-argocd-ingress
+  namespace: argo-rollouts
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: argo-rollouts
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: argocd
+      ports:
+        - protocol: TCP
+          port: 8080
