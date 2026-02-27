@@ -88,8 +88,8 @@ jobs:
           docker cp cosign-extract:/ko-app/cosign /usr/local/bin/cosign
           docker rm cosign-extract
           chmod +x /usr/local/bin/cosign
-          # Write key and sign
-          printf '%s' "${{ secrets.CI_COSIGN_KEY }}" > /tmp/cosign.key
+          # Write key and sign (secret is base64-encoded to preserve PEM line breaks)
+          echo "${{ secrets.CI_COSIGN_KEY }}" | base64 -d > /tmp/cosign.key
           chmod 600 /tmp/cosign.key
           COSIGN_PASSWORD="" cosign sign \
             --key /tmp/cosign.key \
@@ -140,8 +140,8 @@ jobs:
           docker cp cosign-extract:/ko-app/cosign /usr/local/bin/cosign
           docker rm cosign-extract
           chmod +x /usr/local/bin/cosign
-          # Write key and sign
-          printf '%s' "${{ secrets.CI_COSIGN_KEY }}" > /tmp/cosign.key
+          # Write key and sign (secret is base64-encoded to preserve PEM line breaks)
+          echo "${{ secrets.CI_COSIGN_KEY }}" | base64 -d > /tmp/cosign.key
           chmod 600 /tmp/cosign.key
           COSIGN_PASSWORD="" cosign sign \
             --key /tmp/cosign.key \
