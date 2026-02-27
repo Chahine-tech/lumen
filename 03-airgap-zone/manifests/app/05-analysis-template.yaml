@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: success-rate
+  namespace: lumen
+spec:
+  metrics:
+    - name: success-rate
+      # Evaluate every 1 minute
+      interval: 1m
+      # Must stay >= 95% success rate
+      successCondition: result[0] >= 0.95
+      # 3 consecutive failures → rollback
+      failureLimit: 3
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(http_requests_total{app="lumen-api",status!~"5.."}[2m]))
+            /
+            sum(rate(http_requests_total{app="lumen-api"}[2m]))

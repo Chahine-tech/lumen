@@ -129,12 +129,18 @@ strategy:
     stableService: lumen-api-stable
     canaryService: lumen-api-canary
     steps:
-      - setWeight: 20   # 20% canary, 80% stable — pause for manual validation
-      - pause: {}
-      - setWeight: 80   # 80% canary, 20% stable — final check
-      - pause: {}
+      - setWeight: 20   # 20% canary, 80% stable
+      - analysis:       # auto-rollback if success rate < 95% for 3 consecutive checks
+          templates:
+            - templateName: success-rate
+      - setWeight: 80   # 80% canary, 20% stable
+      - analysis:       # second check before full promotion
+          templates:
+            - templateName: success-rate
       - setWeight: 100  # full promotion
 ```
+
+The `AnalysisTemplate` `success-rate` ([05-analysis-template.yaml](../03-airgap-zone/manifests/app/05-analysis-template.yaml)) queries Prometheus every minute. If the HTTP success rate drops below 95% for 3 consecutive checks, the Rollout is automatically aborted and traffic falls back to the stable version.
 
 Argo Rollouts achieves traffic weighting by scaling the ReplicaSets proportionally:
 - At 20%: 1 canary pod / 2 stable pods = ~33% actual (rounded up)
@@ -183,26 +189,27 @@ kubectl argo rollouts get rollout lumen-api -n lumen
 kubectl argo rollouts get rollout lumen-api -n lumen --watch
 ```
 
-Example output at 20%:
+Example output at 20% during analysis:
 ```
 Name:       lumen-api
-Status:     ॥ Paused
+Status:     ◌ Progressing
+Message:    AnalysisRunRunning
 Strategy:   Canary
-  Step:     1/5
+  Step:     2/5
   SetWeight: 20
+  ActualWeight: 33
 Images:     192.168.2.2:5000/lumen-api:v1.5.3 (stable)
             192.168.2.2:5000/lumen-api:v1.5.4 (canary)
 Replicas:
   Desired:  2   Current: 3   Updated: 1   Ready: 3
 ```
 
-### Promoting step by step
+If the analysis passes, the Rollout automatically continues to 80% then 100% — no manual action needed.
+
+### Manual promotion (override analysis)
 
 ```bash
-# Promote from 20% → 80%
-kubectl argo rollouts promote lumen-api -n lumen
-
-# Wait for 80% pause, then promote to 100%
+# Skip the current analysis step and force-promote
 kubectl argo rollouts promote lumen-api -n lumen
 ```
 
@@ -391,6 +398,25 @@ kubectl get application lumen-app -n argocd -o yaml | grep -A5 syncOptions
 # Should include: SkipDryRunOnMissingResource=true
 ```
 
+### AnalysisRun failed — unexpected rollback
+
+```bash
+# See why the analysis failed
+kubectl get analysisrun -n lumen
+kubectl describe analysisrun <name> -n lumen
+# Look for: "Message: Metric 'success-rate' assessed Failed"
+
+# Check the Prometheus query manually
+kubectl exec -n argo-rollouts deploy/argo-rollouts -- \
+  wget -qO- "http://kube-prometheus-stack-prometheus.monitoring:9090/api/v1/query?query=sum(rate(http_requests_total{app=\"lumen-api\"}[2m]))"
+# If empty result → no traffic yet (avoid triggering canary with zero requests)
+```
+
+If the canary pod gets no traffic yet (0 requests), the query returns `NaN` which Argo Rollouts treats as failure. Generate some traffic first:
+```bash
+for i in $(seq 1 20); do curl -sk https://lumen-api.airgap.local/health > /dev/null; done
+```
+
 ### Abort doesn't work — pods still split
 
 After abort, the Rollout goes to `Degraded` state. Run retry to restore stable:
@@ -401,9 +427,9 @@ kubectl argo rollouts retry rollout lumen-api -n lumen
 
 ---
 
-## Alternative Promotion Strategies
+## Promotion Strategies
 
-### Option 1: Manual pause (current)
+### Option 1: Manual pause
 ```yaml
 steps:
   - setWeight: 20
@@ -421,34 +447,26 @@ steps:
 ```
 Promotes automatically after the timeout. Can still abort during the wait.
 
-### Option 3: Analysis (production-grade)
+### Option 3: Analysis — current config ✅
 ```yaml
 steps:
   - setWeight: 20
   - analysis:
       templates:
         - templateName: success-rate
+  - setWeight: 80
+  - analysis:
+      templates:
+        - templateName: success-rate
   - setWeight: 100
 ```
-With an `AnalysisTemplate` querying Prometheus:
+`AnalysisTemplate` (`05-analysis-template.yaml`) queries Prometheus every minute:
 ```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: AnalysisTemplate
-metadata:
-  name: success-rate
-  namespace: lumen
-spec:
-  metrics:
-    - name: success-rate
-      interval: 1m
-      successCondition: result[0] >= 0.95   # 95% success rate
-      failureLimit: 3
-      provider:
-        prometheus:
-          address: http://kube-prometheus-stack-prometheus.monitoring:9090
-          query: |
-            sum(rate(http_requests_total{app="lumen-api",status!~"5.."}[5m]))
-            /
-            sum(rate(http_requests_total{app="lumen-api"}[5m]))
+successCondition: result[0] >= 0.95   # 95% HTTP success rate
+failureLimit: 3                        # 3 consecutive failures → auto rollback
+query: |
+  sum(rate(http_requests_total{app="lumen-api",status!~"5.."}[2m]))
+  /
+  sum(rate(http_requests_total{app="lumen-api"}[2m]))
 ```
-If the success rate drops below 95% for 3 consecutive checks → automatic rollback. All infrastructure is already in place (kube-prometheus-stack + lumen-api `/metrics` endpoint).
+If success rate drops below 95% for 3 checks in a row → automatic rollback to stable. No human intervention needed.

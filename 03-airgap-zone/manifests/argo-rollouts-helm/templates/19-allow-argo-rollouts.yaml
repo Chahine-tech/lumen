@@ -83,6 +83,28 @@ spec:
           port: 8080
 
 ---
+# Controller: egress to Prometheus (AnalysisRun metrics queries)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: argo-rollouts-egress-prometheus
+  namespace: argo-rollouts
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: argo-rollouts
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090
+
+---
 # ArgoCD: ingress to argo-rollouts controller (webhook status updates)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

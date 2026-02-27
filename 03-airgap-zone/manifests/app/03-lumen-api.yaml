@@ -209,8 +209,12 @@ spec:
       stableService: lumen-api-stable
       canaryService: lumen-api-canary
       steps:
-        - setWeight: 20   # 20% canary, 80% stable — pause for manual validation
-        - pause: {}
-        - setWeight: 80   # 80% canary, 20% stable — final check before full rollout
-        - pause: {}
+        - setWeight: 20   # 20% canary, 80% stable
+        - analysis:       # auto-rollback if success rate < 95% for 3 consecutive checks
+            templates:
+              - templateName: success-rate
+        - setWeight: 80   # 80% canary, 20% stable
+        - analysis:       # second check before full promotion
+            templates:
+              - templateName: success-rate
         - setWeight: 100  # full promotion
