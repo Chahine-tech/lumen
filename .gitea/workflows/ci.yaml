@@ -83,18 +83,22 @@ jobs:
 
       - name: Sign image with Cosign
         run: |
-          docker run --rm \
-            -e COSIGN_PASSWORD="" \
-            -e COSIGN_KEY="${{ secrets.CI_COSIGN_KEY }}" \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            --network host \
-            ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5 \
-            sign --key env://COSIGN_KEY \
+          # Extract cosign binary from the registry image (airgap-safe, no internet)
+          docker create --name cosign-extract ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5
+          docker cp cosign-extract:/ko-app/cosign /usr/local/bin/cosign
+          docker rm cosign-extract
+          chmod +x /usr/local/bin/cosign
+          # Write key and sign
+          printf '%s' "${{ secrets.CI_COSIGN_KEY }}" > /tmp/cosign.key
+          chmod 600 /tmp/cosign.key
+          COSIGN_PASSWORD="" cosign sign \
+            --key /tmp/cosign.key \
             --allow-http-registry \
             --allow-insecure-registry \
             --tlog-upload=false \
             --use-signing-config=false \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
+          rm -f /tmp/cosign.key
 
       - name: Summary
         run: |
@@ -131,18 +135,22 @@ jobs:
       - name: Sign image with Cosign
         run: |
           SEMVER="${{ github.ref_name }}"
-          docker run --rm \
-            -e COSIGN_PASSWORD="" \
-            -e COSIGN_KEY="${{ secrets.CI_COSIGN_KEY }}" \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            --network host \
-            ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5 \
-            sign --key env://COSIGN_KEY \
+          # Extract cosign binary from the registry image (airgap-safe, no internet)
+          docker create --name cosign-extract ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5
+          docker cp cosign-extract:/ko-app/cosign /usr/local/bin/cosign
+          docker rm cosign-extract
+          chmod +x /usr/local/bin/cosign
+          # Write key and sign
+          printf '%s' "${{ secrets.CI_COSIGN_KEY }}" > /tmp/cosign.key
+          chmod 600 /tmp/cosign.key
+          COSIGN_PASSWORD="" cosign sign \
+            --key /tmp/cosign.key \
             --allow-http-registry \
             --allow-insecure-registry \
             --tlog-upload=false \
             --use-signing-config=false \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SEMVER}"
+          rm -f /tmp/cosign.key
 
       - name: Update manifest
         run: |
