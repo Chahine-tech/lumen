@@ -81,6 +81,7 @@ argocd_apps:
   - "14-application-cert-manager.yaml"
   - "15-application-vso.yaml"
   - "16-application-falco.yaml"
+  - "17-application-argo-rollouts.yaml"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # OPA Gatekeeper manifests (applied in order)
