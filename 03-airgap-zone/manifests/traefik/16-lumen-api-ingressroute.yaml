@@ -43,6 +43,8 @@ spec:
         - name: lumen-api
           port: 8080
       middlewares:
+        - name: rate-limit
+          namespace: traefik
         - name: security-headers
           namespace: traefik
         - name: compression
