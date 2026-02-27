@@ -83,20 +83,18 @@ jobs:
 
       - name: Sign image with Cosign
         run: |
-          printf '%s' "${{ secrets.CI_COSIGN_KEY }}" > /tmp/cosign.key
-          chmod 600 /tmp/cosign.key
           docker run --rm \
-            -v /tmp/cosign.key:/tmp/cosign.key:ro \
+            -e COSIGN_PASSWORD="" \
+            -e COSIGN_KEY="${{ secrets.CI_COSIGN_KEY }}" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             --network host \
             ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5 \
-            sign --key /tmp/cosign.key \
+            sign --key env://COSIGN_KEY \
             --allow-http-registry \
             --allow-insecure-registry \
             --tlog-upload=false \
             --use-signing-config=false \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
-          rm -f /tmp/cosign.key
 
       - name: Summary
         run: |
@@ -133,20 +131,18 @@ jobs:
       - name: Sign image with Cosign
         run: |
           SEMVER="${{ github.ref_name }}"
-          printf '%s' "${{ secrets.CI_COSIGN_KEY }}" > /tmp/cosign.key
-          chmod 600 /tmp/cosign.key
           docker run --rm \
-            -v /tmp/cosign.key:/tmp/cosign.key:ro \
+            -e COSIGN_PASSWORD="" \
+            -e COSIGN_KEY="${{ secrets.CI_COSIGN_KEY }}" \
             -v /var/run/docker.sock:/var/run/docker.sock \
             --network host \
             ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5 \
-            sign --key /tmp/cosign.key \
+            sign --key env://COSIGN_KEY \
             --allow-http-registry \
             --allow-insecure-registry \
             --tlog-upload=false \
             --use-signing-config=false \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SEMVER}"
-          rm -f /tmp/cosign.key
 
       - name: Update manifest
         run: |
