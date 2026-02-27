@@ -83,14 +83,14 @@ jobs:
 
       - name: Sign image with Cosign
         run: |
-          echo "${{ secrets.CI_COSIGN_KEY }}" > /tmp/cosign.key
+          printf '%s' "${{ secrets.CI_COSIGN_KEY }}" > /tmp/cosign.key
           chmod 600 /tmp/cosign.key
           docker run --rm \
-            -v /tmp/cosign.key:/cosign.key:ro \
+            -v /tmp/cosign.key:/tmp/cosign.key:ro \
             -v /var/run/docker.sock:/var/run/docker.sock \
             --network host \
             ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5 \
-            sign --key /cosign.key \
+            sign --key /tmp/cosign.key \
             --allow-http-registry \
             --allow-insecure-registry \
             --tlog-upload=false \
@@ -133,14 +133,14 @@ jobs:
       - name: Sign image with Cosign
         run: |
           SEMVER="${{ github.ref_name }}"
-          echo "${{ secrets.CI_COSIGN_KEY }}" > /tmp/cosign.key
+          printf '%s' "${{ secrets.CI_COSIGN_KEY }}" > /tmp/cosign.key
           chmod 600 /tmp/cosign.key
           docker run --rm \
-            -v /tmp/cosign.key:/cosign.key:ro \
+            -v /tmp/cosign.key:/tmp/cosign.key:ro \
             -v /var/run/docker.sock:/var/run/docker.sock \
             --network host \
             ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5 \
-            sign --key /cosign.key \
+            sign --key /tmp/cosign.key \
             --allow-http-registry \
             --allow-insecure-registry \
             --tlog-upload=false \
