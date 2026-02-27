@@ -9,6 +9,7 @@ type Metrics struct {
 	HTTPRequestsTotal     *prometheus.CounterVec
 	HTTPRequestDuration   *prometheus.HistogramVec
 	RedisConnectionStatus prometheus.Gauge
+	EventsTotal           *prometheus.CounterVec
 }
 
 func NewMetrics() *Metrics {
@@ -33,6 +34,13 @@ func NewMetrics() *Metrics {
 				Name: "redis_connection_status",
 				Help: "Redis connection status (1 = connected, 0 = disconnected)",
 			},
+		),
+		EventsTotal: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "lumen_events_total",
+				Help: "Total number of domain events produced, by type",
+			},
+			[]string{"type"},
 		),
 	}
 }

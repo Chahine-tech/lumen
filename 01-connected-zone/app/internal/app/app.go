@@ -42,10 +42,13 @@ func NewApp() (*App, error) {
 	}
 	slog.Info("Redis connected successfully")
 
+	m := metrics.NewMetrics()
+	m.RedisConnectionStatus.Set(1)
+
 	var pgStore *store.PostgresStore
 	if pgRWDSN != "" && pgRODSN != "" {
 		slog.Info("Connecting to PostgreSQL")
-		pgStore, err = store.NewPostgresStore(context.Background(), pgRWDSN, pgRODSN)
+		pgStore, err = store.NewPostgresStore(context.Background(), pgRWDSN, pgRODSN, m.EventsTotal)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize PostgreSQL: %w", err)
 		}
@@ -53,9 +56,6 @@ func NewApp() (*App, error) {
 	} else {
 		slog.Warn("PostgreSQL not configured (PG_RW_DSN/PG_RO_DSN not set), /items routes unavailable")
 	}
-
-	m := metrics.NewMetrics()
-	m.RedisConnectionStatus.Set(1)
 
 	h := handlers.NewHandler(redisStore, pgStore, m)
 
@@ -69,6 +69,9 @@ func NewApp() (*App, error) {
 	mux.HandleFunc("POST /items", h.CreateItem)
 	mux.HandleFunc("GET /items/{id}", h.GetItem)
 	mux.HandleFunc("DELETE /items/{id}", h.DeleteItem)
+
+	// Event log — audit trail (append-only, read from replica)
+	mux.HandleFunc("GET /events", h.GetEvents)
 
 	// pprof endpoints for profiling (CPU, memory, goroutines)
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
@@ -113,6 +116,7 @@ func (a *App) Run() error {
 			"health", "/health",
 			"hello", "/hello",
 			"items", "/items (POST/GET), /items/{id} (GET/DELETE)",
+			"events", "/events (GET), /events?type=ItemCreated&limit=50",
 			"metrics", "/metrics",
 			"pprof", "/debug/pprof/",
 		)

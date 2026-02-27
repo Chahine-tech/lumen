@@ -30,7 +30,7 @@ func Init(ctx context.Context) (func(context.Context) error, error) {
 	res := resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceName("lumen-api"),
-		semconv.ServiceVersion("v1.5.0"),
+		semconv.ServiceVersion("v1.6.0"),
 	)
 
 	tp := sdktrace.NewTracerProvider(
