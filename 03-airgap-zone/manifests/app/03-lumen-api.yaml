@@ -98,7 +98,7 @@ metadata:
   labels:
     app: lumen-api
     tier: backend
-    version: v1.5.3
+    version: v1.6.0
 spec:
   replicas: 2
   selector:
@@ -109,7 +109,7 @@ spec:
       labels:
         app: lumen-api
         tier: backend
-        version: v1.5.3
+        version: v1.6.0
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8080"
@@ -117,7 +117,7 @@ spec:
     spec:
       containers:
         - name: lumen-api
-          image: 192.168.2.2:5000/lumen-api:v1.5.3
+          image: 192.168.2.2:5000/lumen-api:v1.6.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
