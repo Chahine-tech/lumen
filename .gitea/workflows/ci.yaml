@@ -81,6 +81,23 @@ jobs:
           docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
           docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
 
+      - name: Sign image with Cosign
+        run: |
+          echo "${{ secrets.CI_COSIGN_KEY }}" > /tmp/cosign.key
+          chmod 600 /tmp/cosign.key
+          docker run --rm \
+            -v /tmp/cosign.key:/cosign.key:ro \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            --network host \
+            ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5 \
+            sign --key /cosign.key \
+            --allow-http-registry \
+            --allow-insecure-registry \
+            --tlog-upload=false \
+            --use-signing-config=false \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
+          rm -f /tmp/cosign.key
+
       - name: Summary
         run: |
           echo "### Image pushed" >> "$GITHUB_STEP_SUMMARY"
@@ -112,6 +129,24 @@ jobs:
           docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SEMVER}"
           docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}"
           docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+
+      - name: Sign image with Cosign
+        run: |
+          SEMVER="${{ github.ref_name }}"
+          echo "${{ secrets.CI_COSIGN_KEY }}" > /tmp/cosign.key
+          chmod 600 /tmp/cosign.key
+          docker run --rm \
+            -v /tmp/cosign.key:/cosign.key:ro \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            --network host \
+            ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5 \
+            sign --key /cosign.key \
+            --allow-http-registry \
+            --allow-insecure-registry \
+            --tlog-upload=false \
+            --use-signing-config=false \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SEMVER}"
+          rm -f /tmp/cosign.key
 
       - name: Update manifest
         run: |

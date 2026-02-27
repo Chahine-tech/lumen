@@ -54,5 +54,8 @@ TODO.md
 # Vault unseal keys + root token (NEVER commit — contains master secrets)
 vault-keys.json
 
+# Cosign private key (NEVER commit — store in Gitea CI_COSIGN_KEY secret)
+cosign.key
+
 # Generated cert artifacts (retrieve via: kubectl get cm airgap-ca -n traefik -o jsonpath='{.data.ca\.crt}')
 *.crt
