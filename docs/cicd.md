@@ -1,6 +1,6 @@
-# CI/CD — Gitea Actions + Argo Rollouts
+# CI/CD — Gitea Actions + Argo Rollouts + AnalysisTemplate
 
-This document covers the full CI/CD pipeline: automated build/push via Gitea Actions, and progressive canary delivery via Argo Rollouts.
+This document covers the full CI/CD pipeline: automated build/push via Gitea Actions, progressive canary delivery via Argo Rollouts, and automatic promotion/rollback via Prometheus AnalysisTemplate.
 
 ---
 
@@ -9,10 +9,11 @@ This document covers the full CI/CD pipeline: automated build/push via Gitea Act
 1. [Architecture Overview](#architecture-overview)
 2. [Gitea Actions CI Pipeline](#gitea-actions-ci-pipeline)
 3. [Argo Rollouts — Canary Deployments](#argo-rollouts--canary-deployments)
-4. [Full Deploy Workflow (end-to-end)](#full-deploy-workflow-end-to-end)
-5. [Operational Commands](#operational-commands)
-6. [ArgoCD + Argo Rollouts Integration](#argocd--argo-rollouts-integration)
-7. [Troubleshooting](#troubleshooting)
+4. [AnalysisTemplate — Automatic Promotion](#analysistemplate--automatic-promotion)
+5. [Full Deploy Workflow (end-to-end)](#full-deploy-workflow-end-to-end)
+6. [Operational Commands](#operational-commands)
+7. [ArgoCD + Argo Rollouts Integration](#argocd--argo-rollouts-integration)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -35,12 +36,18 @@ Developer
               │
               ▼
         Argo Rollouts (canary strategy)
-              ├── Step 1: 20% → new version  ← pause (manual promote)
-              ├── Step 2: 80% → new version  ← pause (manual promote)
-              └── Step 3: 100% → full promotion
+              ├── Step 1: 20% → new version
+              ├── Step 2: AnalysisRun ──→ Prometheus (5×1min, taux succès ≥ 95%)
+              │             ├── ✅ pass → continue
+              │             └── ✗  fail (×3) → rollback auto
+              ├── Step 3: 80% → new version
+              ├── Step 4: AnalysisRun ──→ Prometheus (5×1min)
+              │             ├── ✅ pass → continue
+              │             └── ✗  fail (×3) → rollback auto
+              └── Step 5: 100% → full promotion (automatic, no human needed)
 ```
 
-**Key principle**: Git is the single source of truth. ArgoCD watches the repo, Argo Rollouts controls traffic.
+**Key principle**: Git is the single source of truth. ArgoCD watches the repo, Argo Rollouts controls traffic, Prometheus decides promotion.
 
 ---
 
@@ -157,6 +164,93 @@ Wave 3: lumen-app Application (creates Rollout resource)
 ```
 
 `lumen-app` also has `SkipDryRunOnMissingResource=true` as a safety net in case wave ordering isn't respected.
+
+---
+
+## AnalysisTemplate — Automatic Promotion
+
+### How it works
+
+At each `analysis` step, Argo Rollouts creates an `AnalysisRun` that queries Prometheus on a schedule. Based on the result, it either advances the Rollout or triggers an automatic rollback — no human intervention needed.
+
+```
+setWeight: 20
+  └── AnalysisRun starts
+        ├── check 1/5 : success rate = 99% ✅
+        ├── check 2/5 : success rate = 98% ✅
+        ├── check 3/5 : success rate = 97% ✅
+        ├── check 4/5 : success rate = 99% ✅
+        └── check 5/5 : success rate = 98% ✅  → Successful → setWeight: 80
+```
+
+If 3 consecutive checks fail (rate < 95%):
+```
+        ├── check 1/5 : success rate = 40% ✗
+        ├── check 2/5 : success rate = 35% ✗
+        └── check 3/5 : success rate = 20% ✗  → consecutiveErrors=3 → RolloutAborted
+              → traffic back to 100% stable immediately
+```
+
+### AnalysisTemplate spec
+
+File: [05-analysis-template.yaml](../03-airgap-zone/manifests/app/05-analysis-template.yaml)
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: success-rate
+  namespace: lumen
+spec:
+  metrics:
+    - name: success-rate
+      interval: 1m       # evaluate every 1 minute
+      count: 5           # 5 checks total (~5 min per analysis step)
+      successCondition: "len(result) == 0 || result[0] >= 0.95"
+      failureLimit: 3    # 3 consecutive failures → rollback
+      provider:
+        prometheus:
+          address: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(http_requests_total{app="lumen-api",status!~"5.."}[2m]))
+            /
+            sum(rate(http_requests_total{app="lumen-api"}[2m]))
+```
+
+**Key design decisions:**
+- `count: 5` — required when using `interval`. Without it, Argo Rollouts rejects the template as "runs indefinitely".
+- `len(result) == 0 || ...` — guards against empty Prometheus result (no traffic yet → NaN → would be treated as failure without this guard).
+- `[2m]` window — short enough to detect issues quickly, long enough to have meaningful data.
+
+### Monitoring AnalysisRuns
+
+```bash
+# List all AnalysisRuns for the current rollout revision
+kubectl get analysisrun -n lumen
+
+# Detailed view (metrics, error messages)
+kubectl describe analysisrun <name> -n lumen
+
+# Quick status
+kubectl argo rollouts get rollout lumen-api -n lumen
+# Look for: ✔ Successful / ◌ Running / ✖ Error
+```
+
+### NetworkPolicy required
+
+The Argo Rollouts controller (in `argo-rollouts` namespace) must reach Prometheus (in `monitoring` namespace). Added to [19-allow-argo-rollouts.yaml](../03-airgap-zone/manifests/argo-rollouts-helm/templates/19-allow-argo-rollouts.yaml):
+
+```yaml
+# argo-rollouts → monitoring:9090
+egress:
+  - to:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: monitoring
+    ports:
+      - protocol: TCP
+        port: 9090
+```
 
 ---
 
