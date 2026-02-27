@@ -1865,6 +1865,8 @@ lumen-network-policies   Synced    Healthy
 - Implement RBAC for multi-user access
 - Enable Git webhooks for instant sync
 
+**See also:** [cicd.md](cicd.md) — Gitea Actions CI pipeline + Argo Rollouts canary deployments
+
 ---
 
 ## 📡 Phase 9: Traefik Ingress Controller
