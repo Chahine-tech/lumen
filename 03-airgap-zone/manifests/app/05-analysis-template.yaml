@@ -9,8 +9,8 @@ spec:
       # Evaluate every 1 minute, for 5 checks total (~5 min)
       interval: 1m
       count: 5
-      # Must stay >= 95% success rate
-      successCondition: result[0] >= 0.95
+      # Must stay >= 95% success rate (len check guards against empty result)
+      successCondition: "len(result) == 0 || result[0] >= 0.95"
       # 3 consecutive failures → rollback
       failureLimit: 3
       provider:
