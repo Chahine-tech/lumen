@@ -78,6 +78,21 @@ spec:
     burst: 200    # Allow bursts up to 200 req/s
 
 ---
+# mTLS — require client certificate signed by airgap-CA
+# Only clients presenting a valid cert can access lumen-api
+apiVersion: traefik.io/v1alpha1
+kind: TLSOption
+metadata:
+  name: mtls
+  namespace: traefik
+spec:
+  clientAuth:
+    secretNames:
+      - airgap-tls   # ca.crt in this Secret → used to verify client certs
+    clientAuthType: RequireAndVerifyClientCert
+  minVersion: VersionTLS12
+
+---
 # Basic Auth Middleware (for dashboard)
 # Educational: HTTP Basic Authentication
 # Username/password in base64-encoded format

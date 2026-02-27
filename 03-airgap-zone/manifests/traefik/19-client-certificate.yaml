@@ -1,0 +1,19 @@
+# mTLS client certificate — issued by Vault PKI via cert-manager
+# Used by clients to authenticate against lumen-api (mTLS edge)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lumen-client-cert
+  namespace: traefik
+spec:
+  secretName: lumen-client-tls
+  issuerRef:
+    name: vault-issuer
+    kind: ClusterIssuer
+  commonName: "lumen-client.airgap.local"
+  dnsNames:
+    - "lumen-client.airgap.local"
+  usages:
+    - client auth
+  duration: 8760h
+  renewBefore: 720h

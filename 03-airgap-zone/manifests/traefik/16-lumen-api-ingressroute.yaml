@@ -51,5 +51,6 @@ spec:
           namespace: traefik
   tls:
     secretName: airgap-tls
-    # Note: Secret must be in same namespace as IngressRoute
-    # We'll copy the secret to lumen namespace
+    options:
+      name: mtls
+      namespace: traefik
