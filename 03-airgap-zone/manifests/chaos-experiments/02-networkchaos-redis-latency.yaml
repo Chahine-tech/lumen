@@ -1,0 +1,23 @@
+# NetworkChaos: inject 100ms latency on Redis pods for 5 minutes
+# Validates that lumen-api handles slow Redis responses without panicking
+#
+# Apply:  kubectl apply -f 02-networkchaos-redis-latency.yaml
+# Watch:  Grafana → lumen-api p99 latency should rise to ~100ms
+# Stop:   kubectl delete -f 02-networkchaos-redis-latency.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: redis-network-latency
+  namespace: lumen
+spec:
+  action: delay
+  mode: one
+  selector:
+    namespaces:
+      - lumen
+    labelSelectors:
+      app: redis
+  delay:
+    latency: 100ms
+    jitter: 10ms
+  duration: "5m"

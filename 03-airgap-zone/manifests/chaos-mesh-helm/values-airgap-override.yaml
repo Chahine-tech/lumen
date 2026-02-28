@@ -1,0 +1,53 @@
+chaos-mesh:
+  controllerManager:
+    image:
+      registry: 192.168.2.2:5000
+      repository: chaos-mesh/chaos-mesh
+      tag: v2.7.2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+  chaosDaemon:
+    image:
+      registry: 192.168.2.2:5000
+      repository: chaos-mesh/chaos-daemon
+      tag: v2.7.2
+    # K3s uses containerd at this path (not /run/containerd/containerd.sock)
+    runtime: containerd
+    socketPath: /run/k3s/containerd/containerd.sock
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+  dashboard:
+    enabled: true
+    image:
+      registry: 192.168.2.2:5000
+      repository: chaos-mesh/chaos-dashboard
+      tag: v2.7.2
+    securityMode: false  # No auth — access controlled via NetworkPolicy (Traefik only)
+    service:
+      type: ClusterIP
+      port: 2333
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  dnsServer:
+    enabled: false  # DNSChaos not needed — avoids extra CoreDNS deployment
+
+  prometheus:
+    enabled: false  # kube-prometheus-stack already present

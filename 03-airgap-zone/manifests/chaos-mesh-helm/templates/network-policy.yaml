@@ -1,0 +1,102 @@
+# Default deny-all for chaos-mesh namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: chaos-mesh
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# Controller manager: API server + DNS + intra-namespace (webhook to chaos-daemon)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-controller-manager
+  namespace: chaos-mesh
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: controller-manager
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+    - to:
+        - podSelector: {}
+  ingress:
+    - from:
+        - podSelector: {}
+
+---
+# Chaos Daemon (DaemonSet on each node): gRPC from controller-manager
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-chaos-daemon
+  namespace: chaos-mesh
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: chaos-daemon
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: controller-manager
+      ports:
+        - port: 31767
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 6443
+
+---
+# Dashboard: ingress from Traefik only, egress to controller-manager
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dashboard
+  namespace: chaos-mesh
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: chaos-dashboard
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - port: 2333
+  egress:
+    - ports:
+        - protocol: UDP
+          port: 53
+    - ports:
+        - protocol: TCP
+          port: 6443
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: controller-manager

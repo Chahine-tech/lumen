@@ -1,0 +1,10 @@
+apiVersion: v2
+name: chaos-mesh
+description: Chaos Mesh — airgap deployment wrapper
+type: application
+version: 2.7.2
+appVersion: "v2.7.2"
+dependencies:
+  - name: chaos-mesh
+    version: "2.7.2"
+    repository: "https://charts.chaos-mesh.org"

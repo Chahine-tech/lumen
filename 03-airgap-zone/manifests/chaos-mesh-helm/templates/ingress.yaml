@@ -1,0 +1,16 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: chaos-mesh-dashboard
+  namespace: chaos-mesh
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`chaos-mesh.airgap.local`)
+      kind: Rule
+      services:
+        - name: chaos-dashboard
+          port: 2333
+  tls:
+    secretName: airgap-tls

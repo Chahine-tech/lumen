@@ -1,0 +1,21 @@
+# PodChaos: kill 50% of lumen-api pods for 2 minutes
+# Validates that Argo Rollouts recovers automatically (Rollout stays Healthy)
+#
+# Apply:  kubectl apply -f 01-podchaos-lumen-api.yaml
+# Watch:  kubectl get rollout lumen-api -n lumen -w
+# Stop:   kubectl delete -f 01-podchaos-lumen-api.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: lumen-api-pod-kill
+  namespace: lumen
+spec:
+  action: pod-kill
+  mode: fixed-percent
+  value: "50"
+  duration: "2m"
+  selector:
+    namespaces:
+      - lumen
+    labelSelectors:
+      app: lumen-api

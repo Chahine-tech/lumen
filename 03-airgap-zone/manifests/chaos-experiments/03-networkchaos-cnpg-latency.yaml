@@ -1,0 +1,23 @@
+# NetworkChaos: inject 100ms latency on CloudNativePG (lumen-db) pods for 5 minutes
+# Validates that lumen-api handles slow PostgreSQL responses without panicking
+#
+# Apply:  kubectl apply -f 03-networkchaos-cnpg-latency.yaml
+# Watch:  Grafana → lumen-api p99 latency should rise to ~100ms
+# Stop:   kubectl delete -f 03-networkchaos-cnpg-latency.yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: cnpg-network-latency
+  namespace: cnpg-system
+spec:
+  action: delay
+  mode: one
+  selector:
+    namespaces:
+      - cnpg-system
+    labelSelectors:
+      cnpg.io/cluster: lumen-db
+  delay:
+    latency: 100ms
+    jitter: 10ms
+  duration: "5m"
