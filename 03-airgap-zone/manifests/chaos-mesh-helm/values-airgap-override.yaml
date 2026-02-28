@@ -1,5 +1,6 @@
 chaos-mesh:
   controllerManager:
+    replicaCount: 1  # Single control-plane node (4CPU/6G) — reduce from default 3
     image:
       registry: 192.168.2.2:5000
       repository: chaos-mesh/chaos-mesh

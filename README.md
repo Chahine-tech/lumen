@@ -256,7 +256,7 @@ make clean             # Remove everything
 - [x] Canary deployments with Argo Rollouts (✅ Phase 23+24 — auto-promotion via Prometheus AnalysisTemplate)
 - [ ] Migrate CNI to Cilium (eBPF, L7 NetworkPolicies, Hubble observability)
 - [ ] Renovate Bot for automated dependency updates (Helm charts, images, Go deps)
-- [ ] Implement Chaos Mesh for resilience testing
+- [x] Implement Chaos Mesh for resilience testing (✅ Phase 27 — PodChaos + NetworkChaos, dashboard via Traefik)
 
 ## 📖 Resources
 
