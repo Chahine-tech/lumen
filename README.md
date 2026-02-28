@@ -12,10 +12,12 @@ A hands-on project to master distributed systems, network security, and Kubernet
 - **Ingress Controllers**: Traefik v3 with CRDs, TLS termination, HTTP/2, middlewares
 - **Helm Package Management**: Production-ready chart deployment and configuration
 - **Observability**: Full 3-pillar stack — Metrics (kube-prometheus-stack), Logs (Loki + Alloy), Traces (Tempo + OpenTelemetry)
-- **Security**: OPA Gatekeeper + Pod Security Standards (PSS) + Falco runtime security
+- **Security**: OPA Gatekeeper + Pod Security Standards (PSS) + Falco runtime security + Cosign image signing
 - **Secrets Management**: HashiCorp Vault HA + cert-manager PKI (Vault Secrets Operator, dynamic credentials, automatic TLS renewal)
+- **mTLS**: cert-manager + Vault PKI — mutual TLS between services (zero-trust east-west traffic)
 - **GitOps**: ArgoCD for declarative continuous deployment
-- **CI/CD**: Gitea Actions pipeline (test → build → scan → push) + Argo Rollouts canary deployments with Prometheus-driven auto-promotion
+- **CI/CD**: Gitea Actions pipeline (test → build → scan → push → sign) + Argo Rollouts canary deployments with Prometheus-driven auto-promotion
+- **Resilience Testing**: Chaos Mesh (PodChaos, NetworkChaos) — fault injection to validate resilience
 - **Infrastructure as Code**: Ansible (unseal, start/stop, full bootstrap)
 - **DevOps**: Build pipelines, artifact management, air-gap deployment
 
@@ -34,6 +36,7 @@ A hands-on project to master distributed systems, network security, and Kubernet
                                     ┌──────────────────▶│ • Argo Rollouts (canary)    │
                                     │                   │ • Traefik Ingress (Helm)    │
                                     │                   │ • OPA Gatekeeper + Falco    │
+                                    │                   │ • Cosign + Chaos Mesh       │
                                     │                   │ • kube-prometheus-stack     │
                                     │                   │ • Loki + Alloy + Tempo      │
                                     │                   │ • Vault HA + cert-manager   │
@@ -111,6 +114,7 @@ https://argocd.airgap.local               # ArgoCD (admin/[from secret])
 https://tempo.airgap.local                # Grafana Tempo (distributed traces)
 https://vault.airgap.local               # HashiCorp Vault UI (root token from vault-init-job)
 https://lumen-api.airgap.local           # Lumen API
+https://chaos-mesh.airgap.local         # Chaos Mesh Dashboard
 ```
 
 ## 📦 Technology Stack
@@ -126,6 +130,9 @@ https://lumen-api.airgap.local           # Lumen API
 - **GitOps**: ArgoCD v3.2.0 (pulls from internal Gitea, not GitHub)
 - **CI Pipeline**: Gitea Actions (act_runner v0.2.11) — test → build → Trivy scan → push → manifest update
 - **Canary Deployments**: Argo Rollouts v1.8.0 — canary 20%→80%→100% avec AnalysisTemplate Prometheus (auto-promotion/rollback)
+- **Supply Chain Security**: Cosign v3.0.5 — ECDSA image signing after every CI build (`--tlog-upload=false`, airgap)
+- **Resilience Testing**: Chaos Mesh v2.7.2 — PodChaos + NetworkChaos, dashboard via Traefik
+- **mTLS**: cert-manager + Vault PKI — mutual TLS (east-west traffic, `*.airgap.local` auto-renewed)
 - **Security**: OPA Gatekeeper v3.18.0 + Pod Security Standards (PSS restricted) + Falco 0.43.0 (runtime, modern_ebpf)
 - **Secrets**: HashiCorp Vault 1.19.0 HA (3-replica Raft, KV v2, PKI Engine) + VSO 1.3.0 (Vault Secrets Operator)
 - **TLS PKI**: cert-manager v1.17.1 (ClusterIssuer → Vault PKI, automatic renewal)
@@ -232,12 +239,13 @@ make clean             # Remove everything
 ## ✅ Project Status
 
 **Current State:**
-- 🛡️ **4-Layer Security**: OPA Gatekeeper + PSS + NetworkPolicies + Falco runtime security
+- 🛡️ **5-Layer Security**: OPA Gatekeeper + PSS + NetworkPolicies + Falco runtime + Cosign image signing
 - 🔐 **Secrets Management**: Vault HA (3-replica Raft) + VSO — KV v2, PKI engine (no plaintext K8s secrets)
-- 📜 **Automatic TLS**: cert-manager → Vault PKI — `*.airgap.local` renewed automatically 30 days before expiry
+- 📜 **Automatic TLS + mTLS**: cert-manager → Vault PKI — `*.airgap.local` renewed automatically, mutual TLS east-west
 - 📊 **Complete Observability**: Metrics + Logs + Traces (Prometheus, Grafana, Loki, Alloy, Tempo)
 - 🔄 **Full GitOps**: ArgoCD syncing from internal Gitea
 - 🚀 **Canary CI/CD**: Gitea Actions → Argo Rollouts → AnalysisTemplate Prometheus (auto-promote/rollback, zero manual intervention)
+- 💥 **Resilience Testing**: Chaos Mesh — PodChaos + NetworkChaos validates recovery under fault injection
 - 🔒 **Production-Grade**: TLS, RBAC, admission control, zero-trust networking, MetalLB LoadBalancer, PodDisruptionBudgets
 - 🖥️ **Multi-Node**: 2-node K3s cluster on Multipass VMs (arm64)
 - 🗄️ **HA Databases**: Redis Sentinel (automatic failover) + CloudNativePG PostgreSQL (quorum-based, read/write splitting)
