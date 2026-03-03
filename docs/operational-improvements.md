@@ -1,5 +1,7 @@
 # Operational Improvements - Lumen Project
 
+> **Historical reference** — This document tracks incremental fixes applied during early phases of the project. For current architecture and up-to-date operational notes, see [architecture.md](architecture.md).
+
 This document covers operational improvements and production hardening applied to the Lumen airgap Kubernetes project.
 
 ## Table of Contents

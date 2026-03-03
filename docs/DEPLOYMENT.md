@@ -1,5 +1,7 @@
 # Deployment Guide - Lumen Airgap Project
 
+> **Historical reference** — This document reflects an earlier phase of the project (k3d single-node). The current environment is a 2-node Multipass K3s cluster. See [architecture.md](architecture.md) for the current system overview.
+
 This document describes the actual deployment process and results.
 
 ## 🏗️ Architecture Overview

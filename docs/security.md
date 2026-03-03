@@ -1,8 +1,8 @@
 # Lumen - Security Architecture Documentation
 
-> Defense-in-Depth: 3-Layer Security for Airgap Kubernetes
+> Defense-in-Depth: 5-Layer Security for Airgap Kubernetes
 
-This document covers the complete security implementation in the Lumen airgap Kubernetes project, including OPA Gatekeeper admission control, Pod Security Standards (PSS), and NetworkPolicies.
+This document covers the complete security implementation in the Lumen airgap Kubernetes project, including OPA Gatekeeper admission control, Pod Security Standards (PSS), NetworkPolicies, Falco runtime security, and Cosign image signing.
 
 ## 📋 Table of Contents
 
