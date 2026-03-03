@@ -41,12 +41,16 @@
 
   tasks:
     - name: Get node-1 MAC address
-      ansible.builtin.command: multipass exec node-1 -- cat /sys/class/net/eth0/address
+      ansible.builtin.command: >
+        multipass exec node-1 -- bash -c
+        "cat /sys/class/net/enp0s1/address 2>/dev/null ||
+         ip link show | awk '/ether/{print $2; exit}'"
       register: node1_mac
       changed_when: false
 
     - name: Set ARP entry for MetalLB VIP
-      ansible.builtin.command: sudo arp -s {{ metallb_vip }} {{ node1_mac.stdout | trim }}
+      ansible.builtin.command: arp -s {{ metallb_vip }} {{ node1_mac.stdout | trim }}
+      become: true
       changed_when: true
 
     - name: Confirm ARP entry

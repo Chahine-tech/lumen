@@ -46,7 +46,10 @@
   changed_when: false
 
 - name: Get node-1 MAC address for ARP
-  ansible.builtin.command: multipass exec node-1 -- cat /sys/class/net/eth0/address
+  ansible.builtin.command: >
+    multipass exec node-1 -- bash -c
+    "cat /sys/class/net/enp0s1/address 2>/dev/null ||
+     ip link show | awk '/ether/{print $2; exit}'"
   register: node1_mac
   changed_when: false
 
