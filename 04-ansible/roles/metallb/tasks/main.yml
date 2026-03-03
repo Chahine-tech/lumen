@@ -54,7 +54,8 @@
   changed_when: false
 
 - name: Set ARP entry for MetalLB VIP on macOS
-  ansible.builtin.command: sudo arp -s {{ metallb_vip }} {{ node1_mac.stdout | trim }}
+  ansible.builtin.command: arp -s {{ metallb_vip }} {{ node1_mac.stdout | trim }}
+  become: true
   changed_when: true
 
 - name: Confirm ARP entry
