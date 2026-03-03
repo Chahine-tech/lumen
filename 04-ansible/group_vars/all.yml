@@ -33,24 +33,9 @@ metallb_version: "0.15.3"
 # ──────────────────────────────────────────────────────────────────────────────
 vault_namespace: "vault"
 vault_pods:
-  - name: vault-0
-    unseal_key_idx: 0
-  - name: vault-0
-    unseal_key_idx: 1
-  - name: vault-0
-    unseal_key_idx: 2
-  - name: vault-1
-    unseal_key_idx: 0
-  - name: vault-1
-    unseal_key_idx: 1
-  - name: vault-1
-    unseal_key_idx: 2
-  - name: vault-2
-    unseal_key_idx: 0
-  - name: vault-2
-    unseal_key_idx: 1
-  - name: vault-2
-    unseal_key_idx: 2
+  - vault-0
+  - vault-1
+  - vault-2
 
 # Path to vault-keys.json (relative to playbook_dir)
 vault_keys_file: "{{ playbook_dir }}/../vault-keys.json"

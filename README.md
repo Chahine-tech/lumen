@@ -18,7 +18,7 @@ A hands-on project to master distributed systems, network security, and Kubernet
 - **GitOps**: ArgoCD for declarative continuous deployment
 - **CI/CD**: Gitea Actions pipeline (test → build → scan → push → sign) + Argo Rollouts canary deployments with Prometheus-driven auto-promotion
 - **Resilience Testing**: Chaos Mesh (PodChaos, NetworkChaos) — fault injection to validate resilience
-- **Infrastructure as Code**: Ansible (unseal, start/stop, full bootstrap)
+- **Infrastructure as Code**: Terraform (VM provisioning) + Ansible (full cluster bootstrap)
 
 See [docs/architecture.md](docs/architecture.md) for the full system diagram and component details.
 
@@ -27,10 +27,19 @@ See [docs/architecture.md](docs/architecture.md) for the full system diagram and
 ### Prerequisites
 
 - Docker & Docker Compose
-- kubectl
+- kubectl + Helm
 - Make
 - Go 1.26+ (for development)
+- Terraform 1.5+ + Multipass (for VM provisioning)
+- Ansible 2.14+ (for cluster bootstrap)
 - sudo access (for K3s + iptables)
+
+### 0. Provision VMs (one-time)
+
+```bash
+multipass set local.bridged-network=en0   # once per Mac
+cd 05-terraform && terraform init && terraform apply
+```
 
 ### 1. Build Application
 
@@ -93,7 +102,7 @@ https://chaos-mesh.airgap.local           # Chaos Mesh Dashboard
 | **Secrets / TLS** | Vault HA (Raft) + cert-manager + VSO + mTLS |
 | **GitOps / CI** | ArgoCD + Gitea Actions + Argo Rollouts (canary) |
 | **Resilience** | Chaos Mesh (PodChaos, NetworkChaos) |
-| **IaC** | Ansible (bootstrap, unseal, start/stop) |
+| **IaC** | Terraform (Multipass VMs) + Ansible (bootstrap, unseal, start/stop) |
 
 ## 🧪 Testing
 
@@ -142,7 +151,7 @@ make clean             # Remove everything
 - 🔒 **Production-Grade**: TLS, RBAC, admission control, zero-trust networking, MetalLB, PodDisruptionBudgets
 - 🖥️ **Multi-Node**: 2-node K3s cluster on Multipass VMs (arm64)
 - 🗄️ **HA Databases**: Redis Sentinel (automatic failover) + CloudNativePG (quorum-based, read/write splitting)
-- ⚙️ **IaC**: Ansible — full bootstrap, unseal Vault, start/stop cluster
+- ⚙️ **IaC**: Terraform (VM provisioning, cloud-init, static IPs) + Ansible (full bootstrap, unseal, start/stop)
 - 🔁 **Idempotency**: Redis-backed middleware deduplication (POST/DELETE, 24h TTL)
 
 **Next:** Migrate CNI to Cilium (eBPF, L7 NetworkPolicies, Hubble) · Renovate Bot for automated dependency updates

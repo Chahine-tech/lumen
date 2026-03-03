@@ -26,9 +26,7 @@
     - name: Wait for K3s API to be reachable
       ansible.builtin.command: kubectl get nodes --no-headers
       register: nodes_status
-      until: >
-        nodes_status.rc == 0 and
-        nodes_status.stdout_lines | selectattr('contains', 'NotReady') | list | length == 0
+      until: nodes_status.rc == 0 and 'NotReady' not in nodes_status.stdout
       retries: 30
       delay: 5
       changed_when: false

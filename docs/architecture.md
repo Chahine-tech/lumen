@@ -721,10 +721,63 @@ Argo Rollouts envoie SIGTERM avant de couper le trafic — les 30s laissent le t
 
 ---
 
+## 13. IaC — Terraform + Ansible
+
+Le provisioning et la configuration du cluster sont entièrement automatisés. Deux outils, deux responsabilités distinctes.
+
+```
+  Terraform (05-terraform/)                 Ansible (04-ansible/)
+  ─────────────────────────                 ────────────────────
+  Responsabilité: QUOI existe               Responsabilité: COMMENT c'est configuré
+  State-driven (terraform.tfstate)          Idempotent (guards rc == 0)
+  Provider: larstobi/multipass v1.4         SSH vers les VMs
+
+  resources:                                playbooks:
+  ├── local_file.node1_cloudinit            ├── site.yml       ← bootstrap complet
+  │   (render SSH key + IP → yaml)          ├── start.yml      ← après reboot Mac
+  ├── local_file.node2_cloudinit            ├── stop.yml       ← arrêt propre
+  ├── multipass_instance.node1             ├── unseal.yml     ← Vault unseal
+  │   cpus=4, memory=6G, disk=40G          └── provision.yml  ← Ansible-only fallback
+  └── multipass_instance.node2
+      cpus=2, memory=4G, disk=30G          roles (11):
+                                            ├── multipass   registry   images
+  cloud-init (injecté à la création):       ├── k3s         metallb    opa
+  ├── SSH public key → authorized_keys      ├── argocd      gitea      vault
+  ├── eth1 static IP via netplan            ├── dns         verify
+  ├── Docker install (node-1 only)
+  └── sysctl: inotify=8192 (Falco)
+```
+
+**Pourquoi deux outils et pas juste Ansible ?**
+
+Ansible peut créer des VMs avec `multipass launch` mais n'a pas de state. Si on relance le playbook, il faut des guards manuels (`multipass info` rc != 0) pour éviter les doublons. Terraform track ce qu'il a créé — `terraform destroy` supprime proprement, `terraform plan` montre les diffs avant d'agir.
+
+**Portabilité cloud :** remplacer `larstobi/multipass` par `hashicorp/aws` ou `hashicorp/google` ne change que le provider et les resource types. Le cloud-init, les variables, et tout Ansible restent identiques.
+
+**Flow from scratch :**
+
+```bash
+# 1. Prérequis one-time
+multipass set local.bridged-network=en0
+
+# 2. VMs (~3 min)
+cd 05-terraform && terraform init && terraform apply
+
+# 3. Cluster complet (~20 min)
+ansible-playbook 04-ansible/site.yml --ask-become-pass
+
+# Détruire tout
+cd 05-terraform && terraform destroy
+```
+
+---
+
 ## Résumé des flux principaux
 
 | Flux | Chemin |
 |------|--------|
+| **Provision** | `terraform apply` → Multipass VMs + cloud-init (SSH, IP, Docker, sysctl) |
+| **Bootstrap** | `ansible-playbook site.yml` → K3s + MetalLB + OPA + ArgoCD + Gitea + Vault |
 | **Deploy** | `git push` → Gitea → ArgoCD → K8s API → Argo Rollouts → Pods |
 | **Image** | `docker build` → CI sign (Cosign) → Registry → containerd pull |
 | **Secret** | Vault KV → VSO → K8s Secret → Pod env |

@@ -1,0 +1,45 @@
+---
+# provision.yml — Create Multipass VMs (Ansible-only workflow, without Terraform)
+#
+# Usage:
+#   Option A — Terraform (recommended):
+#     cd 05-terraform && terraform init && terraform apply
+#     # VMs are created with static IPs, SSH key, Docker, and sysctl via cloud-init
+#
+#   Option B — Ansible only:
+#     ansible-playbook 04-ansible/provision.yml
+#     # VMs are created bare; SSH key must be injected manually afterward
+#
+# After either option, run:
+#   ansible-playbook 04-ansible/site.yml --ask-become-pass
+
+- name: Create Multipass VMs
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - multipass
+
+- name: Wait for SSH to be reachable
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Wait for node-1 SSH ({{ node1_ip }})
+      ansible.builtin.wait_for:
+        host: "{{ node1_ip }}"
+        port: 22
+        timeout: 120
+        delay: 5
+
+    - name: Wait for node-2 SSH ({{ node2_ip }})
+      ansible.builtin.wait_for:
+        host: "{{ node2_ip }}"
+        port: 22
+        timeout: 120
+        delay: 5
+
+    - name: VMs ready
+      ansible.builtin.debug:
+        msg: |
+          VMs are up and SSH is reachable.
+          Next step:
+            ansible-playbook 04-ansible/site.yml --ask-become-pass

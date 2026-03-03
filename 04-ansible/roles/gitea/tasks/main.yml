@@ -68,7 +68,7 @@
   changed_when: true
 
 - name: Stop port-forward
-  ansible.builtin.command: "kill {{ pf_job.ansible_job_id }}"
+  ansible.builtin.command: pkill -f "kubectl port-forward -n gitea"
   failed_when: false
   changed_when: false
 
