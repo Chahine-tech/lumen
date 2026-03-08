@@ -482,3 +482,265 @@ etcd contient:
   ✅ CRDs et leurs instances
   ✅ État des Leases (leader election)
 ```
+
+---
+
+## 11. MetalLB — LoadBalancer sans cloud
+
+Dans un cloud (AWS, GCP...), quand tu crées un Service `type: LoadBalancer`, le cloud provider provisionne automatiquement une IP externe. Dans ce projet, on est sur des VMs locales — pas de cloud provider. MetalLB remplace cette fonctionnalité.
+
+### Comment L2 Advertisement fonctionne
+
+MetalLB utilise le mode **L2 (Layer 2 / ARP)**. Le principe : un des nodes "prend possession" de l'IP virtuelle (`192.168.2.100`) en répondant aux requêtes ARP du réseau local.
+
+```
+Mac (192.168.2.1)                    node-1 (192.168.2.2)
+      │                                      │
+      │  "Qui a 192.168.2.100 ?"  (ARP req) │
+      │─────────────────────────────────────▶│
+      │                                      │
+      │  "C'est moi" (MAC: 52:54:00:aa:73:c6)│  ← MetalLB speaker répond
+      │◀─────────────────────────────────────│
+      │                                      │
+      │  HTTPS → 192.168.2.100:443           │
+      │─────────────────────────────────────▶│  → Traefik
+```
+
+Le **speaker** MetalLB (DaemonSet sur chaque node) surveille quels Services ont besoin d'une IP externe. Quand un Service `type: LoadBalancer` est créé, le speaker élit un node leader qui annonce l'IP en ARP.
+
+### Pourquoi l'ARP se perd au reboot
+
+Le Mac mémorise les associations IP↔MAC dans sa **table ARP** (cache temporaire). Après un reboot des VMs :
+1. MetalLB speaker redémarre et recommence à répondre aux ARP
+2. Mais le Mac a déjà une entrée ARP "incomplete" (ou expirée) pour `192.168.2.100`
+3. Tant qu'il n'y a pas de trafic qui force un nouvel ARP request, le Mac ne "découvre" pas la nouvelle MAC
+
+D'où l'entrée statique dans `start.yml` :
+```bash
+arp -s 192.168.2.100 52:54:00:aa:73:c6   # force l'association IP↔MAC
+```
+
+Sans ça, `https://argocd.airgap.local` timeout même si tout tourne dans le cluster.
+
+---
+
+## 12. Vault HA — Shamir's Secret Sharing
+
+Vault stocke des secrets sensibles. Le problème : comment protéger la clé de chiffrement de Vault elle-même ? Si elle est sur disque, n'importe qui avec accès au disque peut déchiffrer tous les secrets.
+
+### Le mécanisme d'unsealing
+
+Vault utilise l'algorithme de **Shamir's Secret Sharing** : la clé maître est découpée en `N` fragments (shards), dont `K` sont nécessaires pour reconstituer la clé (threshold). Dans ce projet : 5 shards, threshold 3.
+
+```
+Clé maître (256 bits)
+       │
+       │ Shamir split (5 shards, threshold 3)
+       ▼
+  shard-1  shard-2  shard-3  shard-4  shard-5
+  (dans vault-keys.json)
+
+Au démarrage — Vault est "sealed" (données inaccessibles)
+  → fournir 3 shards quelconques
+  → Vault reconstitue la clé maître
+  → Vault est "unsealed" (opérationnel)
+```
+
+Vault ne stocke **jamais** la clé maître en mémoire entre les redémarrages. C'est pour ça qu'à chaque reboot, Vault redémarre en état "sealed" et `unseal.yml` doit être rejoué.
+
+### Vault HA avec Raft
+
+Dans ce projet, Vault tourne en mode HA avec 3 pods (`vault-0`, `vault-1`, `vault-2`) et le backend de stockage **Raft** (consensus distribué intégré, pas besoin de Consul).
+
+```
+vault-0 (leader)   vault-1 (standby)   vault-2 (standby)
+      │                   │                   │
+      └───────────────────┴───────────────────┘
+                   Raft consensus
+                (réplication des données)
+
+Requête → vault.airgap.local → Traefik → vault-active Service
+                                          → toujours le leader Raft
+```
+
+Si `vault-0` tombe, Raft élit un nouveau leader parmi `vault-1`/`vault-2`. Mais les trois pods doivent être unsealed — c'est pourquoi `unseal.yml` unseal les 3 pods séquentiellement.
+
+---
+
+## 13. Supply Chain Security — Cosign
+
+**Le problème** : comment savoir que l'image qui tourne dans le cluster est bien celle buildée par le CI, et pas une image substituée (attaque supply chain) ?
+
+### Signature avec Cosign
+
+Cosign permet de **signer cryptographiquement** une image OCI et de stocker la signature dans la même registry, sans infrastructure externe.
+
+Dans le CI (`.gitea/workflows/ci.yaml`) :
+```bash
+# Après le docker push :
+cosign sign \
+  --key /tmp/cosign.key \        # clé privée (secret CI)
+  --tlog-upload=false \          # pas de Rekor (airgap)
+  192.168.2.2:5000/lumen-api:abc1234
+```
+
+Cosign calcule le digest SHA256 de l'image et crée un artifact OCI avec un tag spécial :
+```
+192.168.2.2:5000/lumen-api:abc1234              ← l'image
+192.168.2.2:5000/lumen-api:sha256-XYZ....sig    ← la signature (artifact OCI)
+```
+
+La signature est stockée **dans le registry airgap** — pas besoin d'accès à Rekor (transparency log public). C'est l'adaptation airgap : `--tlog-upload=false`.
+
+### Vérification
+
+Pour vérifier qu'une image est bien signée :
+```bash
+cosign verify \
+  --key cosign.pub \
+  --insecure-ignore-tlog \
+  192.168.2.2:5000/lumen-api:abc1234
+```
+
+Si la signature ne correspond pas à la clé publique → la vérification échoue → l'image ne doit pas tourner.
+
+---
+
+## 14. Argo Rollouts — Déploiements progressifs
+
+Un `Deployment` K8s standard fait un **rolling update** : remplace progressivement les pods, mais sans contrôle sur le trafic et sans rollback automatique basé sur des métriques.
+
+**Argo Rollouts** remplace le `Deployment` par un `Rollout` — même spec, mais avec une `strategy` avancée.
+
+### Canary dans ce projet
+
+```yaml
+strategy:
+  canary:
+    stableService: lumen-api-stable    # 80% du trafic
+    canaryService: lumen-api-canary    # 20% du trafic
+    steps:
+      - setWeight: 20     # étape 1 : 20% canary
+      - analysis: ...     # check prometheus : success rate >= 95% ?
+      - setWeight: 80     # étape 2 : 80% canary
+      - analysis: ...     # check à nouveau
+      - setWeight: 100    # promotion complète
+```
+
+Comment le split trafic fonctionne : Traefik pointe vers deux Services K8s (`lumen-api-stable` et `lumen-api-canary`). Argo Rollouts ajuste le nombre de pods dans chaque Service pour respecter les pourcentages.
+
+### AnalysisTemplate — rollback automatique
+
+L'`AnalysisTemplate` `success-rate` interroge Prometheus :
+```promql
+sum(rate(http_requests_total{app="lumen-api",status!~"5.."}[2m]))
+/
+sum(rate(http_requests_total{app="lumen-api"}[2m]))
+```
+
+Si le taux de succès passe sous 95% pendant 3 checks consécutifs → Argo Rollouts **rollback automatique** vers la version stable, sans intervention humaine.
+
+```
+git push → CI build → ArgoCD sync → Rollout démarre
+                                          │
+                                    20% canary
+                                          │
+                              ┌─── success rate < 95% ? ──▶ ROLLBACK automatique
+                              │
+                              └─── OK ──▶ 80% canary ──▶ OK ──▶ 100% (promotion)
+```
+
+---
+
+## 15. Chaos Engineering — Chaos Mesh
+
+**Le principe** : injecter des pannes contrôlées en production (ou en staging) pour vérifier que le système se comporte correctement sous stress. "Si tu n'as pas testé la panne, tu ne sais pas si tu peux récupérer."
+
+### Types d'expériences dans ce projet
+
+**PodChaos** (`01-podchaos-lumen-api.yaml`) :
+```yaml
+action: pod-kill
+mode: fixed-percent
+value: "50"       # tue 50% des pods lumen-api
+duration: "2m"
+```
+Ce que ça teste : est-ce qu'Argo Rollouts recrée les pods ? Est-ce que le Service reste disponible avec les pods restants ?
+
+**NetworkChaos** (`02-networkchaos-redis-latency.yaml`, `03-networkchaos-cnpg-latency.yaml`) :
+```yaml
+action: delay
+delay:
+  latency: "100ms"   # ajoute 100ms de latence réseau vers Redis/CNPG
+```
+Ce que ça teste : est-ce que lumen-api gère les timeouts correctement ? Est-ce que les circuit breakers fonctionnent ?
+
+### Comment Chaos Mesh injecte les pannes
+
+Chaos Mesh utilise un **DaemonSet** (`chaos-daemon`) sur chaque node qui a les privilèges pour manipuler les namespaces réseau Linux et tuer des processus. Quand tu `kubectl apply` une expérience :
+
+```
+ChaosExperiment (CR)
+      │
+      ▼
+chaos-controller-manager
+      │  sélectionne les pods cibles (labelSelector)
+      ▼
+chaos-daemon (sur le node cible)
+      │  network: tc qdisc add dev eth0 root netem delay 100ms
+      │  pod-kill: SIGKILL sur le PID du container
+      ▼
+Panne injectée
+```
+
+Quand l'expérience expire ou est supprimée, `chaos-daemon` annule les modifications (`tc qdisc del`).
+
+---
+
+## 16. IaC — Terraform + Ansible
+
+Ce projet utilise **deux outils IaC** avec des responsabilités distinctes.
+
+### Terraform — provisioning déclaratif
+
+Terraform gère le **cycle de vie des VMs** Multipass. Son modèle est **déclaratif** : tu décris l'état souhaité, Terraform calcule le diff et applique.
+
+```hcl
+resource "multipass_instance" "node1" {
+  name   = "node-1"
+  cpus   = 4
+  memory = "6G"
+  disk   = "40G"
+  cloudinit_file = "cloud-init/node1-rendered.yaml"
+}
+```
+
+`terraform apply` → Multipass VM créée avec les bonnes specs + cloud-init (IP statique, Docker, sysctl).
+`terraform destroy` → VM supprimée proprement.
+
+**cloud-init** s'exécute au premier boot de la VM et configure : interface réseau statique (`enp0s1` / bridge), installation Docker, paramètres kernel (`fs.inotify.max_user_instances=8192` requis par Falco).
+
+### Ansible — configuration idempotente
+
+Ansible gère la **configuration du cluster** après que les VMs existent. Son modèle est **procédural mais idempotent** : chaque task vérifie si l'état est déjà atteint avant d'agir.
+
+```
+Terraform          Ansible
+    │                  │
+    │  VMs créées      │  K3s installé
+    │  IPs configurées │  Registry configurée
+    │  Docker installé │  Cluster bootstrapé
+    ▼                  ▼
+Infrastructure     Applications
+```
+
+### Pourquoi deux outils
+
+| | Terraform | Ansible |
+|---|---|---|
+| Modèle | Déclaratif (state file) | Procédural (playbooks) |
+| Idéal pour | Infra (VMs, réseau, cloud) | Config (packages, services, K8s) |
+| State | Fichier `.tfstate` | Pas de state (check à chaque run) |
+| Parallélisme | Natif (dependency graph) | Manuel (`async`) |
+
+Terraform seul ne sait pas "installer K3s dans une VM". Ansible seul ne sait pas "créer une VM et attendre qu'elle soit prête". Les deux ensemble couvrent tout, du bare metal aux applications.
