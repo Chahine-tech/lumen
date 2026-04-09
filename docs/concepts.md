@@ -744,3 +744,983 @@ Infrastructure     Applications
 | Parallélisme | Natif (dependency graph) | Manuel (`async`) |
 
 Terraform seul ne sait pas "installer K3s dans une VM". Ansible seul ne sait pas "créer une VM et attendre qu'elle soit prête". Les deux ensemble couvrent tout, du bare metal aux applications.
+
+---
+
+## 17. Opérateurs Kubernetes — Automation intelligente
+
+Un **opérateur Kubernetes** n'est pas un simple script ou outil — c'est un **agent autonome** qui encode l'expertise opérationnelle d'une application complexe et la maintient automatiquement.
+
+### Le pattern Operator
+
+Un opérateur = **CRD** (Custom Resource Definition) + **Controller** (boucle de réconciliation).
+
+```
+Custom Resource (état désiré)     Controller (cerveau)
+┌──────────────────────┐          ┌───────────────────────┐
+│ apiVersion: cnpg/v1  │          │ cnpg-controller-mgr   │
+│ kind: Cluster        │──watch──▶│ (pod qui tourne 24/7) │
+│ spec:                │          └───────────────────────┘
+│   instances: 3       │                    │
+└──────────────────────┘                    │
+                                  ┌─────────┴─────────┐
+                                  ▼                   ▼
+                            Crée 3 pods         Configure
+                            PostgreSQL          réplication
+```
+
+Le controller exécute une **reconciliation loop** en permanence :
+
+```go
+// Pseudo-code simplifié du controller CNPG
+func ReconcileLoop() {
+  for {
+    // 1. Lire l'état désiré (ton YAML)
+    desired := GetCluster("lumen-db")  // instances: 3
+
+    // 2. Lire l'état actuel (dans K8s)
+    actual := GetRunningPods()  // 2 pods (1 est mort!)
+
+    // 3. Comparer
+    if actual.Count < desired.Instances {
+      // 4. Réparer automatiquement
+      CreateNewPod()
+      if actual.Primary == nil {
+        PromoteReplica()  // Failover automatique!
+      }
+    }
+
+    // 5. Attendre et recommencer
+    sleep(10s)
+  }
+}
+```
+
+Cette boucle tourne **en permanence** dans le pod du controller — c'est un processus vivant, pas un script one-shot.
+
+### Opérateur vs Script/Helper
+
+| Script/Helper | Opérateur |
+|--------------|-----------|
+| Tu l'appelles quand tu veux | Tourne **24/7** (pod qui watch) |
+| Fait 1 action puis s'arrête | **Boucle infinie** de surveillance |
+| Tu détectes les problèmes | **Détecte automatiquement** |
+| Stateless | **Stateful** (connaît l'état désiré) |
+| **Ex:** `kubectl scale` | **Ex:** HorizontalPodAutoscaler |
+
+**Analogie** :
+- **Script** = tournevis (tu visses une vis quand tu la vois desserrée, puis tu ranges l'outil)
+- **Opérateur** = robot de maintenance (patrouille 24/7, détecte et visse automatiquement toutes les vis desserrées)
+
+### Exemples concrets dans ce projet
+
+#### CloudNativePG (opérateur PostgreSQL)
+
+```yaml
+# Tu écris juste ça:
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: lumen-db
+spec:
+  instances: 3
+```
+
+**Le controller CNPG fait automatiquement** :
+- Crée 3 pods PostgreSQL avec la bonne config
+- Configure la réplication streaming
+- Crée les services `-rw` (master) et `-ro` (replicas)
+- **Si le master meurt** → élit un nouveau master via Raft, promeut une replica, met à jour le service → **failover en 30s sans intervention humaine**
+- Génère les credentials dans un Secret K8s
+- Expose les métriques Prometheus
+- Renouvelle les certs TLS avant expiry
+
+**Sans opérateur**, tu devrais :
+1. Créer un StatefulSet manuellement
+2. Configurer Patroni ou Stolon pour le failover
+3. Déployer etcd/Consul pour le consensus
+4. Écrire des scripts de monitoring
+5. Te réveiller à 3h du matin quand le master plante pour lancer `pg_ctl promote` à la main
+
+**Avec CNPG** : tu dors, l'opérateur gère tout.
+
+#### Chaos Mesh (opérateur chaos engineering)
+
+```yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: redis-latency
+spec:
+  action: delay
+  delay:
+    latency: "100ms"
+  duration: "5m"
+  selector:
+    namespaces: ["lumen"]
+    labelSelectors:
+      app: redis
+```
+
+**Le controller Chaos Mesh** :
+- Surveille cette CR (Custom Resource)
+- Demande au `chaos-daemon` (DaemonSet privilégié) d'injecter 100ms de latency réseau vers les pods Redis via `tc netem`
+- Après 5 minutes → nettoie automatiquement (`tc qdisc del`)
+- **Si le pod chaos-daemon redémarre pendant l'expérience** → réapplique le chaos automatiquement (reconciliation)
+
+#### ArgoCD (opérateur GitOps)
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lumen
+spec:
+  source:
+    repoURL: https://gitea.airgap.local/lumen/lumen.git
+    path: 03-airgap-zone/manifests/app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: lumen
+  syncPolicy:
+    automated:
+      selfHeal: true
+```
+
+**Le controller ArgoCD** :
+- Poll le repo Git toutes les 3 minutes
+- Compare l'état Git (source of truth) vs l'état cluster
+- **Si tu fais un `kubectl edit` manuel** → ArgoCD le détecte et revert (`selfHeal: true`)
+- **Si un nouveau commit arrive** → applique automatiquement le diff
+
+### Pourquoi c'est révolutionnaire
+
+Les opérateurs **encodent l'expertise humaine en code** :
+
+```
+Expert PostgreSQL DBA sait:
+  ✓ Comment faire un failover proprement
+  ✓ Quand promouvoir une replica
+  ✓ Comment configurer la réplication
+  ✓ Comment gérer les backups WAL
+  ✓ Quelle config tuner selon la RAM
+
+→ Cette connaissance est encodée dans le controller CNPG
+→ Disponible pour tout le monde, gratuitement, 24/7
+→ Zéro fatigue, zéro oubli, zéro réveil à 3h du matin
+```
+
+**Résultat** : tu délègues l'intelligence opérationnelle à du code au lieu de payer des SRE pour être en astreinte.
+
+---
+
+## 18. Ingress Controllers — Reverse proxy intelligent
+
+### Le problème à résoudre
+
+Tu as 10 applications web dans le cluster :
+- `argocd.airgap.local`
+- `grafana.airgap.local`
+- `vault.airgap.local`
+- ...
+
+**Sans Ingress** : tu aurais besoin de 10 IPs LoadBalancer différentes (une par Service) → gaspillage d'IPs.
+
+**Avec Ingress** : une seule IP (`192.168.2.100`) route vers les bonnes applications selon le **hostname** de la requête HTTP.
+
+### Architecture dans ce projet
+
+```
+Mac (navigateur)
+      │
+      │ HTTPS https://grafana.airgap.local (→ 192.168.2.100)
+      ▼
+  MetalLB (L2 ARP)
+      │ "192.168.2.100 c'est sur node-1" (MAC address)
+      ▼
+  Traefik Ingress Controller (pod sur node-1)
+      │
+      │ Parse HTTP Host header: "grafana.airgap.local"
+      │ Consulte les Ingress resources
+      │ Route match trouvé: grafana.airgap.local → grafana:80
+      ▼
+  Service grafana (ClusterIP 10.96.x.x)
+      │
+      │ kube-proxy iptables DNAT
+      ▼
+  Pod Grafana (10.42.0.15:3000)
+```
+
+### Comment ça fonctionne
+
+#### 1. Service LoadBalancer pour Traefik
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: traefik
+spec:
+  type: LoadBalancer          # MetalLB assigne 192.168.2.100
+  ports:
+    - name: web
+      port: 80
+      targetPort: 8000        # Port du pod Traefik
+    - name: websecure
+      port: 443
+      targetPort: 8443
+  selector:
+    app.kubernetes.io/name: traefik
+```
+
+MetalLB annonce `192.168.2.100` en ARP. **Tout** le trafic HTTP/S du réseau local arrive sur ce pod Traefik.
+
+#### 2. Ingress resources — routing rules
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: grafana.airgap.local     # Virtual host
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: grafana        # Service K8s cible
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - grafana.airgap.local
+      secretName: grafana-tls        # Cert TLS (cert-manager)
+```
+
+Traefik **watch** toutes les Ingress resources du cluster (via l'API K8s) et construit sa table de routage automatiquement :
+
+```
+Host: grafana.airgap.local  → grafana.monitoring.svc.cluster.local:80
+Host: argocd.airgap.local   → argocd-server.argocd.svc.cluster.local:443
+Host: vault.airgap.local    → vault.vault.svc.cluster.local:8200
+```
+
+#### 3. TLS termination
+
+Traefik gère le **TLS handshake** avec le client. Le certificat est stocké dans le Secret `grafana-tls` (généré par cert-manager depuis Vault PKI).
+
+```
+Client                Traefik                      Grafana pod
+  │                      │                             │
+  │──── HTTPS ──────────▶│                             │
+  │  (TLS encrypted)     │                             │
+  │                      │  TLS decrypt                │
+  │                      │  (cert from grafana-tls)    │
+  │                      │                             │
+  │                      │──── HTTP (plain) ───────────▶│
+  │                      │                             │
+  │◀──── HTTPS ──────────│◀──── HTTP ──────────────────│
+```
+
+**Avantage** : les pods backend (Grafana, ArgoCD...) n'ont pas besoin de gérer TLS eux-mêmes. Traefik centralise ça.
+
+### Virtual Hosting — comment ça marche
+
+Quand tu tapes `https://grafana.airgap.local` dans le navigateur :
+
+1. **DNS** : `/etc/hosts` résout `grafana.airgap.local` → `192.168.2.100` (IP MetalLB)
+2. **ARP** : ton Mac demande "qui a 192.168.2.100 ?" → MetalLB répond avec la MAC de node-1
+3. **TCP** : connexion établie vers `192.168.2.100:443`
+4. **TLS handshake** : Traefik présente le cert `grafana-tls` (signé par Vault PKI)
+5. **HTTP request** :
+   ```
+   GET / HTTP/1.1
+   Host: grafana.airgap.local    ← header crucial
+   ```
+6. **Traefik parse** le header `Host` → consulte sa table de routage → trouve l'Ingress `grafana` → proxy vers `grafana.monitoring.svc.cluster.local:80`
+7. **Service K8s** → iptables DNAT → pod Grafana
+
+**Même IP, plusieurs hostnames** : c'est le header HTTP `Host:` qui fait la différence. C'est pour ça que tu peux avoir 10 domaines différents tous pointant vers `192.168.2.100` — Traefik route selon le hostname.
+
+### Ingress vs Service LoadBalancer
+
+| | Service LoadBalancer | Ingress |
+|---|---|---|
+| **Layer** | L4 (TCP/UDP) | L7 (HTTP/HTTPS) |
+| **Routing** | IP:Port → Pod | Hostname + Path → Service |
+| **TLS** | Géré par l'app | Géré par Ingress Controller |
+| **IPs nécessaires** | 1 par service | 1 pour N services |
+| **Use case** | Bases de données, gRPC | Applications web |
+
+**Exemple** :
+- PostgreSQL (`lumen-db-rw:5432`) → Service LoadBalancer direct (pas HTTP, pas besoin d'Ingress)
+- Grafana web UI → Ingress (routing HTTP + TLS termination)
+
+### Traefik specifics
+
+Dans ce projet, Traefik est déployé via Helm avec ces features :
+
+**Automatic HTTPS redirect** :
+```yaml
+# traefik values
+ports:
+  web:
+    redirectTo:
+      port: websecure    # HTTP → HTTPS automatique
+```
+
+**Middleware** (exemple : BasicAuth pour ArgoCD) :
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: auth
+spec:
+  basicAuth:
+    secret: authsecret
+---
+# Dans l'Ingress:
+metadata:
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: argocd-auth@kubernetescrd
+```
+
+Traefik injecte le middleware BasicAuth avant de proxy vers ArgoCD — protection additionnelle sans modifier ArgoCD.
+
+**Dashboard** : Traefik expose son propre dashboard (`/dashboard`) pour voir les routes, middlewares, services actifs en temps réel.
+
+---
+
+## 19. StatefulSets — Apps avec identité stable
+
+### Deployment vs StatefulSet
+
+K8s propose deux façons de déployer des pods :
+
+| Deployment | StatefulSet |
+|-----------|-------------|
+| Pods **sans état** (stateless) | Pods **avec état** (stateful) |
+| Noms aléatoires (`lumen-api-7f8d9c-xk2p9`) | Noms **stables** (`lumen-db-1`, `lumen-db-2`) |
+| Ordre de démarrage indéterminé | Démarrage **séquentiel** (0 → 1 → 2) |
+| Scaling parallel | Scaling **ordonné** |
+| Pas de storage stable | **PVC dédié** par pod (survit au restart) |
+| Use case : APIs, workers | Use case : **bases de données, queues** |
+
+### Sticky Identity — pourquoi c'est crucial
+
+**Avec un Deployment** :
+```
+kubectl get pods -n lumen
+lumen-api-7f8d9c-xk2p9    # nom aléatoire
+lumen-api-7f8d9c-bh4k1
+
+# Pod redémarre → nouveau nom
+lumen-api-7f8d9c-zz9w3    # identité perdue
+```
+
+**Avec un StatefulSet** :
+```
+kubectl get pods -n lumen
+lumen-db-1    # nom stable, toujours "1"
+lumen-db-2    # nom stable, toujours "2"
+lumen-db-3
+
+# Pod lumen-db-1 redémarre → toujours "lumen-db-1"
+# Son PVC reste attaché → les données PostgreSQL sont préservées
+```
+
+### Exemples dans ce projet
+
+#### CNPG PostgreSQL
+
+```yaml
+# 03-airgap-zone/manifests/cnpg/02-cluster.yaml
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: lumen-db
+spec:
+  instances: 3
+```
+
+L'opérateur CNPG crée un **StatefulSet** en interne :
+```
+lumen-db-1  → master PostgreSQL (données dans PVC lumen-db-1)
+lumen-db-2  → replica (données dans PVC lumen-db-2)
+lumen-db-3  → witness (données dans PVC lumen-db-3)
+```
+
+**Pourquoi l'identité stable est cruciale** :
+- CNPG doit savoir "qui est le master" → utilise le nom stable (`lumen-db-1`)
+- Le master change (failover) → `lumen-db-2` devient master, mais garde son nom → les configs DNS restent cohérentes
+- Chaque pod a **son propre PVC** → si `lumen-db-1` redémarre, il retrouve exactement ses données PostgreSQL
+
+#### Redis HA
+
+```
+redis-master-0   → StatefulSet avec 1 replica
+redis-replica-0  → StatefulSet avec 1 replica
+```
+
+Le suffixe `-0` indique que c'est un StatefulSet. Redis Sentinel utilise les noms stables pour tracker qui est le master.
+
+#### Vault HA
+
+```
+vault-0  → leader Raft
+vault-1  → standby
+vault-2  → standby
+```
+
+Raft nécessite que chaque node ait une identité stable pour le quorum. Si `vault-0` redémarre, il doit rejoindre le cluster Raft avec la même identité.
+
+### Ordered Deployment
+
+Quand tu crées un StatefulSet avec 3 replicas :
+
+```
+kubectl apply -f statefulset.yaml
+
+1. Crée pod-0
+   → attend que pod-0 soit Ready
+2. Crée pod-1
+   → attend que pod-1 soit Ready
+3. Crée pod-2
+   → attend que pod-2 soit Ready
+```
+
+**Pourquoi c'est important** : dans un cluster PostgreSQL, le master (`lumen-db-1`) doit démarrer **avant** les replicas, sinon les replicas ne peuvent pas se connecter pour la réplication initiale.
+
+### Scaling ordonné
+
+```bash
+# Scale down de 3 → 1
+kubectl scale statefulset lumen-db --replicas=1
+
+→ Supprime lumen-db-3 d'abord (attend termination)
+→ Puis supprime lumen-db-2
+→ Garde lumen-db-1
+```
+
+Toujours dans l'ordre inverse (N → 0). Ça évite de supprimer le master en premier dans un cluster de BDD.
+
+### Headless Service
+
+Les StatefulSets utilisent souvent un **Headless Service** (`clusterIP: None`) pour permettre la découverte directe des pods.
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-headless
+spec:
+  clusterIP: None    # Headless
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+```
+
+DNS pour un Headless Service :
+```
+redis-headless.lumen.svc.cluster.local
+  → retourne les IPs de TOUS les pods Redis (pas une VIP)
+
+redis-master-0.redis-headless.lumen.svc.cluster.local
+  → retourne l'IP exacte de redis-master-0 (FQDN stable)
+```
+
+C'est utilisé par Redis Sentinel : les sentinels doivent découvrir tous les pods Redis individuellement pour monitorer le master.
+
+---
+
+## 20. Storage — PersistentVolumes et PVC
+
+### Le problème du storage éphémère
+
+Par défaut, le filesystem d'un container est **éphémère** — quand le pod redémarre, tout est perdu.
+
+```
+Pod lumen-db-1 (PostgreSQL)
+  ├── /var/lib/postgresql/data/   ← données DB (dans le container)
+  └── Pod crash → redémarre
+        → /var/lib/postgresql/data/ est VIDE
+        → toutes les données perdues ❌
+```
+
+C'est catastrophique pour une base de données. Il faut un **storage persistant** qui survit au cycle de vie du pod.
+
+### Architecture K8s Storage
+
+```
+StorageClass              PersistentVolume (PV)      PersistentVolumeClaim (PVC)       Pod
+┌─────────────┐           ┌──────────────┐           ┌──────────────┐            ┌──────────┐
+│ local-path  │──crée────▶│ pvc-abc123   │◀──bound──│ lumen-db-1   │◀──mount───│ lumen-db-1│
+│ (provisioner│           │ 1Gi          │           │ 1Gi request  │            │ postgres │
+│  K3s)       │           │ /var/lib/... │           └──────────────┘            └──────────┘
+└─────────────┘           └──────────────┘
+```
+
+**3 objets K8s** :
+1. **StorageClass** : définit **comment** provisionner du storage (local disk, NFS, cloud EBS...)
+2. **PersistentVolume (PV)** : représente un volume **réel** (ex: `/var/lib/rancher/k3s/storage/pvc-abc123/`)
+3. **PersistentVolumeClaim (PVC)** : une **demande** de storage par un pod ("je veux 1Gi")
+
+### Comment ça fonctionne concrètement
+
+#### 1. StorageClass (K3s local-path)
+
+K3s embarque le provisioner `local-path` par défaut :
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-path
+provisioner: rancher.io/local-path
+volumeBindingMode: WaitForFirstConsumer  # crée le PV seulement quand le pod démarre
+```
+
+Ce provisioner crée des **volumes locaux sur le node** dans `/var/lib/rancher/k3s/storage/`.
+
+#### 2. PVC — demande de storage
+
+CNPG crée automatiquement des PVC pour chaque pod PostgreSQL :
+
+```yaml
+# Créé automatiquement par CNPG
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lumen-db-1    # PVC dédié au pod lumen-db-1
+  namespace: lumen
+spec:
+  accessModes:
+    - ReadWriteOnce   # 1 seul pod peut monter ce volume (lecture/écriture)
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi
+```
+
+**Statut du PVC** :
+```bash
+kubectl get pvc -n lumen
+NAME         STATUS   VOLUME                                     CAPACITY
+lumen-db-1   Bound    pvc-abc123-def456-ghi789                  1Gi
+lumen-db-2   Bound    pvc-xyz789-uvw456-rst123                  1Gi
+```
+
+`Bound` = un PV a été créé et attaché à ce PVC.
+
+#### 3. PV — volume réel
+
+Le provisioner `local-path` crée automatiquement un PV :
+
+```yaml
+# Créé automatiquement par le provisioner
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pvc-abc123-def456-ghi789
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete    # supprime le volume si le PVC est supprimé
+  storageClassName: local-path
+  local:
+    path: /var/lib/rancher/k3s/storage/pvc-abc123-def456-ghi789/  # chemin réel sur le node
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - node-1    # ce PV est sur node-1 uniquement
+```
+
+Le volume est **physiquement** sur le disque de `node-1` dans `/var/lib/rancher/k3s/storage/pvc-abc123.../`.
+
+#### 4. Pod monte le PVC
+
+```yaml
+# StatefulSet lumen-db (créé par CNPG)
+spec:
+  template:
+    spec:
+      containers:
+      - name: postgres
+        volumeMounts:
+        - name: pgdata
+          mountPath: /var/lib/postgresql/data   # PostgreSQL écrit ici
+  volumeClaimTemplates:
+  - metadata:
+      name: pgdata
+    spec:
+      accessModes: [ReadWriteOnce]
+      storageClassName: local-path
+      resources:
+        requests:
+          storage: 1Gi
+```
+
+Kubernetes monte le PV dans le container au path `/var/lib/postgresql/data`. PostgreSQL écrit ses fichiers WAL, tables, index dans ce répertoire → tout est persisté sur le disque du node.
+
+### Lifecycle du storage
+
+```
+1. PVC créé (par CNPG StatefulSet)
+     ↓
+2. Provisioner crée un PV automatiquement
+     ↓
+3. PVC passe en état "Bound" (lié au PV)
+     ↓
+4. Pod démarre → kubelet monte le PV dans le container
+     ↓
+5. PostgreSQL écrit dans /var/lib/postgresql/data → écrit dans le PV
+     ↓
+6. Pod redémarre (crash, rollout, delete/recreate)
+     ↓
+7. Kubelet RE-monte le MÊME PV → les données sont intactes ✅
+     ↓
+8. PVC supprimé (kubectl delete pvc lumen-db-1)
+     ↓
+9. PV supprimé automatiquement (reclaimPolicy: Delete)
+     → les données sont perdues ❌
+```
+
+**Important** : tant que le PVC existe, les données survivent aux restarts du pod. C'est pour ça que dans un StatefulSet, chaque pod a son PVC dédié avec un nom stable.
+
+### Exemples dans ce projet
+
+#### CNPG PostgreSQL
+
+```
+lumen-db-1  →  PVC lumen-db-1 (1Gi)  →  PV sur node-1
+lumen-db-2  →  PVC lumen-db-2 (1Gi)  →  PV sur node-2
+lumen-db-3  →  PVC lumen-db-3 (1Gi)  →  PV sur node-1 ou node-2
+```
+
+Si `lumen-db-1` (master) crash et redémarre → retrouve exactement son PVC → les données PostgreSQL sont intactes → la base continue de fonctionner.
+
+#### Redis
+
+```yaml
+# 03-airgap-zone/manifests/app/02-redis.yaml
+volumeClaimTemplates:
+- metadata:
+    name: data
+  spec:
+    accessModes: [ReadWriteOnce]
+    storageClassName: local-path
+    resources:
+      requests:
+        storage: 1Gi
+```
+
+Redis master stocke son RDB snapshot + AOF log dans le PVC → si le pod redis-master-0 redémarre, il recharge les données depuis le disque.
+
+#### Vault
+
+Vault utilise le backend Raft qui stocke les secrets chiffrés dans un répertoire local. Chaque pod Vault a un PVC dédié pour stocker son état Raft.
+
+### Limitations du local-path
+
+⚠️ **Local storage = pas de migration automatique** :
+- Le PV est **lié à un node spécifique** (`nodeAffinity`)
+- Si `node-1` tombe définitivement → le PV sur node-1 est inaccessible
+- Le pod `lumen-db-1` ne peut pas migrer vers node-2 (son PVC est sur node-1)
+
+**En prod cloud**, on utiliserait :
+- AWS EBS (volumes réseau, détachables/réattachables)
+- Ceph RBD (storage distribué)
+- NFS (storage réseau partagé)
+
+**Dans ce homelab**, `local-path` suffit — les VMs sont éphémères de toute façon. Pour une vraie prod, il faudrait un storage distribué ou des backups automatiques (CNPG supporte les backups WAL vers S3/Minio).
+
+---
+
+## 21. Observability Stack — Metrics, Logs, Dashboards
+
+L'observabilité dans ce projet repose sur **3 piliers** complémentaires :
+
+```
+Metrics (Prometheus)        Logs (Loki)            Visualisation (Grafana)
+┌─────────────────┐         ┌─────────────┐        ┌──────────────────┐
+│ Counters        │         │ Structured  │        │ Dashboards       │
+│ Gauges          │────┐    │ logs        │────┐   │ Alerts           │
+│ Histograms      │    │    │ JSON        │    └──▶│ Unified view     │
+│ Time-series DB  │    └───────────────────────────▶│ PromQL + LogQL   │
+└─────────────────┘         └─────────────┘        └──────────────────┘
+```
+
+### 1. Prometheus — Time-Series Metrics
+
+**Prometheus** est une base de données time-series optimisée pour stocker des **métriques numériques** :
+- Nombre de requêtes HTTP (`http_requests_total`)
+- Latence P95 (`http_request_duration_seconds`)
+- Utilisation mémoire (`container_memory_usage_bytes`)
+- Taille de la DB (`cnpg_pg_database_size_bytes`)
+
+#### Comment Prometheus collecte les métriques
+
+**Pull model** : Prometheus **scrape** (poll) les endpoints `/metrics` des applications :
+
+```
+Prometheus (pod dans monitoring namespace)
+      │
+      │ Scrape toutes les 15s
+      ├──▶ http://lumen-db-1.lumen.svc:9187/metrics
+      ├──▶ http://lumen-db-2.lumen.svc:9187/metrics
+      ├──▶ http://falco.falco.svc:8765/metrics
+      └──▶ http://redis-master-0.lumen.svc:9121/metrics
+```
+
+**Format Prometheus** (exemple CNPG) :
+```
+# HELP cnpg_pg_database_size_bytes Database size in bytes
+# TYPE cnpg_pg_database_size_bytes gauge
+cnpg_pg_database_size_bytes{database="app",pod="lumen-db-1"} 45678912
+cnpg_pg_database_size_bytes{database="app",pod="lumen-db-2"} 45678912
+
+# HELP cnpg_backends_total Active connections
+# TYPE cnpg_backends_total gauge
+cnpg_backends_total{pod="lumen-db-1",state="active"} 12
+```
+
+Chaque métrique = **nom** + **labels** + **valeur** + **timestamp**.
+
+#### ServiceMonitor / PodMonitor
+
+Au lieu de configurer manuellement les targets Prometheus, on utilise des **CRDs** :
+
+```yaml
+# 03-airgap-zone/manifests/cnpg/04-pod-monitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cnpg-lumen-db
+  namespace: lumen
+  labels:
+    release: kube-prometheus-stack    # ← label requis pour la découverte
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: lumen-db       # sélectionne les pods CNPG
+  podMetricsEndpoints:
+  - port: metrics                     # port 9187 (exposé par CNPG)
+    path: /metrics
+```
+
+Prometheus **watch** tous les PodMonitor/ServiceMonitor du cluster via l'API K8s et configure automatiquement les scrapes. Quand un nouveau pod CNPG apparaît → Prometheus commence à le scraper sans intervention.
+
+#### PromQL — Query Language
+
+**PromQL** permet d'interroger les métriques. Exemples dans ce projet :
+
+```promql
+# Taille totale de la DB PostgreSQL
+sum(cnpg_pg_database_size_bytes{database="app"})
+
+# Taux de requêtes HTTP par seconde (lumen-api)
+rate(http_requests_total{app="lumen-api"}[5m])
+
+# Latence P95 des requêtes
+histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))
+
+# Replication lag CNPG (alerte si > 10s)
+cnpg_pg_replication_lag > 10
+```
+
+### 2. Loki — Structured Logs
+
+**Loki** est une base de logs optimisée pour stocker des **logs structurés** (JSON) avec indexation par labels seulement (pas de full-text index comme Elasticsearch).
+
+#### Comment les logs arrivent dans Loki
+
+**Alloy** (anciennement Grafana Agent) collecte les logs et les pousse vers Loki :
+
+```
+Falco pod                       Alloy (DaemonSet)              Loki
+    │                                 │                          │
+    │ stdout: {"priority":"Warning",  │                          │
+    │  "rule":"Unexpected outbound",  │                          │
+    │  "output_fields":{...}}         │                          │
+    │─────────────────────────────────▶│                          │
+    │                                  │ Parse JSON               │
+    │                                  │ Extrait labels:          │
+    │                                  │   app=falco              │
+    │                                  │   priority=Warning       │
+    │                                  │   namespace=falco        │
+    │                                  │                          │
+    │                                  │──── Push logs ──────────▶│
+    │                                  │  (HTTP POST /loki/api/v1/push)
+```
+
+Alloy tourne en **DaemonSet** (1 pod par node) et lit les logs de tous les containers via `/var/log/pods/`.
+
+**Structured logging** : les apps loggent en JSON (pas en texte brut) :
+```json
+{
+  "time": "2025-01-15T10:23:45Z",
+  "level": "warning",
+  "rule": "Contact K8S API Server From Container",
+  "output_fields": {
+    "container.id": "abc123",
+    "k8s.pod.name": "lumen-api-7f8d9c-xk2p9",
+    "k8s.ns.name": "lumen"
+  }
+}
+```
+
+Loki indexe seulement les **labels** (`app`, `namespace`, `priority`), pas le contenu complet → très efficace en storage.
+
+#### LogQL — Query Language
+
+**LogQL** ressemble à PromQL :
+
+```logql
+# Tous les logs Falco avec priority Warning
+{app="falco", priority="Warning"}
+
+# Logs contenant "Contact K8S API Server" dans les 5 dernières minutes
+{app="falco"} |= "Contact K8S API Server" [5m]
+
+# Taux d'erreurs par seconde (logs avec level=error)
+rate({app="lumen-api", level="error"} [1m])
+
+# Agrégation : compter les alertes Falco par règle
+sum by (rule) (count_over_time({app="falco"}[1h]))
+```
+
+### 3. Grafana — Unified Dashboards
+
+**Grafana** unifie Prometheus (metrics) + Loki (logs) dans des **dashboards interactifs**.
+
+#### Datasources
+
+Grafana est configuré avec 2 datasources :
+
+```yaml
+# kube-prometheus-stack Helm values
+grafana:
+  datasources:
+    - name: Prometheus
+      type: prometheus
+      url: http://prometheus-kube-prometheus-stack-prometheus:9090
+
+    - name: Loki
+      type: loki
+      url: http://loki:3100
+```
+
+Un dashboard peut mixer les deux :
+- Panel 1 : Graphe PromQL (`rate(http_requests_total[5m])`)
+- Panel 2 : Table LogQL (`{app="lumen-api", level="error"}`)
+
+#### Dashboard auto-loading (sidecar)
+
+Les dashboards sont stockés dans des **ConfigMaps** avec un label spécial :
+
+```yaml
+# 03-airgap-zone/manifests/cnpg/05-grafana-dashboard.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cnpg-grafana-dashboard
+  namespace: lumen
+  labels:
+    grafana_dashboard: "1"    # ← label magique
+data:
+  cnpg.json: |
+    {
+      "dashboard": {
+        "title": "CloudNativePG",
+        "panels": [...]
+      }
+    }
+```
+
+Le **Grafana sidecar** (container dans le pod Grafana) **watch** tous les ConfigMaps avec le label `grafana_dashboard: "1"` et les charge automatiquement dans Grafana. Quand tu `kubectl apply` un nouveau dashboard → il apparaît dans Grafana en quelques secondes.
+
+#### Exemple : Dashboard CNPG
+
+Panels typiques du dashboard CloudNativePG (ID 20417) :
+- **Database Size** : `cnpg_pg_database_size_bytes` → graphe croissant
+- **Active Connections** : `cnpg_backends_total{state="active"}` → gauge
+- **Replication Lag** : `cnpg_pg_replication_lag` → alerte si > 10s
+- **Queries/sec** : `rate(cnpg_pg_stat_database_xact_commit[5m])`
+- **Slow Queries** : logs Loki `{app="postgresql"} |= "duration:"` filtrés par durée > 1s
+
+### 4. Alloy — Unified Collector
+
+**Grafana Alloy** (successeur de Grafana Agent) collecte **metrics + logs + traces** et les route vers les backends (Prometheus, Loki, Tempo).
+
+Dans ce projet, Alloy est déployé en **DaemonSet** :
+- Collecte les **logs** de `/var/log/pods/` → push vers Loki
+- Collecte les **metrics** des pods via scraping → push vers Prometheus (ou expose pour que Prometheus scrape)
+
+Configuration Alloy (simplifié) :
+```hcl
+// Collect logs from /var/log/pods
+loki.source.kubernetes "pods" {
+  targets    = discovery.kubernetes.pods.targets
+  forward_to = [loki.write.default.receiver]
+}
+
+// Push to Loki
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+```
+
+### Workflow complet : du code à l'alerte
+
+```
+1. lumen-api reçoit une requête
+     ↓
+2. Incrémente métrique : http_requests_total++
+     ↓
+3. Log structuré : {"level":"info", "method":"GET", "path":"/items", "duration_ms":45}
+     ↓
+4. Prometheus scrape :9090/metrics toutes les 15s
+     → stocke http_requests_total dans TSDB
+     ↓
+5. Alloy lit stdout du pod via /var/log/pods/
+     → parse JSON → push vers Loki
+     ↓
+6. Grafana dashboard affiche :
+     → Graphe PromQL : rate(http_requests_total[5m])
+     → Logs LogQL : {app="lumen-api"} [5m]
+     ↓
+7. Alerte Prometheus : rate(http_requests_total{status=~"5.."}[5m]) > 10
+     → Prometheus envoie une alerte à Alertmanager
+     → Alertmanager route vers Slack/PagerDuty
+```
+
+### Pourquoi cette stack ?
+
+| Tool | Rôle | Alternative |
+|------|------|-------------|
+| **Prometheus** | Metrics TSDB | InfluxDB, Datadog, VictoriaMetrics |
+| **Loki** | Logs (index-free) | Elasticsearch (full-text), Splunk |
+| **Grafana** | Visualisation | Kibana, Datadog UI |
+| **Alloy** | Collecteur unifié | Fluentd, Logstash, Vector |
+
+**Avantages de cette stack** :
+- **Open-source** et **cloud-native** (CNCF)
+- **Léger** (Loki < Elasticsearch en RAM/storage)
+- **Unified** (1 seul UI pour metrics + logs)
+- **Airgap-friendly** (pas de SaaS externe)
+
+---
