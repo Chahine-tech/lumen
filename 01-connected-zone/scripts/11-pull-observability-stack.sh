@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Phase 15: Loki + Alloy + Metrics Server + Tempo
+# Loki + Alloy + Metrics Server + Tempo
 # Loki 3.6.5 (Feb 6, 2026) + Alloy v1.13.1 (Feb 13, 2026) + Metrics Server v0.8.0 + Tempo 2.10.0 (Jan 26, 2026)
 
 LOKI_VERSION="3.6.5"
@@ -22,7 +22,7 @@ TEMPO_CHART_VERSION="1.24.4"
 ARTIFACTS_DIR="artifacts/observability"
 
 echo "============================================="
-echo "Phase 15: Pulling Observability Stack artifacts"
+echo "Pulling Observability Stack artifacts"
 echo "  - Loki ${LOKI_VERSION} (log aggregation)"
 echo "  - Grafana Alloy ${ALLOY_VERSION} (log collector, replaces Promtail EOL)"
 echo "  - Metrics Server ${METRICS_SERVER_VERSION} (HPA support)"

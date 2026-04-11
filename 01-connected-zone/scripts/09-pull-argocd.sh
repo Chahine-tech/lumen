@@ -8,7 +8,7 @@ REDIS_VERSION="7.2.6-alpine"  # Latest Redis 7.2 LTS
 ARTIFACTS_DIR="artifacts/argocd-v3.2.0"
 
 echo "====================================="
-echo "Phase 12: Pulling ArgoCD v3.2.0 artifacts"
+echo "Pulling ArgoCD v3.2.0 artifacts"
 echo "====================================="
 
 mkdir -p "$ARTIFACTS_DIR/images"

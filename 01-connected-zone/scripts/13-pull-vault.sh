@@ -7,7 +7,7 @@ VAULT_CHART_VERSION="0.30.0"
 ARTIFACTS_DIR="artifacts/vault"
 
 echo "====================================="
-echo "Phase 19: Pulling Vault artifacts"
+echo "Pulling Vault artifacts"
 echo "====================================="
 
 mkdir -p "$ARTIFACTS_DIR/images"

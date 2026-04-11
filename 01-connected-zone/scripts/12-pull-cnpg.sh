@@ -6,7 +6,7 @@ PG_VERSION="16.6"
 ARTIFACTS_DIR="artifacts/cnpg"
 
 echo "====================================="
-echo "Phase 18: Pulling CloudNativePG artifacts"
+echo "Pulling CloudNativePG artifacts"
 echo "====================================="
 
 mkdir -p "$ARTIFACTS_DIR/images"

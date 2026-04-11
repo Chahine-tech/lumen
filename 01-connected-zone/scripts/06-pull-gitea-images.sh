@@ -5,7 +5,7 @@ GITEA_VERSION="1.21.5"
 ARTIFACTS_DIR="artifacts/gitea"
 
 echo "====================================="
-echo "Phase 8: Pulling Gitea image"
+echo "Pulling Gitea image"
 echo "====================================="
 
 mkdir -p "$ARTIFACTS_DIR/images"

@@ -5,7 +5,7 @@ VSO_VERSION="1.3.0"
 ARTIFACTS_DIR="artifacts/vso"
 
 echo "====================================="
-echo "Phase 20: Pulling Vault Secrets Operator artifacts"
+echo "Pulling Vault Secrets Operator artifacts"
 echo "====================================="
 
 mkdir -p "$ARTIFACTS_DIR/images"

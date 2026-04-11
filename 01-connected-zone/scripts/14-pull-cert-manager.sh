@@ -5,7 +5,7 @@ CERT_MANAGER_VERSION="v1.17.1"
 ARTIFACTS_DIR="artifacts/cert-manager"
 
 echo "====================================="
-echo "Phase 19: Pulling cert-manager artifacts"
+echo "Pulling cert-manager artifacts"
 echo "====================================="
 
 mkdir -p "$ARTIFACTS_DIR/images"

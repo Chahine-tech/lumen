@@ -7,7 +7,7 @@ ARTIFACTS_DIR="artifacts/traefik"
 HELM_CHART_VERSION="39.0.1"
 
 echo "====================================="
-echo "Phase 9: Pulling Traefik artifacts"
+echo "Pulling Traefik artifacts"
 echo "====================================="
 
 mkdir -p "$ARTIFACTS_DIR/images"

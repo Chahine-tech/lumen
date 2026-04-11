@@ -5,7 +5,7 @@ GATEKEEPER_VERSION="v3.18.0"  # Latest stable (Feb 2026)
 ARTIFACTS_DIR="artifacts/gatekeeper"
 
 echo "====================================="
-echo "Phase 13: Pulling OPA Gatekeeper artifacts"
+echo "Pulling OPA Gatekeeper artifacts"
 echo "====================================="
 
 mkdir -p "$ARTIFACTS_DIR/images"

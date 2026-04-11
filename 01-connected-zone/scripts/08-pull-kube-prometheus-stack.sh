@@ -14,7 +14,7 @@ HELM_CHART_VERSION="69.0.0"  # Updated to latest chart version (Feb 2026)
 ARTIFACTS_DIR="artifacts/kube-prometheus-stack"
 
 echo "====================================="
-echo "Phase 10: Pulling kube-prometheus-stack artifacts"
+echo "Pulling kube-prometheus-stack artifacts"
 echo "====================================="
 
 mkdir -p "$ARTIFACTS_DIR/images"
