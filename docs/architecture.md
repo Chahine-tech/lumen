@@ -1,12 +1,12 @@
 # Architecture — Full System Overview
 
-Ce document décrit l'architecture complète du projet lumen : comment les composants s'interconnectent, les flux de données, les décisions de design, et pourquoi chaque couche existe.
+This document describes the complete architecture of the lumen project: how components interconnect, data flows, design decisions, and why each layer exists.
 
 ---
 
-## 1. Vue d'ensemble — Les 3 Zones
+## 1. Overview — The 3 Zones
 
-Le projet simule une contrainte réelle : **aucun accès internet depuis le cluster**. Tout ce qui tourne en production doit avoir été pré-approuvé, téléchargé, vérifié, et transféré manuellement.
+The project simulates a real-world constraint: **no internet access from the cluster**. Everything running in production must have been pre-approved, downloaded, verified, and transferred manually.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
@@ -55,14 +55,14 @@ Le projet simule une contrainte réelle : **aucun accès internet depuis le clus
 └──────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Pourquoi cette architecture ?**
-En entreprise (défense, banque, industrie critique), les clusters de production n'ont pas accès à internet. Les images et charts doivent être validés, signés, et transférés via un processus contrôlé. Ce projet reproduit exactement ce workflow.
+**Why this architecture?**
+In enterprise environments (defense, banking, critical infrastructure), production clusters have no internet access. Images and charts must be validated, signed, and transferred through a controlled process. This project reproduces exactly that workflow.
 
 ---
 
-## 2. Flux CI/CD — Du commit au pod
+## 2. CI/CD Flow — From Commit to Pod
 
-C'est le flux le plus important : comment un changement de code se retrouve en production de manière automatisée et sécurisée.
+The most important flow: how a code change reaches production in an automated and secure way.
 
 ```
 Developer
@@ -89,7 +89,7 @@ Developer
                                           │  5. cosign sign           │
                                           │     --key cosign.key      │
                                           │     --tlog-upload=false   │
-                                          │     (signature OCI .sig)  │
+                                          │     (OCI .sig artifact)   │
                                           │  6. update-manifest       │
                                           │     sed image tag in      │
                                           │     03-airgap-zone/       │
@@ -123,21 +123,21 @@ Developer
                                           │      │                    │
                                           │   ✅ promote → 100%       │
                                           │      │                    │
-                                          │   ❌ rollback auto        │
+                                          │   ❌ auto rollback        │
                                           └───────────────────────────┘
 ```
 
-**Points clés :**
-- `cosign sign` avec clé ECDSA P-256 — signature stockée dans la registry comme tag OCI `sha256-<digest>.sig`
-- `--tlog-upload=false` — pas de Rekor (transparency log), impossible en airgap
-- Le manifest update se fait via `CI_TOKEN` Gitea — le runner peut pusher sur le repo
-- ArgoCD ne pull jamais depuis GitHub — uniquement depuis `http://gitea.gitea.svc.cluster.local:3000`
+**Key points:**
+- `cosign sign` with ECDSA P-256 key — signature stored in the registry as OCI tag `sha256-<digest>.sig`
+- `--tlog-upload=false` — no Rekor (transparency log), not possible in airgap
+- Manifest update uses `CI_TOKEN` Gitea — the runner can push to the repo
+- ArgoCD never pulls from GitHub — only from `http://gitea.gitea.svc.cluster.local:3000`
 
 ---
 
-## 3. Stack Sécurité — Défense en Profondeur
+## 3. Security Stack — Defense in Depth
 
-5 couches indépendantes. Chacune intercepte à un niveau différent.
+5 independent layers. Each intercepts at a different level.
 
 ```
                     ┌─────────────────────────────────────────┐
@@ -145,7 +145,7 @@ Developer
                     └─────────────────┬───────────────────────┘
                                       │
                     ┌─────────────────▼───────────────────────┐
-                    │     COUCHE 1 — OPA Gatekeeper            │
+                    │     LAYER 1 — OPA Gatekeeper             │
                     │     (Admission Controller)               │
                     │                                          │
                     │  ConstraintTemplate + Constraint:        │
@@ -156,7 +156,7 @@ Developer
                     └─────────────────┬───────────────────────┘
                                       │ admitted
                     ┌─────────────────▼───────────────────────┐
-                    │     COUCHE 2 — Pod Security Standards    │
+                    │     LAYER 2 — Pod Security Standards     │
                     │     (PSS — namespace restricted)         │
                     │                                          │
                     │  ✗ privileged containers → BLOCKED       │
@@ -167,10 +167,10 @@ Developer
                     └─────────────────┬───────────────────────┘
                                       │ admitted
                     ┌─────────────────▼───────────────────────┐
-                    │     COUCHE 3 — NetworkPolicies           │
+                    │     LAYER 3 — NetworkPolicies            │
                     │     (Zero Trust — kube-router enforce)   │
                     │                                          │
-                    │  Default deny-all dans chaque namespace  │
+                    │  Default deny-all in each namespace      │
                     │                                          │
                     │  lumen-api → redis:6379 ✓               │
                     │  lumen-api → cnpg:5432 ✓                │
@@ -180,10 +180,10 @@ Developer
                     └─────────────────┬───────────────────────┘
                                       │ running
                     ┌─────────────────▼───────────────────────┐
-                    │     COUCHE 4 — Falco 0.43.0              │
+                    │     LAYER 4 — Falco 0.43.0               │
                     │     (Runtime Security — modern_ebpf)     │
                     │                                          │
-                    │  Surveille les syscalls en temps réel    │
+                    │  Monitors syscalls in real time          │
                     │                                          │
                     │  🔔 Contact K8S API from container       │
                     │     → log: pod.name, image, namespace    │
@@ -197,17 +197,17 @@ Developer
                     └─────────────────┬───────────────────────┘
                                       │
                     ┌─────────────────▼───────────────────────┐
-                    │     COUCHE 5 — Cosign                    │
+                    │     LAYER 5 — Cosign                     │
                     │     (Supply Chain Security)              │
                     │                                          │
-                    │  Chaque image signée après build CI      │
-                    │  Clé ECDSA P-256 (cosign.pub dans repo)  │
+                    │  Every image signed after CI build       │
+                    │  ECDSA P-256 key (cosign.pub in repo)    │
                     │                                          │
                     │  cosign verify --key cosign.pub \        │
                     │    192.168.2.2:5000/lumen-api:<tag>      │
                     │  → "signatures verified" ✅              │
                     │                                          │
-                    │  Signature stockée dans registry:        │
+                    │  Signature stored in registry:           │
                     │  lumen-api:sha256-<digest>.sig           │
                     └─────────────────────────────────────────┘
 ```
@@ -216,7 +216,7 @@ Developer
 
 ## 4. Secrets & PKI — Vault + cert-manager
 
-Comment les secrets atteignent les pods sans jamais être en clair dans etcd.
+How secrets reach pods without ever being stored in plaintext in etcd.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -228,14 +228,14 @@ Comment les secrets atteignent les pods sans jamais être en clair dans etcd.
 │  │  (leader)    │◄──│  (follower)  │◄──│  (follower)  │                │
 │  └──────┬───────┘   └──────────────┘   └──────────────┘                │
 │         │                                                               │
-│  Engines activés:                                                       │
-│  ├── KV v2 (secret/)     ← credentials PostgreSQL, Redis               │
-│  └── PKI (pki/)          ← CA root + issuer *.airgap.local             │
-└─────────┬───────────────────────────────────┬───────────────────────────┘
-          │                                   │
-          │ Vault Secrets Operator (VSO)       │ cert-manager
-          │                                   │
-          ▼                                   ▼
+│  Active engines:                                                        │
+│  ├── KV v2 (secret/)     ← PostgreSQL, Redis credentials               │
+│  └── PKI (pki/)          ← root CA + issuer *.airgap.local             │
+└─────────┬───────────────────────────────┬───────────────────────────────┘
+          │                               │
+          │ Vault Secrets Operator (VSO)  │ cert-manager
+          │                               │
+          ▼                               ▼
 ┌─────────────────────────┐    ┌──────────────────────────────┐
 │  VaultStaticSecret      │    │  ClusterIssuer               │
 │  (K8s CRD)              │    │  (vault-issuer)              │
@@ -268,9 +268,9 @@ Comment les secrets atteignent les pods sans jamais être en clair dans etcd.
 
 ---
 
-## 5. Observabilité — Les 3 Piliers
+## 5. Observability — The 3 Pillars
 
-Chaque signal (métriques, logs, traces) a sa propre stack mais tout converge dans Grafana.
+Each signal (metrics, logs, traces) has its own stack but everything converges in Grafana.
 
 ```
                          lumen-api (Go)
@@ -284,10 +284,10 @@ Chaque signal (métriques, logs, traces) a sa propre stack mais tout converge da
               │               │               │
     ┌─────────▼──────┐  ┌─────▼──────┐  ┌────▼──────────┐
     │  Prometheus    │  │   Alloy     │  │  OTel Collector│
-    │  (scrape)      │  │ (collector) │  │  (sidecar/agent│
-    │                │  │            │  │   via Alloy)   │
-    │  ServiceMonitor│  │  pipeline: │  │               │
-    │  (CRD) defines │  │  parse JSON│  └────┬──────────┘
+    │  (scrape)      │  │ (collector) │  │  (via Alloy)  │
+    │                │  │            │  │               │
+    │  ServiceMonitor│  │  pipeline: │  └────┬──────────┘
+    │  (CRD) defines │  │  parse JSON│       │
     │  scrape target │  │  add labels│       │
     └────────┬───────┘  └─────┬──────┘       │
              │                │              │
@@ -322,16 +322,16 @@ Chaque signal (métriques, logs, traces) a sa propre stack mais tout converge da
                     └─────────────────────┘
 ```
 
-**Corrélation traces ↔ logs :** lumen-api injecte le `traceID` dans chaque log JSON. Dans Grafana Explore, cliquer sur un span Tempo saute directement aux logs Loki correspondants.
+**Trace ↔ log correlation:** lumen-api injects the `traceID` into every JSON log line. In Grafana Explore, clicking a Tempo span jumps directly to the corresponding Loki logs.
 
 ---
 
 ## 6. Canary Deployment — Argo Rollouts + AnalysisTemplate
 
-Comment un déploiement progressif avec validation automatique fonctionne.
+How progressive deployment with automatic validation works.
 
 ```
-                    Nouvelle image pushée par CI
+                    New image pushed by CI
                               │
                     ArgoCD sync → Rollout spec update
                               │
@@ -353,7 +353,7 @@ Comment un déploiement progressif avec validation automatique fonctionne.
               │  < 0.01 (1%) ?                  │
               │                                │
               │  ✅ success → continue          │
-              │  ❌ failure → rollback auto     │
+              │  ❌ failure → auto rollback     │
               └───────────────┬────────────────┘
                               │ ✅
               ┌───────────────▼────────────────┐
@@ -367,23 +367,23 @@ Comment un déploiement progressif avec validation automatique fonctionne.
               ┌───────────────▼────────────────┐
               │  Step 3: weight = 100%          │
               │  stable = lumen-api:v1.3.0     │
-              │  Déploiement terminé ✅         │
+              │  Deployment complete ✅         │
               └────────────────────────────────┘
 
   Traffic routing via Service selector patch:
   ┌────────────────────────────────────────────┐
   │  Service lumen-api (stable)                │
-  │  → 80% vers pods stable (v1.2.0)           │
-  │  → 20% vers pods canary (v1.3.0)           │
+  │  → 80% to stable pods (v1.2.0)             │
+  │  → 20% to canary pods (v1.3.0)             │
   │  (weighted via Argo Rollouts TrafficSplit) │
   └────────────────────────────────────────────┘
 ```
 
 ---
 
-## 7. Résilience — Chaos Mesh
+## 7. Resilience — Chaos Mesh
 
-Comment les pannes contrôlées valident la robustesse du système.
+How controlled failures validate system robustness.
 
 ```
   Chaos Mesh Architecture (namespace: chaos-mesh)
@@ -401,51 +401,51 @@ Comment les pannes contrôlées valident la robustesse du système.
   │       │ containerd socket                            │
   │       │ /run/k3s/containerd/containerd.sock          │
   │       ▼                                              │
-  │  Injecte les fautes directement dans les containers  │
+  │  Injects faults directly into containers             │
   └──────────────────────────────────────────────────────┘
 
-  Expériences disponibles:
+  Available experiments:
 
   PodChaos ──────────────────────────────────────────────
   kubectl apply -f 01-podchaos-lumen-api.yaml
   │
-  │  kill 50% des pods lumen-api pendant 2 min
+  │  kill 50% of lumen-api pods for 2 min
   │  ┌──────────┐  kill   ┌──────────┐
-  │  │ pod-1 ✅ │────────▶│ pod-1 ❌ │  Rollout détecte
-  │  │ pod-2 ✅ │         │ pod-2 ✅ │  → recrée pod-1
+  │  │ pod-1 ✅ │────────▶│ pod-1 ❌ │  Rollout detects
+  │  │ pod-2 ✅ │         │ pod-2 ✅ │  → recreates pod-1
   │  └──────────┘         └──────────┘  → Healthy ✅
   │
-  │  Valide: Argo Rollouts récupère automatiquement
+  │  Validates: Argo Rollouts recovers automatically
 
   NetworkChaos ──────────────────────────────────────────
   kubectl apply -f 02-networkchaos-redis-latency.yaml
   │
-  │  +100ms latence sur Redis pendant 5 min
+  │  +100ms latency on Redis for 5 min
   │  lumen-api ──[+100ms]──► redis:6379
   │
-  │  Observer dans Grafana: p99 monte à ~100ms
-  │  Valide: lumen-api gère les timeouts sans panic
+  │  Watch in Grafana: p99 rises to ~100ms
+  │  Validates: lumen-api handles timeouts without panic
   │
   kubectl apply -f 03-networkchaos-cnpg-latency.yaml
   │
-  │  +100ms latence sur PostgreSQL pendant 5 min
+  │  +100ms latency on PostgreSQL for 5 min
   │  lumen-api ──[+100ms]──► cnpg:5432
   │
-  │  Valide: connection pool + query timeout configurés
+  │  Validates: connection pool + query timeout configured
 ```
 
 ---
 
-## 8. Bases de Données HA
+## 8. HA Databases
 
-Deux bases avec des stratégies de haute disponibilité différentes.
+Two databases with different high-availability strategies.
 
 ```
   Redis HA Sentinel
   ┌─────────────────────────────────────────────────────┐
   │  namespace: lumen                                   │
   │                                                     │
-  │  ┌──────────────┐    réplication    ┌─────────────┐ │
+  │  ┌──────────────┐    replication    ┌─────────────┐ │
   │  │  redis-master│ ────────────────► │ redis-slave │ │
   │  │  :6379       │                   │ :6379       │ │
   │  └──────┬───────┘                   └─────────────┘ │
@@ -454,11 +454,11 @@ Deux bases avec des stratégies de haute disponibilité différentes.
   │  ┌──────▼──────────────────────────────────┐       │
   │  │  Sentinel x3 (:26379)                   │       │
   │  │  quorum = 2                             │       │
-  │  │  Si master down → élection → failover   │       │
+  │  │  If master down → election → failover   │       │
   │  └─────────────────────────────────────────┘       │
   │                                                     │
   │  lumen-api → redis-headless:26379 (Sentinel)        │
-  │           → redis-master:6379 (découverte auto)    │
+  │           → redis-master:6379 (auto-discovery)     │
   └─────────────────────────────────────────────────────┘
 
   CloudNativePG (PostgreSQL)
@@ -482,7 +482,7 @@ Deux bases avec des stratégies de haute disponibilité différentes.
   │  lumen-db-ro:5432   → replica (reads)              │
   │  lumen-db-r:5432    → any (load balanced)          │
   │                                                     │
-  │  Credentials via VSO → K8s Secret (jamais en clair)│
+  │  Credentials via VSO → K8s Secret (never plaintext)│
   └─────────────────────────────────────────────────────┘
 ```
 
@@ -490,27 +490,27 @@ Deux bases avec des stratégies de haute disponibilité différentes.
 
 ## 9. GitOps — ArgoCD Sync Waves
 
-L'ordre de déploiement est critique : les CRDs doivent exister avant les ressources qui les utilisent.
+Deployment order matters: CRDs must exist before the resources that use them.
 
 ```
-  Wave 0 (infrastructure fondamentale)
+  Wave 0 (core infrastructure)
   ├── cert-manager          (CRDs: Certificate, ClusterIssuer)
   ├── OPA Gatekeeper        (CRDs: ConstraintTemplate, Constraint)
   └── MetalLB               (CRDs: IPAddressPool, L2Advertisement)
 
-  Wave 1 (dépendances applicatives)
+  Wave 1 (application dependencies)
   ├── Vault HA              (CRDs: VaultConnection, VaultAuth)
   ├── CloudNativePG         (CRDs: Cluster, Backup)
   └── Traefik               (CRDs: IngressRoute, Middleware)
 
-  Wave 2 (controllers + CRDs avancés)
+  Wave 2 (controllers + advanced CRDs)
   ├── Argo Rollouts         (CRDs: Rollout, AnalysisTemplate)
   └── Chaos Mesh            (CRDs: PodChaos, NetworkChaos...)
 
   Wave 3 (application)
   └── lumen-app             (Rollout, Service, HPA, NetworkPolicies)
 
-  Wave 4+ (observabilité)
+  Wave 4+ (observability)
   ├── kube-prometheus-stack
   ├── Loki + Alloy
   └── Tempo
@@ -528,16 +528,16 @@ L'ordre de déploiement est critique : les CRDs doivent exister avant les ressou
 
 ---
 
-## 10. Réseau — Namespaces et Isolation
+## 10. Network — Namespaces and Isolation
 
-Chaque composant dans son namespace avec des NetworkPolicies strictes.
+Each component in its own namespace with strict NetworkPolicies.
 
 ```
-  Cluster K3s
+  K3s Cluster
   ├── namespace: lumen
   │   ├── lumen-api (Rollout — 2 replicas)
   │   ├── redis-master + redis-slave + sentinel x3
-  │   └── NetworkPolicies: default-deny + allows explicites
+  │   └── NetworkPolicies: default-deny + explicit allows
   │
   ├── namespace: cnpg-system
   │   ├── lumen-db-1 (primary), lumen-db-2 (replica), lumen-db-3 (witness)
@@ -555,13 +555,13 @@ Chaque composant dans son namespace avec des NetworkPolicies strictes.
   │   └── applicationset-controller
   │
   ├── namespace: gitea
-  │   └── gitea (+ PostgreSQL interne)
+  │   └── gitea (+ internal PostgreSQL)
   │
   ├── namespace: traefik
   │   └── traefik (DaemonSet — node-1 + node-2)
   │       ├── :80  → redirect HTTPS
   │       ├── :443 → TLS termination (cert-manager certs)
-  │       └── IngressRoutes → services par Host header
+  │       └── IngressRoutes → services by Host header
   │
   ├── namespace: monitoring
   │   ├── prometheus, grafana, alertmanager
@@ -592,7 +592,7 @@ Chaque composant dans son namespace avec des NetworkPolicies strictes.
 
 ---
 
-## 11. Infrastructure physique — Multipass VMs
+## 11. Physical Infrastructure — Multipass VMs
 
 ```
   MacBook Air (arm64, 16GB RAM)
@@ -600,8 +600,8 @@ Chaque composant dans son namespace avec des NetworkPolicies strictes.
   │
   ├── node-1 (192.168.2.2) — Ubuntu 24.04 arm64
   │   ├── K3s control-plane (API server, etcd, scheduler)
-  │   ├── Docker Registry v2 (:5000) — stocke toutes les images
-  │   ├── Gitea (:3000 interne) — git server airgap
+  │   ├── Docker Registry v2 (:5000) — stores all images
+  │   ├── Gitea (:3000 internal) — airgap git server
   │   ├── MetalLB speaker
   │   └── Workloads: Vault, ArgoCD, cert-manager, Traefik...
   │   Resources: 4 vCPU / 6GB RAM
@@ -612,11 +612,11 @@ Chaque composant dans son namespace avec des NetworkPolicies strictes.
       └── Workloads: lumen-api, Redis, monitoring...
       Resources: 2 vCPU / 4GB RAM
 
-  Réseau: 192.168.2.0/24 (Multipass bridge)
+  Network: 192.168.2.0/24 (Multipass bridge)
   MetalLB pool: 192.168.2.100-192.168.2.120
-  → LoadBalancer IPs accessibles depuis macOS
+  → LoadBalancer IPs accessible from macOS
 
-  containerd registry mirror (tous les nodes):
+  containerd registry mirror (all nodes):
   /etc/rancher/k3s/registries.yaml
   mirrors:
     docker.io:    → http://192.168.2.2:5000
@@ -627,9 +627,9 @@ Chaque composant dans son namespace avec des NetworkPolicies strictes.
 
 ---
 
-## 12. lumen-api — Architecture interne
+## 12. lumen-api — Internal Architecture
 
-L'API est le workload applicatif qui sert de prétexte à toute l'infrastructure. Elle est écrite en Go avec la stdlib uniquement (`net/http`) — pas de framework externe.
+The API is the application workload that serves as the reason for all this infrastructure. Written in Go using stdlib only (`net/http`) — no external framework.
 
 ```
   HTTP Request
@@ -639,9 +639,9 @@ L'API est le workload applicatif qui sert de prétexte à toute l'infrastructure
   │              Middleware chain (onion)               │
   │                                                     │
   │  Recovery        ← panic → 500, log + continue      │
-  │    └── Tracing   ← crée le span OTel parent         │
-  │          └── Logging   ← log structuré JSON (slog)  │
-  │                └── Metrics  ← incrémente Prometheus  │
+  │    └── Tracing   ← creates parent OTel span         │
+  │          └── Logging   ← structured JSON (slog)     │
+  │                └── Metrics  ← increments Prometheus  │
   │                      └── Idempotency                │
   │                            └── ServeMux             │
   │                                  │                  │
@@ -672,7 +672,7 @@ L'API est le workload applicatif qui sert de prétexte à toute l'infrastructure
                     └──────────────────────────────────┘
 ```
 
-**Idempotency middleware** — le pattern le plus intéressant de l'API :
+**Idempotency middleware** — the most interesting pattern in the API:
 
 ```
   POST /items  + header Idempotency-Key: <uuid>
@@ -691,19 +691,19 @@ L'API est le workload applicatif qui sert de prétexte à toute l'infrastructure
   Return response
 ```
 
-Si le client reçoit un timeout réseau et retenvoie la même requête avec le même `Idempotency-Key`, il reçoit exactement la même réponse — sans créer un doublon en base. Pattern critique pour les APIs financières ou les systèmes distribués.
+If the client receives a network timeout and retries the same request with the same `Idempotency-Key`, it gets exactly the same response — without creating a duplicate in the database. A critical pattern for financial APIs and distributed systems.
 
-**Observabilité intégrée dans chaque handler :**
-- Chaque handler ouvre un span OTel enfant (`tracer.Start`) — les erreurs Redis/PG sont enregistrées dans le span (`span.RecordError`)
-- Le `/health` crée des spans séparés pour Redis et PostgreSQL — Grafana Tempo montre exactement lequel est lent
-- Les logs sont en JSON structuré (`slog`) avec `traceID` injecté — corrélation directe avec Tempo dans Grafana Explore
+**Observability built into every handler:**
+- Each handler opens a child OTel span (`tracer.Start`) — Redis/PG errors are recorded in the span (`span.RecordError`)
+- `/health` creates separate spans for Redis and PostgreSQL — Grafana Tempo shows exactly which one is slow
+- Logs are structured JSON (`slog`) with `traceID` injected — direct correlation with Tempo in Grafana Explore
 
-**Graceful shutdown :**
+**Graceful shutdown:**
 ```
-  SIGTERM reçu (kubectl rolling update)
+  SIGTERM received (kubectl rolling update)
        │
        ▼
-  server.Shutdown(ctx, timeout=30s)  ← attend les requêtes en cours
+  server.Shutdown(ctx, timeout=30s)  ← waits for in-flight requests
        │
        ▼
   redis.Close()
@@ -712,70 +712,70 @@ Si le client reçoit un timeout réseau et retenvoie la même requête avec le m
        ▼
   exit 0
 ```
-Argo Rollouts envoie SIGTERM avant de couper le trafic — les 30s laissent le temps aux requêtes longues de terminer proprement.
+Argo Rollouts sends SIGTERM before cutting traffic — the 30s window lets long-running requests finish cleanly.
 
-**Read/Write splitting PostgreSQL :**
+**PostgreSQL read/write splitting:**
 - `PG_RW_DSN` → primary (INSERT/UPDATE/DELETE)
-- `PG_RO_DSN` → replica (SELECT) — `/events` et `/items` GET lisent depuis le replica
-- Les credentials viennent d'un K8s Secret injecté par VSO depuis Vault — jamais en clair dans le manifest
+- `PG_RO_DSN` → replica (SELECT) — `/events` and `/items` GET read from the replica
+- Credentials come from a K8s Secret injected by VSO from Vault — never in plaintext in the manifest
 
 ---
 
 ## 13. IaC — Terraform + Ansible
 
-Le provisioning et la configuration du cluster sont entièrement automatisés. Deux outils, deux responsabilités distinctes.
+VM provisioning and cluster configuration are fully automated. Two tools, two distinct responsibilities.
 
 ```
   Terraform (05-terraform/)                 Ansible (04-ansible/)
   ─────────────────────────                 ────────────────────
-  Responsabilité: QUOI existe               Responsabilité: COMMENT c'est configuré
+  Responsibility: WHAT exists               Responsibility: HOW it's configured
   State-driven (terraform.tfstate)          Idempotent (guards rc == 0)
-  Provider: larstobi/multipass v1.4         SSH vers les VMs
+  Provider: larstobi/multipass v1.4         SSH into VMs
 
   resources:                                playbooks:
-  ├── local_file.node1_cloudinit            ├── site.yml       ← bootstrap complet
-  │   (render SSH key + IP → yaml)          ├── start.yml      ← après reboot Mac
-  ├── local_file.node2_cloudinit            ├── stop.yml       ← arrêt propre
+  ├── local_file.node1_cloudinit            ├── site.yml       ← full bootstrap
+  │   (render SSH key + IP → yaml)          ├── start.yml      ← after Mac reboot
+  ├── local_file.node2_cloudinit            ├── stop.yml       ← clean shutdown
   ├── multipass_instance.node1             ├── unseal.yml     ← Vault unseal
   │   cpus=4, memory=6G, disk=40G          └── provision.yml  ← Ansible-only fallback
   └── multipass_instance.node2
       cpus=2, memory=4G, disk=30G          roles (11):
                                             ├── multipass   registry   images
-  cloud-init (injecté à la création):       ├── k3s         metallb    opa
+  cloud-init (injected at creation):        ├── k3s         metallb    opa
   ├── SSH public key → authorized_keys      ├── argocd      gitea      vault
   ├── eth1 static IP via netplan            ├── dns         verify
   ├── Docker install (node-1 only)
   └── sysctl: inotify=8192 (Falco)
 ```
 
-**Pourquoi deux outils et pas juste Ansible ?**
+**Why two tools instead of just Ansible?**
 
-Ansible peut créer des VMs avec `multipass launch` mais n'a pas de state. Si on relance le playbook, il faut des guards manuels (`multipass info` rc != 0) pour éviter les doublons. Terraform track ce qu'il a créé — `terraform destroy` supprime proprement, `terraform plan` montre les diffs avant d'agir.
+Ansible can create VMs with `multipass launch` but has no state. Re-running the playbook requires manual guards (`multipass info` rc != 0) to avoid duplicates. Terraform tracks what it created — `terraform destroy` cleans up properly, `terraform plan` shows diffs before acting.
 
-**Portabilité cloud :** remplacer `larstobi/multipass` par `hashicorp/aws` ou `hashicorp/google` ne change que le provider et les resource types. Le cloud-init, les variables, et tout Ansible restent identiques.
+**Cloud portability:** replacing `larstobi/multipass` with `hashicorp/aws` or `hashicorp/google` only changes the provider and resource types. The cloud-init templates, variables, and all of Ansible remain identical.
 
-**Flow from scratch :**
+**From-scratch flow:**
 
 ```bash
-# 1. Prérequis one-time
+# 1. One-time prerequisite
 multipass set local.bridged-network=en0
 
 # 2. VMs (~3 min)
 cd 05-terraform && terraform init && terraform apply
 
-# 3. Cluster complet (~20 min)
+# 3. Full cluster (~20 min)
 ansible-playbook 04-ansible/site.yml --ask-become-pass
 
-# Détruire tout
+# Tear everything down
 cd 05-terraform && terraform destroy
 ```
 
 ---
 
-## Résumé des flux principaux
+## Summary — Main Flows
 
-| Flux | Chemin |
-|------|--------|
+| Flow | Path |
+|------|------|
 | **Provision** | `terraform apply` → Multipass VMs + cloud-init (SSH, IP, Docker, sysctl) |
 | **Bootstrap** | `ansible-playbook site.yml` → K3s + MetalLB + OPA + ArgoCD + Gitea + Vault |
 | **Deploy** | `git push` → Gitea → ArgoCD → K8s API → Argo Rollouts → Pods |
@@ -786,4 +786,3 @@ cd 05-terraform && terraform destroy
 | **Metric** | Pod `/metrics` → Prometheus → Grafana |
 | **Trace** | OTel SDK → Alloy → Tempo → Grafana |
 | **Chaos** | `kubectl apply PodChaos` → chaos-daemon → container kill |
-| **Admission** | `kubectl apply` → OPA Gatekeeper → PSS → Accepted/Rejected |
