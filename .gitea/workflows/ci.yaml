@@ -62,7 +62,7 @@ jobs:
             -f 01-connected-zone/Dockerfile \
             01-connected-zone/
 
-      - name: Scan image with Trivy
+      - name: Scan image with Trivy (report)
         run: |
           docker run --rm \
             -v /var/cache/trivy:/root/.cache/trivy \
@@ -74,6 +74,23 @@ jobs:
             --exit-code 0 \
             --severity HIGH,CRITICAL \
             --format table \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
+
+      - name: Scan image with Trivy (gate)
+        run: |
+          # Blocks the pipeline on fixable CRITICAL vulnerabilities.
+          # --ignore-unfixed: unfixable CVEs are reported above but cannot block
+          # (no action possible in airgap). Waivers go in .trivyignore.
+          docker run --rm \
+            -v /var/cache/trivy:/root/.cache/trivy \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            ${{ env.REGISTRY }}/aquasec/trivy:0.59.1 \
+            image \
+            --skip-db-update \
+            --skip-java-db-update \
+            --exit-code 1 \
+            --severity CRITICAL \
+            --ignore-unfixed \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
 
       - name: Push Docker image

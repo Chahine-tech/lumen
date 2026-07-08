@@ -1,0 +1,56 @@
+# Traefik dashboard credentials — synced from Vault by VSO
+#
+# Replaces the htpasswd Secret that used to be hardcoded in git (admin:admin).
+# Source of truth: Vault KV v2 at lumen/traefik-dashboard, key "users".
+#
+# Seed once (any machine with vault CLI + htpasswd, using an admin token):
+#   htpasswd -nbB admin '<strong-password>' | vault kv put lumen/traefik-dashboard users=-
+#
+# Vault side (created by the vault-init Job):
+#   - policy traefik-dashboard-policy: read lumen/data/traefik-dashboard
+#   - k8s auth role traefik-dashboard: bound to SA default in namespace traefik
+#
+# VSO then renders the Secret dashboard-auth-secret that the dashboard-auth
+# Middleware references (08-middlewares.yaml).
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata:
+  name: vault-connection
+  namespace: traefik
+spec:
+  address: http://vault.vault.svc.cluster.local:8200
+  skipTLSVerify: false
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: traefik-vault-auth
+  namespace: traefik
+spec:
+  vaultConnectionRef: vault-connection
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: traefik-dashboard
+    serviceAccount: default
+    audiences:
+      - vault
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: traefik-dashboard-auth
+  namespace: traefik
+spec:
+  vaultAuthRef: traefik-vault-auth
+  type: kv-v2
+  mount: lumen
+  path: traefik-dashboard
+  destination:
+    name: dashboard-auth-secret   # referenced by Middleware dashboard-auth
+    create: true
+  refreshAfter: 1h

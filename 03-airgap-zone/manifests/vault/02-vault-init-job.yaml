@@ -255,6 +255,14 @@ data:
     }
     POLICY
 
+    # traefik-dashboard policy: VSO reads the dashboard htpasswd
+    # (seeded manually: htpasswd -nbB admin '<pw>' | vault kv put lumen/traefik-dashboard users=-)
+    vault policy write traefik-dashboard-policy - <<'POLICY'
+    path "lumen/data/traefik-dashboard" {
+      capabilities = ["read"]
+    }
+    POLICY
+
     echo "  ✓ Policies created"
 
     # ─────────────────────────────────────────────
@@ -281,6 +289,13 @@ data:
       bound_service_account_names=cert-manager-vault-auth \
       bound_service_account_namespaces=cert-manager \
       policies=cert-manager-policy \
+      ttl=1h
+
+    # Role for VSO syncing the Traefik dashboard credentials (traefik namespace)
+    vault write auth/kubernetes/role/traefik-dashboard \
+      bound_service_account_names=default \
+      bound_service_account_namespaces=traefik \
+      policies=traefik-dashboard-policy \
       ttl=1h
 
     echo "  ✓ Kubernetes auth configured"

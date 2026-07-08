@@ -84,7 +84,9 @@ func NewApp() (*App, error) {
 		middleware.Tracing("lumen-api")(
 			middleware.Logging(
 				middleware.Metrics(m)(
-					middleware.Idempotency(redisStore, http.MethodPost, http.MethodDelete)(mux),
+					middleware.BodyLimit(1<<20)( // 1 MiB — largest legitimate payload is a small JSON
+						middleware.Idempotency(redisStore, http.MethodPost, http.MethodDelete)(mux),
+					),
 				),
 			),
 		),

@@ -59,7 +59,7 @@ ansible-playbook 04-ansible/start.yml --ask-become-pass
 | https://grafana.airgap.local | admin / admin |
 | https://prometheus.airgap.local | — |
 | https://vault.airgap.local | — |
-| https://traefik.airgap.local/dashboard/ | admin / admin |
+| https://traefik.airgap.local/dashboard/ | admin / from Vault (`lumen/traefik-dashboard`) |
 | https://lumen-api.airgap.local | — |
 | https://chaos-mesh.airgap.local | — |
 

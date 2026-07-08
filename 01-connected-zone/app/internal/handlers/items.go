@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -22,6 +23,11 @@ func (h *Handler) CreateItem(w http.ResponseWriter, r *http.Request) {
 
 	var req createItemRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "request body too large"})
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "field 'name' is required"})
 		return
 	}

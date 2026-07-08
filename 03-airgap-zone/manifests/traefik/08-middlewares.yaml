@@ -95,9 +95,9 @@ spec:
 ---
 # Basic Auth Middleware (for dashboard)
 # Educational: HTTP Basic Authentication
-# Username/password in base64-encoded format
-# Generate with: htpasswd -nb username password | base64
-# Default credentials: admin:admin
+# The dashboard-auth-secret Secret is NOT in git: it is synced by VSO from
+# Vault KV lumen/traefik-dashboard — see 20-dashboard-auth-vso.yaml for the
+# VaultStaticSecret and the seeding procedure.
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
@@ -106,16 +106,3 @@ metadata:
 spec:
   basicAuth:
     secret: dashboard-auth-secret
-
----
-# Secret for dashboard auth
-apiVersion: v1
-kind: Secret
-metadata:
-  name: dashboard-auth-secret
-  namespace: traefik
-type: Opaque
-data:
-  # admin:admin (change in production!)
-  # Generated with: htpasswd -nb admin admin | base64
-  users: YWRtaW46JGFwcjEkaWhhU2RjWXYkaHNPR05kaHpMZ0w3cnhWM1JkVWk2MQoK
