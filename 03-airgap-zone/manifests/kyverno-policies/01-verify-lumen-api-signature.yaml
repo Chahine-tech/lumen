@@ -1,0 +1,57 @@
+# Cosign signature verification at admission — closes the supply chain loop.
+#
+# The CI signs every lumen-api image (cosign sign --key, --tlog-upload=false);
+# until this policy, nothing verified those signatures: an unsigned image
+# pushed to the registry would deploy without complaint.
+#
+# Scope: Pods in the lumen namespace using a lumen-api image. Infra images
+# (Redis, CNPG…) are mirrored but not signed, so they are not matched.
+#
+# Key facts:
+#   - public key = cosign.pub (repo root), private key lives only in the
+#     Gitea CI_COSIGN_KEY secret
+#   - ignoreTlog/ignoreSCT: the CI signs with --tlog-upload=false (no Rekor
+#     in airgap), so transparency log verification must be skipped
+#   - allowInsecureRegistry: signatures are fetched from the HTTP registry
+#   - mutateDigest false: keeps the image reference as-is so ArgoCD/Argo
+#     Rollouts diffs stay clean against git
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-lumen-api-signature
+spec:
+  background: false
+  webhookConfiguration:
+    failurePolicy: Fail
+    timeoutSeconds: 30
+  rules:
+    - name: check-cosign-signature
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - lumen
+      verifyImages:
+        - imageReferences:
+            - "192.168.2.2:5000/lumen-api*"
+          failureAction: Enforce
+          required: true
+          mutateDigest: false
+          verifyDigest: false
+          imageRegistryCredentials:
+            allowInsecureRegistry: true
+          attestors:
+            - count: 1
+              entries:
+                - keys:
+                    publicKeys: |-
+                      -----BEGIN PUBLIC KEY-----
+                      MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYelBl0O6wfA9DD9NgkW0DAS/Ooz1
+                      S1uOmD+oJcp1u/UjMHq7mRiB3zbpRoxIE+NASNf8CkWWryQDuJ6nakZaLQ==
+                      -----END PUBLIC KEY-----
+                    rekor:
+                      ignoreTlog: true
+                    ctlog:
+                      ignoreSCT: true

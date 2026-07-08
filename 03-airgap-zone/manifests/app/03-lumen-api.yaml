@@ -144,6 +144,12 @@ spec:
                 configMapKeyRef:
                   name: lumen-api-config
                   key: REDIS_MASTER_NAME
+            # Redis password — Secret synced by VSO from Vault KV lumen/redis
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-redis-vault
+                  key: password
             - name: PORT
               valueFrom:
                 configMapKeyRef:

@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+  annotations:
+    # Wave 10: alongside Falco — no hard deps, admission control runs independently
+    argocd.argoproj.io/sync-wave: "10"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: http://gitea.gitea.svc.cluster.local:3000/lumen/lumen.git
+    targetRevision: HEAD
+    path: 03-airgap-zone/manifests/kyverno-helm
+
+    helm:
+      releaseName: kyverno
+      valueFiles:
+        - values-airgap-override.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true  # Kyverno CRDs exceed the client-side annotation size limit
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

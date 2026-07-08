@@ -1,0 +1,39 @@
+# Airgap overrides for Kyverno v1.18.1 (chart 3.8.1)
+#
+# Purpose: enforce Cosign signature verification at admission for lumen-api
+# images (see manifests/kyverno-policies/). Only the admission controller is
+# deployed — background/cleanup/reports controllers are disabled to keep the
+# footprint small on the 2-node cluster and to reduce the images to mirror.
+
+global:
+  image:
+    # Overrides every image registry in the chart (ghcr.io → local registry)
+    registry: 192.168.2.2:5000
+
+features:
+  registryClient:
+    # The lumen registry is plain HTTP — required so Kyverno can fetch
+    # Cosign signatures (sha256-*.sig tags) from 192.168.2.2:5000
+    allowInsecure: true
+
+# verifyImages enforcement only needs the admission controller
+backgroundController:
+  enabled: false
+cleanupController:
+  enabled: false
+reportsController:
+  enabled: false
+
+# Helm pre-delete hook — extra image to mirror and ArgoCD does not run
+# pre-delete hooks anyway
+webhooksCleanup:
+  enabled: false
+
+crds:
+  migration:
+    # Post-upgrade CRD migration Job (kyverno-cli image). Fresh install pinned
+    # to one version — re-enable + mirror kyverno-cli when upgrading Kyverno.
+    enabled: false
+
+admissionController:
+  replicas: 1

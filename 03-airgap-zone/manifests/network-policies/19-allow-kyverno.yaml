@@ -1,0 +1,68 @@
+# NetworkPolicies for kyverno namespace
+#
+# Kyverno (admission controller only) requires:
+#   Ingress: from API server (admission webhook calls, port 9443)
+#   Egress:  DNS, API server (watch policies/resources),
+#            registry 192.168.2.2:5000 (fetch Cosign signatures)
+
+---
+# Default deny all in kyverno namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: kyverno
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kyverno-admission
+  namespace: kyverno
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: admission-controller
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # From API server (webhook calls) — kube-apiserver is host-network on K3s,
+    # so no namespace/pod selector can match it: allow by port only
+    - ports:
+        - protocol: TCP
+          port: 9443
+    # Metrics scraping (Prometheus)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # API server (K3s: node IP on 6443)
+    - ports:
+        - protocol: TCP
+          port: 6443
+        - protocol: TCP
+          port: 443
+    # Registry — Cosign signature fetch (sha256-*.sig manifests)
+    - ports:
+        - protocol: TCP
+          port: 5000

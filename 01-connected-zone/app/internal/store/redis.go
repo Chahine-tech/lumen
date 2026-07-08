@@ -13,7 +13,7 @@ type RedisStore struct {
 	client *redis.Client
 }
 
-func NewRedisStore(addr, mode, sentinelAddrs, masterName string) (*RedisStore, error) {
+func NewRedisStore(addr, mode, sentinelAddrs, masterName, password string) (*RedisStore, error) {
 	var client *redis.Client
 
 	if mode == "sentinel" {
@@ -21,15 +21,19 @@ func NewRedisStore(addr, mode, sentinelAddrs, masterName string) (*RedisStore, e
 		client = redis.NewFailoverClient(&redis.FailoverOptions{
 			MasterName:    masterName,
 			SentinelAddrs: addrs,
-			DB:            0,
-			DialTimeout:   5 * time.Second,
-			ReadTimeout:   3 * time.Second,
-			WriteTimeout:  3 * time.Second,
-			PoolSize:      10,
+			// Password authenticates against the data nodes (requirepass);
+			// sentinels themselves are unauthenticated (NetworkPolicy only).
+			Password:     password,
+			DB:           0,
+			DialTimeout:  5 * time.Second,
+			ReadTimeout:  3 * time.Second,
+			WriteTimeout: 3 * time.Second,
+			PoolSize:     10,
 		})
 	} else {
 		client = redis.NewClient(&redis.Options{
 			Addr:         addr,
+			Password:     password,
 			DB:           0,
 			DialTimeout:  5 * time.Second,
 			ReadTimeout:  3 * time.Second,

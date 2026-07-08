@@ -12,7 +12,7 @@ See [docs/architecture.md](docs/architecture.md) for the full system overview.
 | Cluster | K3s (arm64), Flannel, MetalLB, Traefik v3 |
 | Databases | Redis 7 HA Sentinel + PostgreSQL 16 (CloudNativePG) |
 | Observability | Prometheus + Grafana + Loki + Alloy + Tempo + OpenTelemetry |
-| Security | OPA Gatekeeper + PSS + NetworkPolicies + Falco + Cosign |
+| Security | OPA Gatekeeper + PSS + NetworkPolicies + Falco + Cosign + Kyverno (signature enforcement) |
 | Secrets / TLS | Vault HA (Raft) + cert-manager + VSO + mTLS |
 | GitOps / CI | ArgoCD + Gitea Actions + Argo Rollouts (canary) |
 | Resilience | Chaos Mesh (PodChaos, NetworkChaos) |
@@ -56,7 +56,7 @@ ansible-playbook 04-ansible/start.yml --ask-become-pass
 |---|---|
 | https://argocd.airgap.local | admin / from secret |
 | https://gitea.airgap.local | gitea-admin / gitea-admin |
-| https://grafana.airgap.local | admin / admin |
+| https://grafana.airgap.local | admin / from Vault (`lumen/grafana`) |
 | https://prometheus.airgap.local | — |
 | https://vault.airgap.local | — |
 | https://traefik.airgap.local/dashboard/ | admin / from Vault (`lumen/traefik-dashboard`) |

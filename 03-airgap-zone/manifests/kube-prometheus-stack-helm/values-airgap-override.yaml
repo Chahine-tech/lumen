@@ -19,7 +19,12 @@ grafana:
     registry: 192.168.2.2:5000
     repository: grafana/grafana
     tag: "11.4.1"
-  adminPassword: admin
+  # Admin credentials come from Vault (KV lumen/grafana) via VSO — never in git.
+  # See manifests/kube-prometheus-stack/grafana-admin-vso.yaml
+  admin:
+    existingSecret: grafana-admin-vault
+    userKey: admin-user
+    passwordKey: admin-password
 
   # Sidecar for auto-reload of dashboards
   sidecar:

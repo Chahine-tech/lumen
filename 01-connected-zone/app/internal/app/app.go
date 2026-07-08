@@ -30,13 +30,14 @@ func NewApp() (*App, error) {
 	redisMode       := getEnv("REDIS_MODE", "standalone")
 	sentinelAddrs   := getEnv("REDIS_SENTINEL_ADDRS", "")
 	redisMasterName := getEnv("REDIS_MASTER_NAME", "mymaster")
+	redisPassword   := getEnv("REDIS_PASSWORD", "")
 	port            := getEnv("PORT", "8080")
 
 	pgRWDSN := getEnv("PG_RW_DSN", "")
 	pgRODSN := getEnv("PG_RO_DSN", "")
 
 	slog.Info("Connecting to Redis", "addr", redisAddr, "mode", redisMode)
-	redisStore, err := store.NewRedisStore(redisAddr, redisMode, sentinelAddrs, redisMasterName)
+	redisStore, err := store.NewRedisStore(redisAddr, redisMode, sentinelAddrs, redisMasterName, redisPassword)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Redis: %w", err)
 	}

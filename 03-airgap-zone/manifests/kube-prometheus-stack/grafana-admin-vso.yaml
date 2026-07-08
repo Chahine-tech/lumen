@@ -1,0 +1,48 @@
+# Grafana admin credentials — synced from Vault by VSO
+#
+# Replaces the hardcoded `adminPassword: admin` that used to live in
+# values-airgap-override.yaml. Source of truth: Vault KV v2 at lumen/grafana
+# (keys admin-user / admin-password), seeded by the vault-init Job.
+# The chart reads them via grafana.admin.existingSecret.
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata:
+  name: vault-connection
+  namespace: monitoring
+spec:
+  address: http://vault.vault.svc.cluster.local:8200
+  skipTLSVerify: false
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: monitoring-vault-auth
+  namespace: monitoring
+spec:
+  vaultConnectionRef: vault-connection
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: grafana-admin
+    serviceAccount: default
+    audiences:
+      - vault
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: grafana-admin
+  namespace: monitoring
+spec:
+  vaultAuthRef: monitoring-vault-auth
+  type: kv-v2
+  mount: lumen
+  path: grafana
+  destination:
+    name: grafana-admin-vault   # referenced by grafana.admin.existingSecret
+    create: true
+  refreshAfter: 1h

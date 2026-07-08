@@ -263,6 +263,13 @@ data:
     }
     POLICY
 
+    # grafana-admin policy: VSO reads the Grafana admin credentials
+    vault policy write grafana-admin-policy - <<'POLICY'
+    path "lumen/data/grafana" {
+      capabilities = ["read"]
+    }
+    POLICY
+
     echo "  ✓ Policies created"
 
     # ─────────────────────────────────────────────
@@ -298,6 +305,13 @@ data:
       policies=traefik-dashboard-policy \
       ttl=1h
 
+    # Role for VSO syncing the Grafana admin credentials (monitoring namespace)
+    vault write auth/kubernetes/role/grafana-admin \
+      bound_service_account_names=default \
+      bound_service_account_namespaces=monitoring \
+      policies=grafana-admin-policy \
+      ttl=1h
+
     echo "  ✓ Kubernetes auth configured"
 
     # ─────────────────────────────────────────────
@@ -317,6 +331,29 @@ data:
     else
       echo "  ⚠️  lumen-db-app Secret not found or empty — seed manually:"
       echo "       vault kv put lumen/db username=app password=<password> dbname=app"
+    fi
+
+    # Generate the Redis password (only if not already seeded — keeps re-init
+    # from rotating it under a running cluster). Synced to K8s by VSO
+    # (lumen-redis-vault Secret), consumed by Redis and lumen-api.
+    echo "  Seeding Redis password into Vault KV..."
+    if vault kv get lumen/redis > /dev/null 2>&1; then
+      echo "  ✓ lumen/redis already seeded — keeping existing password"
+    else
+      REDIS_PASSWORD=$(head -c 48 /dev/urandom | base64 | tr -d '/+=\n' | cut -c1-32)
+      vault kv put lumen/redis password="$REDIS_PASSWORD"
+      echo "  ✓ Redis password stored in lumen/redis"
+    fi
+
+    # Grafana admin credentials (kube-prometheus-stack reads them via
+    # grafana.admin.existingSecret → Secret grafana-admin-vault, synced by VSO)
+    echo "  Seeding Grafana admin credentials into Vault KV..."
+    if vault kv get lumen/grafana > /dev/null 2>&1; then
+      echo "  ✓ lumen/grafana already seeded — keeping existing password"
+    else
+      GRAFANA_PASSWORD=$(head -c 48 /dev/urandom | base64 | tr -d '/+=\n' | cut -c1-32)
+      vault kv put lumen/grafana admin-user="admin" admin-password="$GRAFANA_PASSWORD"
+      echo "  ✓ Grafana admin credentials stored in lumen/grafana"
     fi
 
     # ─────────────────────────────────────────────

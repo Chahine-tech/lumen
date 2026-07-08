@@ -175,11 +175,48 @@ spec:
         runAsNonRoot: true
         runAsUser: 999
         fsGroup: 999
+      # The password lives in Secret lumen-redis-vault (synced by VSO from
+      # Vault KV lumen/redis) — never in the ConfigMap. The init container
+      # renders the final redis.conf with requirepass/masterauth appended.
+      # masterauth is needed even on the master: after a Sentinel failover it
+      # becomes a replica and must authenticate against the new master.
+      initContainers:
+        - name: init-redis-config
+          image: 192.168.2.2:5000/redis:7-alpine
+          command:
+            - sh
+            - -c
+            - |
+              cp /config-readonly/redis.conf /config/redis.conf
+              printf 'requirepass %s\nmasterauth %s\n' "$REDIS_PASSWORD" "$REDIS_PASSWORD" >> /config/redis.conf
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-redis-vault
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: config-readonly
+              mountPath: /config-readonly
+            - name: config-writable
+              mountPath: /config
       containers:
         - name: redis
           image: 192.168.2.2:5000/redis:7-alpine
           imagePullPolicy: IfNotPresent
           command: ["redis-server", "/config/redis.conf"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-redis-vault
+                  key: password
           ports:
             - name: redis
               containerPort: 6379
@@ -198,7 +235,9 @@ spec:
             periodSeconds: 10
           readinessProbe:
             exec:
-              command: ["redis-cli", "ping"]
+              # grep PONG: redis-cli exits 0 even on NOAUTH errors, so an
+              # unauthenticated ping would silently pass the probe
+              command: ["sh", "-c", "redis-cli --no-auth-warning -a \"$REDIS_PASSWORD\" ping | grep -q PONG"]
             initialDelaySeconds: 5
             periodSeconds: 5
           securityContext:
@@ -210,12 +249,14 @@ spec:
           volumeMounts:
             - name: redis-data
               mountPath: /data
-            - name: config
+            - name: config-writable
               mountPath: /config
       volumes:
-        - name: config
+        - name: config-readonly
           configMap:
             name: redis-master-config
+        - name: config-writable
+          emptyDir: {}
   volumeClaimTemplates:
     - metadata:
         name: redis-data
@@ -256,11 +297,43 @@ spec:
         runAsNonRoot: true
         runAsUser: 999
         fsGroup: 999
+      initContainers:
+        - name: init-redis-config
+          image: 192.168.2.2:5000/redis:7-alpine
+          command:
+            - sh
+            - -c
+            - |
+              cp /config-readonly/redis.conf /config/redis.conf
+              printf 'requirepass %s\nmasterauth %s\n' "$REDIS_PASSWORD" "$REDIS_PASSWORD" >> /config/redis.conf
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-redis-vault
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: config-readonly
+              mountPath: /config-readonly
+            - name: config-writable
+              mountPath: /config
       containers:
         - name: redis
           image: 192.168.2.2:5000/redis:7-alpine
           imagePullPolicy: IfNotPresent
           command: ["redis-server", "/config/redis.conf"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-redis-vault
+                  key: password
           ports:
             - name: redis
               containerPort: 6379
@@ -279,7 +352,7 @@ spec:
             periodSeconds: 10
           readinessProbe:
             exec:
-              command: ["redis-cli", "ping"]
+              command: ["sh", "-c", "redis-cli --no-auth-warning -a \"$REDIS_PASSWORD\" ping | grep -q PONG"]
             initialDelaySeconds: 5
             periodSeconds: 5
           securityContext:
@@ -291,14 +364,16 @@ spec:
           volumeMounts:
             - name: redis-data
               mountPath: /data
-            - name: config
+            - name: config-writable
               mountPath: /config
       volumes:
         - name: redis-data
           emptyDir: {}
-        - name: config
+        - name: config-readonly
           configMap:
             name: redis-replica-config
+        - name: config-writable
+          emptyDir: {}
 
 ---
 apiVersion: policy/v1
@@ -348,7 +423,15 @@ spec:
           command:
             - sh
             - -c
-            - cp /config-readonly/sentinel.conf /config/sentinel.conf
+            - |
+              cp /config-readonly/sentinel.conf /config/sentinel.conf
+              printf 'sentinel auth-pass mymaster %s\n' "$REDIS_PASSWORD" >> /config/sentinel.conf
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-redis-vault
+                  key: password
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
