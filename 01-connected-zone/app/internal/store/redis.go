@@ -68,6 +68,17 @@ func (s *RedisStore) SetIdempotencyResult(ctx context.Context, key string, data 
 	return s.client.Set(ctx, "idempotency:"+key, data, ttl).Err()
 }
 
+// AcquireIdempotencyLock atomically claims a key for the duration of one request
+// (SETNX), so two concurrent requests with the same Idempotency-Key cannot both
+// execute the handler. Returns false if another request holds the lock.
+func (s *RedisStore) AcquireIdempotencyLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+	return s.client.SetNX(ctx, "idempotency:lock:"+key, "1", ttl).Result()
+}
+
+func (s *RedisStore) ReleaseIdempotencyLock(ctx context.Context, key string) error {
+	return s.client.Del(ctx, "idempotency:lock:"+key).Err()
+}
+
 func (s *RedisStore) Close() error {
 	return s.client.Close()
 }

@@ -269,8 +269,13 @@ done
 
 Run after init+unseal. The `02-vault-init-job.yaml` Job automates this, but can also be done manually:
 
+> **Note**: the vault-init Job revokes the bootstrap root token once configuration is done.
+> If you need admin access afterwards, generate a fresh root token first:
+> `kubectl exec -n vault vault-0 -- vault operator generate-root` (requires 3 unseal keys),
+> then use that token instead of `.root_token` from `vault-keys.json`.
+
 ```bash
-export VAULT_TOKEN=$(jq -r '.root_token' vault-keys.json)
+export VAULT_TOKEN=$(jq -r '.root_token' vault-keys.json)  # only valid if init was done manually (Job revokes its root token)
 
 # ── KV v2 ──────────────────────────────────────────────────────────────
 kubectl exec -n vault vault-0 -- sh -c "

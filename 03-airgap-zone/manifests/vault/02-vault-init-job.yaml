@@ -2,13 +2,14 @@
 #
 # One-shot Job that bootstraps Vault after deployment:
 #   1. Initializes Vault (key-shares=5, key-threshold=3)
-#   2. Stores unseal keys + root token in Secret vault-init-keys
+#   2. Stores unseal keys in Secret vault-init-keys (root token is NOT stored)
 #   3. Unseals all 3 Vault pods
 #   4. Enables KV v2 engine at path "lumen/"
 #   5. Enables PKI engine, imports airgap CA, configures *.airgap.local role
 #   6. Creates Kubernetes auth method + roles for lumen-api and cert-manager
 #   7. Creates policies
 #   8. Seeds PostgreSQL credentials from lumen-db-app Secret
+#   9. Revokes the bootstrap root token (regenerate via: vault operator generate-root)
 #
 # IMPORTANT: No ttlSecondsAfterFinished — same pattern as cert-generation-job.
 # ArgoCD will not recreate a Completed Job. To re-run: kubectl delete job vault-init -n vault
@@ -23,32 +24,61 @@ metadata:
   namespace: vault
 
 ---
+# Namespaced Role (not ClusterRole): the job only needs to manage its own
+# vault-init-keys Secret in the vault namespace. A ClusterRole with "secrets"
+# verbs would allow reading every Secret in the cluster.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: vault-init
+  namespace: vault
 rules:
-  # Read lumen-db-app Secret to seed Vault KV
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "create", "update", "patch"]
-  # Create vault-init-keys Secret in vault namespace
-  - apiGroups: [""]
-    resources: ["namespaces"]
-    verbs: ["get"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: vault-init
+  namespace: vault
 subjects:
   - kind: ServiceAccount
     name: vault-init
     namespace: vault
 roleRef:
-  kind: ClusterRole
+  kind: Role
   name: vault-init
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Read-only access to the single Secret needed to seed Vault KV (lumen-db-app),
+# scoped via resourceNames.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-init-read-db
+  namespace: lumen
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["lumen-db-app"]
+    verbs: ["get"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-init-read-db
+  namespace: lumen
+subjects:
+  - kind: ServiceAccount
+    name: vault-init
+    namespace: vault
+roleRef:
+  kind: Role
+  name: vault-init-read-db
   apiGroup: rbac.authorization.k8s.io
 
 ---
@@ -121,20 +151,17 @@ data:
     INIT_OUTPUT=$(vault operator init -key-shares=5 -key-threshold=3 -format=json)
 
     ROOT_TOKEN=$(echo "$INIT_OUTPUT" | grep -o '"root_token":"[^"]*"' | cut -d'"' -f4)
-    UNSEAL_KEY_0=$(echo "$INIT_OUTPUT" | grep -o '"unseal_keys_b64":\[' | head -1 && \
-      echo "$INIT_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['unseal_keys_b64'][0])" 2>/dev/null || \
-      echo "$INIT_OUTPUT" | grep -o '"unseal_keys_b64":\["[^"]*"' | sed 's/.*\["//')
-    UNSEAL_KEYS_JSON=$(echo "$INIT_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print('\n'.join(d['unseal_keys_b64'][:3]))" 2>/dev/null || \
-      echo "$INIT_OUTPUT" | grep -o '"unseal_keys_b64":\[[^]]*\]' | sed 's/.*\[//' | sed 's/\]//' | tr ',' '\n' | sed 's/"//g' | head -3)
 
     echo "  ✓ Vault initialized"
 
-    # Store init output in Kubernetes Secret
+    # Store init output in Kubernetes Secret.
+    # The root token is NOT stored: it is revoked at the end of this script
+    # (a stored root token would let anyone with Secret/etcd access become Vault root).
+    # init_output is kept so the operator can extract vault-keys.json for Ansible unseal
+    # — the root_token it contains is dead after revocation.
     echo "[4/10] Storing unseal keys in vault-init-keys Secret..."
-    INIT_B64=$(echo "$INIT_OUTPUT" | base64 | tr -d '\n')
     kubectl create secret generic vault-init-keys \
       --from-literal=init_output="$INIT_OUTPUT" \
-      --from-literal=root_token="$ROOT_TOKEN" \
       --from-literal=unseal_keys_b64="$(echo "$INIT_OUTPUT" | python3 -c "import sys,json; d=json.load(sys.stdin); print('\n'.join(d['unseal_keys_b64'][:3]))" 2>/dev/null)" \
       -n vault \
       --dry-run=client -o yaml | kubectl apply -f -
@@ -277,6 +304,17 @@ data:
       echo "       vault kv put lumen/db username=app password=<password> dbname=app"
     fi
 
+    # ─────────────────────────────────────────────
+    # Revoke bootstrap root token
+    # ─────────────────────────────────────────────
+    # All engines, policies and auth roles are configured — the root token has
+    # served its purpose. Day-2 access goes through the Kubernetes auth roles.
+    # If admin access is ever needed again, generate a new root token with the
+    # unseal keys: vault operator generate-root
+    echo "[12/12] Revoking bootstrap root token..."
+    vault token revoke -self
+    echo "  ✓ Root token revoked"
+
     echo ""
     echo "✅ Vault initialization complete!"
     echo ""
@@ -286,8 +324,11 @@ data:
     echo "  3. Apply Certificate: kubectl apply -f 04-airgap-certificate.yaml"
     echo "  4. Restart lumen-api: kubectl rollout restart deployment/lumen-api -n lumen"
     echo ""
-    echo "⚠️  Save vault-init-keys Secret — required for manual unsealing after cluster restart:"
-    echo "  kubectl get secret vault-init-keys -n vault -o jsonpath='{.data.init_output}' | base64 -d"
+    echo "⚠️  Save the unseal keys locally as vault-keys.json — required by Ansible unseal after restart:"
+    echo "  kubectl get secret vault-init-keys -n vault -o jsonpath='{.data.init_output}' | base64 -d > vault-keys.json"
+    echo ""
+    echo "ℹ️  The bootstrap root token has been revoked. To get admin access later:"
+    echo "  vault operator generate-root  (requires 3 unseal keys)"
 
 ---
 apiVersion: batch/v1
