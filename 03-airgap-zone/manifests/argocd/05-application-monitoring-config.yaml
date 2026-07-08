@@ -15,6 +15,11 @@ spec:
     targetRevision: HEAD
     path: 03-airgap-zone/manifests/kube-prometheus-stack
 
+    # Without recurse, only top-level files sync — dashboards/ and
+    # servicemonitors/ subdirectories were silently ignored by GitOps
+    directory:
+      recurse: true
+
   destination:
     server: https://kubernetes.default.svc
 

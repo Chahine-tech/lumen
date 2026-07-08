@@ -1,4 +1,4 @@
-.PHONY: help all build-connected setup-transit setup-airgap deploy test clean
+.PHONY: help all build-connected setup-transit setup-airgap deploy test clean slo-generate
 
 # Colors for output
 GREEN  := \033[0;32m
@@ -174,6 +174,14 @@ clean: clean-k8s clean-docker ## Clean everything
 	@echo "$(RED)Cleaning artifacts...$(NC)"
 	rm -rf artifacts/
 	@echo "$(GREEN)✓ Cleanup complete$(NC)"
+
+# SLO
+slo-generate: ## Regenerate SLO PrometheusRules from Sloth specs (03-airgap-zone/slo/)
+	@echo "$(YELLOW)Generating SLO rules with Sloth...$(NC)"
+	docker run --rm -v $(PWD)/03-airgap-zone:/work ghcr.io/slok/sloth:v0.11.0 generate \
+		-i /work/slo/lumen-api.yaml \
+		-o /work/manifests/kube-prometheus-stack/lumen-api-slo-rules.yaml
+	@echo "$(GREEN)✓ Rules generated — commit both the spec and the generated file$(NC)"
 
 # Documentation
 docs: ## Show available documentation

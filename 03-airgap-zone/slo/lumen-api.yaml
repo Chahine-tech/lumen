@@ -1,0 +1,70 @@
+# SLO definitions for lumen-api — Sloth spec (source of truth)
+#
+# This file is NOT applied to the cluster. It is compiled into multi-window
+# multi-burn-rate recording + alerting rules with:
+#   make slo-generate
+# The generated PrometheusRule lands in
+# manifests/kube-prometheus-stack/lumen-api-slo-rules.yaml (synced by ArgoCD).
+#
+# SLI conventions:
+#   - app="lumen-api" comes from the ServiceMonitor relabeling (same selector
+#     as the Argo Rollouts canary AnalysisTemplate)
+#   - latency threshold 250ms matches the le="0.25" default histogram bucket
+apiVersion: sloth.slok.dev/v1
+kind: PrometheusServiceLevel
+metadata:
+  name: lumen-api-slo
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack  # required by the Prometheus Operator ruleSelector
+spec:
+  service: lumen-api
+  labels:
+    owner: lumen
+    tier: backend
+  slos:
+    # 99.5% of requests answer without a server error.
+    # Error budget: 0.5% ≈ 3h39m of full outage per 30 days.
+    - name: requests-availability
+      objective: 99.5
+      description: 99.5% of lumen-api HTTP requests succeed (non-5xx).
+      sli:
+        events:
+          errorQuery: sum(rate(http_requests_total{app="lumen-api",status=~"5.."}[{{.window}}]))
+          totalQuery: sum(rate(http_requests_total{app="lumen-api"}[{{.window}}]))
+      alerting:
+        name: LumenAPIAvailability
+        labels:
+          service: lumen-api
+        annotations:
+          summary: lumen-api is burning its availability error budget too fast
+        pageAlert:
+          labels:
+            severity: critical
+        ticketAlert:
+          labels:
+            severity: warning
+
+    # 99% of requests complete in under 250ms.
+    - name: requests-latency
+      objective: 99
+      description: 99% of lumen-api HTTP requests complete in under 250ms.
+      sli:
+        events:
+          errorQuery: >-
+            sum(rate(http_request_duration_seconds_count{app="lumen-api"}[{{.window}}]))
+            -
+            sum(rate(http_request_duration_seconds_bucket{app="lumen-api",le="0.25"}[{{.window}}]))
+          totalQuery: sum(rate(http_request_duration_seconds_count{app="lumen-api"}[{{.window}}]))
+      alerting:
+        name: LumenAPILatency
+        labels:
+          service: lumen-api
+        annotations:
+          summary: lumen-api is burning its latency error budget too fast
+        pageAlert:
+          labels:
+            severity: critical
+        ticketAlert:
+          labels:
+            severity: warning

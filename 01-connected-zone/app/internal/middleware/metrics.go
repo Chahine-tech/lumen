@@ -23,8 +23,17 @@ func Metrics(m *metrics.Metrics) func(http.Handler) http.Handler {
 			duration := time.Since(start).Seconds()
 			status := strconv.Itoa(wrapped.statusCode)
 
-			m.HTTPRequestsTotal.WithLabelValues(r.Method, r.URL.Path, status).Inc()
-			m.HTTPRequestDuration.WithLabelValues(r.Method, r.URL.Path).Observe(duration)
+			// r.Pattern (set by ServeMux after routing) gives the registered
+			// route ("GET /items/{id}"), not the raw path — otherwise every
+			// /items/42 creates a new Prometheus series and unknown paths
+			// probed by scanners explode cardinality.
+			endpoint := r.Pattern
+			if endpoint == "" {
+				endpoint = "unmatched"
+			}
+
+			m.HTTPRequestsTotal.WithLabelValues(r.Method, endpoint, status).Inc()
+			m.HTTPRequestDuration.WithLabelValues(r.Method, endpoint).Observe(duration)
 		})
 	}
 }
