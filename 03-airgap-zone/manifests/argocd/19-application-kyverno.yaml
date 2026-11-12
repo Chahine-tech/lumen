@@ -31,7 +31,9 @@ spec:
       selfHeal: true
       allowEmpty: false
     syncOptions:
-      - CreateNamespace=true
+      # CreateNamespace=true + ServerSideApply hangs on "waiting for healthy
+      # state of /Namespace/kyverno" (ArgoCD bug) — the namespace is created
+      # by 19-allow-kyverno.yaml in the network-policies app instead
       - ServerSideApply=true  # Kyverno CRDs exceed the client-side annotation size limit
     retry:
       limit: 5

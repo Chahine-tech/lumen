@@ -1,0 +1,58 @@
+# NetworkPolicies for the restore drill cluster (scripts/cnpg-restore-drill.sh)
+# Same needs as lumen-db (03-network-policy.yaml) minus client traffic:
+# operator → instance manager, and egress to the API server and Garage.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: restore-drill-from-cnpg-operator
+  namespace: lumen
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: lumen-db-restore-drill
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - protocol: TCP
+          port: 8000  # CNPG instance manager
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: restore-drill-egress
+  namespace: lumen
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: lumen-db-restore-drill
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Garage on backup-1 (base backup + WAL to replay)
+    - to:
+        - ipBlock:
+            cidr: 192.168.2.4/32
+      ports:
+        - protocol: TCP
+          port: 3900
+    # K8s API server: same Flannel ClusterIP limitation as lumen-db
+    # (03-network-policy.yaml), so TCP egress cannot be scoped further
+    - ports:
+        - protocol: TCP

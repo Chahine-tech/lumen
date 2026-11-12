@@ -48,6 +48,31 @@ variable "node2_ip" {
   description = "Static IP for node-2 (configured on eth1 via cloud-init)"
 }
 
+variable "backup_name" {
+  default     = "backup-1"
+  description = "Multipass VM name for the backup object store (Garage)"
+}
+
+variable "backup_cpus" {
+  default     = 1
+  description = "CPUs for backup-1 (Garage only)"
+}
+
+variable "backup_memory" {
+  default     = "1G"
+  description = "RAM for backup-1"
+}
+
+variable "backup_disk" {
+  default     = "30G"
+  description = "Disk for backup-1 (PostgreSQL base backups + WAL archive, 30-day retention)"
+}
+
+variable "backup_ip" {
+  default     = "192.168.2.4"
+  description = "Static IP for backup-1 (configured on eth1 via cloud-init)"
+}
+
 variable "ubuntu_image" {
   default     = "24.04"
   description = "Ubuntu LTS image for Multipass VMs"

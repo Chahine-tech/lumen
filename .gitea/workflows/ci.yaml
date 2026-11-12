@@ -108,12 +108,16 @@ jobs:
           # Write key and sign (secret is base64-encoded to preserve PEM line breaks)
           echo "${{ secrets.CI_COSIGN_KEY }}" | base64 -d > /tmp/cosign.key
           chmod 600 /tmp/cosign.key
+          # --new-bundle-format=false: cosign v3 defaults to the OCI bundle
+          # format (sha256-<digest> referrer tag) which Kyverno's keys-based
+          # verifyImages cannot read — it needs the legacy sha256-<digest>.sig
           COSIGN_PASSWORD="" cosign sign \
             --key /tmp/cosign.key \
             --allow-http-registry \
             --allow-insecure-registry \
             --tlog-upload=false \
             --use-signing-config=false \
+            --new-bundle-format=false \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
           rm -f /tmp/cosign.key
 
@@ -160,12 +164,14 @@ jobs:
           # Write key and sign (secret is base64-encoded to preserve PEM line breaks)
           echo "${{ secrets.CI_COSIGN_KEY }}" | base64 -d > /tmp/cosign.key
           chmod 600 /tmp/cosign.key
+          # --new-bundle-format=false: legacy .sig tag format required by Kyverno
           COSIGN_PASSWORD="" cosign sign \
             --key /tmp/cosign.key \
             --allow-http-registry \
             --allow-insecure-registry \
             --tlog-upload=false \
             --use-signing-config=false \
+            --new-bundle-format=false \
             "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SEMVER}"
           rm -f /tmp/cosign.key
 

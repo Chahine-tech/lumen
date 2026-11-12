@@ -1,0 +1,39 @@
+# Restore drill: a throwaway cluster recovered from the lumen-db backups
+#
+# Applied by scripts/cnpg-restore-drill.sh, which replaces __TARGET_TIME__.
+# No `.spec.plugins`: the drill cluster does NOT archive WAL, so it can never
+# write into the lumen-db backup path (serverName lumen-db) it reads from.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: lumen-db-restore-drill
+  namespace: lumen
+spec:
+  instances: 1
+  imageName: 192.168.2.2:5000/postgresql:16.6
+
+  storage:
+    size: 1Gi
+    storageClass: local-path
+
+  bootstrap:
+    recovery:
+      source: lumen-db-backup
+      recoveryTarget:
+        targetTime: "__TARGET_TIME__"
+
+  externalClusters:
+    - name: lumen-db-backup
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: lumen-backups
+          serverName: lumen-db
+
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"

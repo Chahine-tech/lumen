@@ -19,6 +19,12 @@ apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: verify-lumen-api-signature
+  annotations:
+    # Limit the webhook to Pods only (no autogen for Deployments/ReplicaSets…).
+    # With failurePolicy Fail and a single replica on a small cluster, autogen
+    # would make every workload update cluster-wide depend on Kyverno being up
+    # — learned the hard way when a flapping Kyverno blocked ArgoCD rollouts.
+    pod-policies.kyverno.io/autogen-controllers: "none"
 spec:
   background: false
   webhookConfiguration:

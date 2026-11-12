@@ -36,6 +36,15 @@ resource "local_file" "node2_cloudinit" {
   file_permission = "0600"
 }
 
+resource "local_file" "backup_cloudinit" {
+  content = templatefile("${path.module}/cloud-init/backup.yaml.tpl", {
+    ssh_public_key = trimspace(file(pathexpand(var.ssh_public_key_path)))
+    node_ip        = var.backup_ip
+  })
+  filename        = "${path.module}/cloud-init/backup-rendered.yaml"
+  file_permission = "0600"
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Multipass VMs
 # ─────────────────────────────────────────────────────────────────────────────
@@ -60,4 +69,18 @@ resource "multipass_instance" "node2" {
   cloudinit_file = local_file.node2_cloudinit.filename
 
   depends_on = [local_file.node2_cloudinit]
+}
+
+# Backup target outside the K3s cluster: Garage (S3) for the PostgreSQL
+# backups. Not a cluster node, so losing node-1 and node-2 keeps the backups.
+# It still shares the Mac's disk with them: see docs/runbooks/postgres-backup-restore.md
+resource "multipass_instance" "backup" {
+  name           = var.backup_name
+  cpus           = var.backup_cpus
+  memory         = var.backup_memory
+  disk           = var.backup_disk
+  image          = var.ubuntu_image
+  cloudinit_file = local_file.backup_cloudinit.filename
+
+  depends_on = [local_file.backup_cloudinit]
 }

@@ -1,0 +1,150 @@
+---
+# Role: garage: run Garage (S3) on backup-1 for the PostgreSQL backups
+#
+# Prerequisites:
+#   - backup-1 created by Terraform (05-terraform, cloud-init installs Docker)
+#   - Image tar from 01-connected-zone/scripts/21-pull-garage.sh in artifacts/garage/
+#
+# Result: Garage listening on {{ backup_ip }}:3900 with bucket
+# {{ garage_bucket }} and access key {{ garage_key_name }} (read + write).
+# The key is copied to Vault by 03-airgap-zone/scripts/seed-cnpg-backup-creds.sh.
+
+- name: Check that backup-1 is running
+  ansible.builtin.command: multipass info {{ backup_vm_name }}
+  register: backup_info
+  changed_when: false
+  failed_when: backup_info.rc != 0 or 'Running' not in backup_info.stdout
+
+- name: Check if the Garage image is loaded on backup-1
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo docker image inspect {{ garage_image }}
+  register: garage_image_check
+  changed_when: false
+  failed_when: false
+
+- name: Transfer the Garage image tar to backup-1
+  ansible.builtin.command: >
+    multipass transfer
+    {{ project_root }}/artifacts/garage/images/garage-{{ garage_version }}.tar
+    {{ backup_vm_name }}:/tmp/garage.tar
+  when: garage_image_check.rc != 0
+  changed_when: true
+
+- name: Load the Garage image
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- bash -c
+    "sudo docker load -i /tmp/garage.tar && rm /tmp/garage.tar"
+  when: garage_image_check.rc != 0
+  changed_when: true
+
+- name: Copy the host preparation script to backup-1
+  ansible.builtin.command: >
+    multipass transfer {{ role_path }}/files/init-garage-host.sh
+    {{ backup_vm_name }}:/tmp/init-garage-host.sh
+  changed_when: false
+
+- name: Create Garage directories and secrets (generated on the VM, never leave it)
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo bash /tmp/init-garage-host.sh
+  register: garage_secrets
+  changed_when: "'created=1' in garage_secrets.stdout"
+
+- name: Render garage.toml
+  ansible.builtin.template:
+    src: garage.toml.j2
+    dest: /tmp/garage.toml
+    mode: "0644"
+
+- name: Read the current garage.toml on backup-1
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo cat /etc/garage/garage.toml
+  register: garage_remote_config
+  changed_when: false
+  failed_when: false
+
+- name: Install garage.toml on backup-1
+  ansible.builtin.shell: >
+    multipass transfer /tmp/garage.toml {{ backup_vm_name }}:/tmp/garage.toml &&
+    multipass exec {{ backup_vm_name }} -- sudo install -m 0644 /tmp/garage.toml /etc/garage/garage.toml
+  when: garage_remote_config.stdout | trim != lookup('file', '/tmp/garage.toml') | trim
+  register: garage_config_changed
+  changed_when: true
+
+- name: Check if the Garage container is running
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo docker inspect
+    --format={{ '{{' }}.State.Running{{ '}}' }} {{ garage_container }}
+  register: garage_running
+  changed_when: false
+  failed_when: false
+
+- name: Render the container start script
+  ansible.builtin.template:
+    src: run-garage.sh.j2
+    dest: /tmp/run-garage.sh
+    mode: "0644"
+
+- name: (Re)create the Garage container
+  ansible.builtin.shell: >
+    multipass transfer /tmp/run-garage.sh {{ backup_vm_name }}:/tmp/run-garage.sh &&
+    multipass exec {{ backup_vm_name }} -- sudo bash /tmp/run-garage.sh
+  when: >
+    garage_running.rc != 0 or
+    garage_running.stdout | trim != 'true' or
+    garage_config_changed is changed or
+    garage_secrets is changed
+  changed_when: true
+
+- name: Wait for Garage to report a healthy node
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo docker exec {{ garage_container }} /garage status
+  register: garage_status
+  until: garage_status.rc == 0 and 'HEALTHY NODES' in garage_status.stdout
+  retries: 20
+  delay: 3
+  changed_when: false
+
+- name: Check if bucket {{ garage_bucket }} exists
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo docker exec {{ garage_container }}
+    /garage bucket info {{ garage_bucket }}
+  register: garage_bucket_info
+  changed_when: false
+  failed_when: false
+
+- name: Create bucket {{ garage_bucket }}
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo docker exec {{ garage_container }}
+    /garage bucket create {{ garage_bucket }}
+  when: garage_bucket_info.rc != 0
+  changed_when: true
+
+- name: Check if access key {{ garage_key_name }} exists
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo docker exec {{ garage_container }}
+    /garage key info {{ garage_key_name }}
+  register: garage_key_info
+  changed_when: false
+  failed_when: false
+
+- name: Create access key {{ garage_key_name }}
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo docker exec {{ garage_container }}
+    /garage key create {{ garage_key_name }}
+  when: garage_key_info.rc != 0
+  changed_when: true
+  no_log: true  # the output contains the secret key
+
+# Read + write only: write covers DeleteObject (Barman retention). No --owner,
+# so the key cannot change bucket settings or grant access to other keys.
+- name: Allow {{ garage_key_name }} to read and write {{ garage_bucket }}
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo docker exec {{ garage_container }}
+    /garage bucket allow --read --write {{ garage_bucket }} --key {{ garage_key_name }}
+  changed_when: false
+
+- name: Next step
+  ansible.builtin.debug:
+    msg: |
+      Garage ready on {{ backup_ip }}:3900 (bucket {{ garage_bucket }}).
+      Copy the access key to Vault: 03-airgap-zone/scripts/seed-cnpg-backup-creds.sh

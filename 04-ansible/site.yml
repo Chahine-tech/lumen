@@ -18,6 +18,7 @@
 #   7.  argocd     — Install ArgoCD + register all Applications
 #   8.  gitea      — Create org/repo + push code (ArgoCD source)
 #   9.  vault      — Wait for Vault pods + unseal
+#   9b. garage     : Garage (S3) on backup-1 for the PostgreSQL backups
 #   10. dns        — Configure /etc/hosts + macOS CA trust
 #   11. verify     — Health checks on all services
 #
@@ -86,6 +87,13 @@
   tags: [vault, unseal]
   roles:
     - vault
+
+- name: "[9b/11] Start Garage on backup-1 (PostgreSQL backup target)"
+  hosts: localhost
+  gather_facts: false
+  tags: [garage, backup]
+  roles:
+    - garage
 
 - name: "[10/11] Configure DNS + CA trust"
   hosts: localhost

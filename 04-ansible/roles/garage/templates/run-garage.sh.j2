@@ -1,0 +1,18 @@
+#!/bin/bash
+# (Re)create the Garage container on {{ backup_vm_name }}. Managed by Ansible.
+set -e
+
+docker rm -f {{ garage_container }} 2>/dev/null || true
+
+# --network host: the S3 API listens on the VM address, RPC and admin stay on
+# loopback (see /etc/garage/garage.toml)
+docker run -d \
+  --name {{ garage_container }} \
+  --restart unless-stopped \
+  --network host \
+  -v /etc/garage/garage.toml:/etc/garage.toml:ro \
+  -v /etc/garage/secrets:/etc/garage/secrets:ro \
+  -v /var/lib/garage/meta:/var/lib/garage/meta \
+  -v /var/lib/garage/data:/var/lib/garage/data \
+  {{ garage_image }} \
+  /garage server --single-node

@@ -6,7 +6,7 @@
 #
 # What it does:
 #   1. Drain node-2 (evict workloads cleanly)
-#   2. Stop both Multipass VMs
+#   2. Stop both cluster VMs, then backup-1 (Garage)
 
 - name: Drain and stop the cluster
   hosts: localhost
@@ -38,6 +38,11 @@
     - name: Stop Multipass VMs
       ansible.builtin.command: multipass stop node-2 node-1
       register: stop_result
+      changed_when: true
+
+    # Last, so WAL segments archived while PostgreSQL shuts down still reach Garage
+    - name: Stop the backup VM
+      ansible.builtin.command: multipass stop backup-1
       changed_when: true
 
     - name: Confirm VMs stopped

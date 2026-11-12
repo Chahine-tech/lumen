@@ -1,0 +1,30 @@
+# Garage {{ garage_version }} on {{ backup_vm_name }}: S3 target of the PostgreSQL backups
+# Managed by Ansible (04-ansible/roles/garage). Manual edits are overwritten.
+
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "lmdb"
+
+# Single node: one copy of every object. The VM sits outside the K3s cluster,
+# which protects the backups against losing the cluster, not against losing
+# this VM or the Mac disk it lives on.
+replication_factor = 1
+
+# Single node, single disk: trade write speed for safety on power loss
+metadata_fsync = true
+data_fsync = true
+metadata_auto_snapshot_interval = "6h"
+
+# RPC and admin API stay on loopback: nothing but this node needs them
+rpc_bind_addr = "127.0.0.1:3901"
+rpc_public_addr = "127.0.0.1:3901"
+rpc_secret_file = "/etc/garage/secrets/rpc_secret"
+
+[s3_api]
+# Must match REGION in Vault lumen/cnpg-backup (scripts/seed-cnpg-backup-creds.sh)
+s3_region = "{{ garage_s3_region }}"
+api_bind_addr = "0.0.0.0:3900"
+
+[admin]
+api_bind_addr = "127.0.0.1:3903"
+admin_token_file = "/etc/garage/secrets/admin_token"

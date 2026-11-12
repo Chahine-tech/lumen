@@ -1,4 +1,4 @@
-.PHONY: help all build-connected setup-transit setup-airgap deploy test clean slo-generate
+.PHONY: help all build-connected setup-transit setup-airgap deploy test clean slo-generate test-alert-rules
 
 # Colors for output
 GREEN  := \033[0;32m
@@ -182,6 +182,14 @@ slo-generate: ## Regenerate SLO PrometheusRules from Sloth specs (03-airgap-zone
 		-i /work/slo/lumen-api.yaml \
 		-o /work/manifests/kube-prometheus-stack/lumen-api-slo-rules.yaml
 	@echo "$(GREEN)✓ Rules generated — commit both the spec and the generated file$(NC)"
+
+test-alert-rules: ## Unit-test PrometheusRules with promtool (03-airgap-zone/tests/prometheus/)
+	@mkdir -p 03-airgap-zone/tests/prometheus/.rules
+	python3 -c 'import sys,yaml; d=yaml.safe_load(open(sys.argv[1])); yaml.safe_dump({"groups": d["spec"]["groups"]}, open(sys.argv[2], "w"))' \
+		03-airgap-zone/manifests/kube-prometheus-stack/cnpg-backup-rules.yaml \
+		03-airgap-zone/tests/prometheus/.rules/cnpg-backup-rules.yml
+	docker run --rm -v $(PWD)/03-airgap-zone/tests/prometheus:/w -w /w --entrypoint promtool \
+		prom/prometheus:v3.1.0 test rules cnpg-backup-rules.test.yml
 
 # Documentation
 docs: ## Show available documentation

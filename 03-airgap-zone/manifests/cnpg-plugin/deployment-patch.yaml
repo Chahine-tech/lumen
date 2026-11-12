@@ -1,0 +1,30 @@
+# Airgap and hardening overrides for the plugin Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: barman-cloud
+  namespace: cnpg-system
+spec:
+  template:
+    spec:
+      containers:
+        - name: barman-cloud
+          env:
+            # Upstream reads the sidecar image from a generated Secret that
+            # points to ghcr.io. The plugin docs say to set SIDECAR_IMAGE to the
+            # mirrored image in air-gapped environments. Keep the tag equal to
+            # the plugin version (BARMAN_PLUGIN_VERSION in 12-pull-cnpg.sh).
+            - name: SIDECAR_IMAGE
+              value: 192.168.2.2:5000/plugin-barman-cloud-sidecar:v0.16.0
+              valueFrom: null
+            # Only reconcile Cluster/ObjectStore resources in the namespaces
+            # that use it (the RBAC shipped upstream stays cluster-wide)
+            - name: WATCH_NAMESPACE
+              value: lumen
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

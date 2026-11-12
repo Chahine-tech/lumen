@@ -6,7 +6,7 @@
 #   ansible-playbook 04-ansible/start.yml --ask-become-pass  # if sudo needs password
 #
 # What it does:
-#   1. Start Multipass VMs (node-1, node-2)
+#   1. Start Multipass VMs (backup-1, then node-1, node-2)
 #   2. Wait for K3s nodes to be Ready
 #   3. Restore ARP entry for MetalLB VIP (lost on reboot)
 #   4. Reinstall OPA Gatekeeper constraints (admission webhook, not in ArgoCD)
@@ -17,6 +17,11 @@
   gather_facts: false
 
   tasks:
+    # First, so PostgreSQL can archive WAL as soon as it starts
+    - name: Start the backup VM (Garage)
+      ansible.builtin.command: multipass start backup-1
+      changed_when: true
+
     - name: Start node-1 and node-2
       ansible.builtin.command: multipass start node-1 node-2
       register: start_result

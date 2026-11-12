@@ -23,6 +23,19 @@ registry_port: 5000
 registry_url: "192.168.2.2:5000"
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Backup target: Garage (S3) on backup-1, outside the K3s cluster
+# Receives the PostgreSQL backups (CloudNativePG Barman Cloud plugin)
+# ──────────────────────────────────────────────────────────────────────────────
+backup_vm_name: "backup-1"
+backup_ip: "192.168.2.4"
+garage_version: "v2.5.0"
+garage_image: "dxflrs/garage:{{ garage_version }}"
+garage_container: "garage"
+garage_s3_region: "garage"
+garage_bucket: "lumen-pg-backups"
+garage_key_name: "lumen-cnpg-backup"
+
+# ──────────────────────────────────────────────────────────────────────────────
 # MetalLB
 # ──────────────────────────────────────────────────────────────────────────────
 metallb_vip: "192.168.2.100"

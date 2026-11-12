@@ -1,0 +1,63 @@
+# ObjectStore: where lumen-db sends its WAL archive and base backups
+#
+# Garage (S3-compatible) runs on its own VM, backup-1 (192.168.2.4), outside
+# the K3s cluster: losing both cluster nodes does not lose the backups.
+# Provisioned by Terraform (05-terraform) + the Ansible garage role.
+#
+# Credentials: Secret lumen-db-backup-s3, synced by VSO from Vault KV
+# lumen/cnpg-backup (vso/05-cnpg-backup-secret.yaml), seeded from Garage by
+# scripts/seed-cnpg-backup-creds.sh. Keys: ACCESS_KEY_ID, ACCESS_SECRET_KEY,
+# REGION.
+#
+# Requires the Barman Cloud plugin (scripts/install-cnpg-plugin.sh).
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: lumen-backups
+  namespace: lumen
+spec:
+  # Recovery window: the cluster can be restored to any point in the last
+  # 30 days. Older base backups and WAL are deleted after the next backup.
+  retentionPolicy: "30d"
+
+  configuration:
+    destinationPath: s3://lumen-pg-backups/
+    # Plain HTTP on the airgap LAN: see issue #34 (in-cluster encryption)
+    endpointURL: http://192.168.2.4:3900
+    # Garage serves virtual-hosted buckets only when root_domain is resolvable;
+    # path style needs no DNS (requires Barman 3.18+, shipped in the sidecar)
+    s3AddressingStyle: path
+    s3Credentials:
+      accessKeyId:
+        name: lumen-db-backup-s3
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: lumen-db-backup-s3
+        key: ACCESS_SECRET_KEY
+      # Must match s3_region in the Garage config, or Garage rejects the
+      # signature (AuthorizationHeaderMalformed)
+      region:
+        name: lumen-db-backup-s3
+        key: REGION
+    wal:
+      compression: gzip
+      maxParallel: 2
+    data:
+      compression: gzip
+      jobs: 2
+
+  instanceSidecarConfiguration:
+    # Workaround documented by the plugin for S3-compatible stores that reject
+    # the CRC checksums newer boto3 versions send by default
+    env:
+      - name: AWS_REQUEST_CHECKSUM_CALCULATION
+        value: when_required
+      - name: AWS_RESPONSE_CHECKSUM_VALIDATION
+        value: when_required
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi

@@ -6,6 +6,17 @@
 #            registry 192.168.2.2:5000 (fetch Cosign signatures)
 
 ---
+# Namespace created here (not via CreateNamespace=true on the kyverno app —
+# that option combined with ServerSideApply hangs the sync on this ArgoCD
+# version). NetworkPolicies below need it to exist anyway.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno
+  labels:
+    name: kyverno
+
+---
 # Default deny all in kyverno namespace
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

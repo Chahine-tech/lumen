@@ -132,10 +132,15 @@ Tested: deleting the primary pod triggers automatic promotion in ~30s.
 ### Airgap deployment
 
 Images used (from internal registry `192.168.2.2:5000`):
-- `192.168.2.2:5000/cloudnative-pg:1.25.1` — operator
-- `192.168.2.2:5000/postgresql:16.6` — PostgreSQL instances
+- `192.168.2.2:5000/cloudnative-pg:1.30.1`: operator (intermediate versions 1.26.3 to 1.29.3 are mirrored for the upgrade path)
+- `192.168.2.2:5000/postgresql:16.6`: PostgreSQL instances
+- `192.168.2.2:5000/plugin-barman-cloud:v0.16.0` and `plugin-barman-cloud-sidecar:v0.16.0`: backups
 
-**Install script:** [install-cnpg.sh](../03-airgap-zone/scripts/install-cnpg.sh)
+**Install script:** [install-cnpg.sh](../03-airgap-zone/scripts/install-cnpg.sh) (new cluster). An existing operator is upgraded one minor at a time with [upgrade-cnpg.sh](../03-airgap-zone/scripts/upgrade-cnpg.sh), interleaved with K3s upgrades: see the [runbook](runbooks/postgres-backup-restore.md#upgrading-from-cnpg-1251).
+
+### Backups
+
+WAL archiving and daily base backups go to Garage (S3) on a separate VM, `backup-1`, through the Barman Cloud plugin. Retention is 30 days of point-in-time recovery. Setup, restore and the restore drill are in the [PostgreSQL backup and restore runbook](runbooks/postgres-backup-restore.md).
 
 **Known constraint with kube-router (k3s built-in NetworkPolicy controller):**
 CNPG instance manager must reach the K8s API server (`10.43.0.1:443` ClusterIP). kube-router does not evaluate `ipBlock` NetworkPolicy rules for ClusterIP destinations (traffic is rewritten by iptables DNAT before NetworkPolicy is evaluated). The workaround is to allow all TCP egress for CNPG pods in the `allow-cnpg-intracluster` NetworkPolicy.
@@ -170,6 +175,9 @@ kubectl apply --server-side -f 03-airgap-zone/manifests/cnpg/05-grafana-dashboar
 - [03-network-policy.yaml](../03-airgap-zone/manifests/cnpg/03-network-policy.yaml)
 - [04-pod-monitor.yaml](../03-airgap-zone/manifests/cnpg/04-pod-monitor.yaml)
 - [05-grafana-dashboard.yaml](../03-airgap-zone/manifests/cnpg/05-grafana-dashboard.yaml)
+- [06-object-store.yaml](../03-airgap-zone/manifests/cnpg/06-object-store.yaml)
+- [07-scheduled-backup.yaml](../03-airgap-zone/manifests/cnpg/07-scheduled-backup.yaml)
+- [restore-drill/](../03-airgap-zone/manifests/cnpg/restore-drill/)
 
 ### Useful commands
 

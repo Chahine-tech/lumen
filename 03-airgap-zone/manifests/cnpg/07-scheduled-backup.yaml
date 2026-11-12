@@ -1,0 +1,22 @@
+# Daily base backup of lumen-db through the Barman Cloud plugin
+#
+# WAL segments are archived continuously (02-cluster.yaml, isWALArchiver);
+# this base backup is the starting point a restore replays WAL from. Recovery
+# time grows with the amount of WAL since the last base backup.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: lumen-db-daily
+  namespace: lumen
+spec:
+  # Six fields, seconds first: every day at 02:00:00 (cluster time, UTC)
+  schedule: "0 0 2 * * *"
+  # Take the first backup as soon as this resource is created, so a new
+  # cluster does not stay without a base backup until the first night
+  immediate: true
+  backupOwnerReference: self
+  cluster:
+    name: lumen-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io

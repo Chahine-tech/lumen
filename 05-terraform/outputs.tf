@@ -18,12 +18,18 @@ output "node2_static_ip" {
   description = "Static IP on eth1 — configured via cloud-init netplan, stable across reboots"
 }
 
+output "backup_static_ip" {
+  value       = var.backup_ip
+  description = "Static IP on eth1: Garage S3 endpoint for the PostgreSQL backups"
+}
+
 output "next_step" {
   value = <<-EOT
 
     VMs created. Static IPs configured via cloud-init:
       node-1: ${var.node1_ip}  (control-plane + registry)
       node-2: ${var.node2_ip}  (worker)
+      backup-1: ${var.backup_ip}  (Garage, PostgreSQL backups)
 
     Next:
       ansible-playbook 04-ansible/site.yml --ask-become-pass

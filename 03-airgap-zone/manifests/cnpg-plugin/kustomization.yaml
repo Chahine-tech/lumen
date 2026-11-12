@@ -1,0 +1,21 @@
+# Barman Cloud plugin for CloudNativePG, adapted for the airgap
+#
+# Rendered by 03-airgap-zone/scripts/install-cnpg-plugin.sh, which copies the
+# upstream release manifest (downloaded by 12-pull-cnpg.sh) next to this file
+# as plugin-barman-cloud.yaml before running `kubectl kustomize`. The upstream
+# manifest is not committed, same as the operator manifest.
+#
+# Not an ArgoCD Application: the operator it plugs into is installed by script
+# too (install-cnpg.sh / upgrade-cnpg.sh).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - plugin-barman-cloud.yaml
+
+images:
+  - name: ghcr.io/cloudnative-pg/plugin-barman-cloud
+    newName: 192.168.2.2:5000/plugin-barman-cloud
+
+patches:
+  - path: deployment-patch.yaml

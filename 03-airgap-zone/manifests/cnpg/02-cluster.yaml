@@ -19,11 +19,22 @@ spec:
     size: 1Gi
     storageClass: local-path
 
+  # WAL archiving + base backups through the Barman Cloud plugin, to the
+  # ObjectStore lumen-backups (Garage on backup-1, outside the cluster).
+  # Schedule: 07-scheduled-backup.yaml. Restore: scripts/cnpg-restore-drill.sh
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: lumen-backups
+
   postgresql:
     parameters:
       max_connections: "100"
       shared_buffers: "128MB"
       log_min_duration_statement: "1000"  # log queries > 1s
+      # archive_timeout is left to the CNPG default (5min): a WAL segment is
+      # archived at least every 5 minutes, which bounds the RPO of a full loss
 
   # Metrics: PodMonitor managed manually in 04-pod-monitor.yaml
   # enablePodMonitor disabled: deprecated in CNPG v1.25+, operator-created PodMonitor

@@ -1,0 +1,86 @@
+# Alerts on the PostgreSQL backups of lumen-db (Barman Cloud plugin → Garage)
+#
+# Metrics are scraped by the PodMonitor cnpg-lumen-db (manifests/cnpg/04-pod-monitor.yaml):
+#   - barman_cloud_cloudnative_pg_io_*: exposed by the plugin through the
+#     instance manager exporter (plugin docs, "Observability")
+#   - cnpg_pg_stat_archiver_*: default CNPG monitoring queries, reported by
+#     the primary only
+#
+# No receiver is configured in Alertmanager yet (issue #23): these alerts are
+# visible in Prometheus/Alertmanager UIs until routing exists.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cnpg-backup
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack  # required by the Prometheus Operator ruleSelector
+spec:
+  groups:
+    - name: cnpg-backup
+      rules:
+        # Daily schedule (07-scheduled-backup.yaml) + 2h of slack
+        - alert: CNPGBaseBackupTooOld
+          expr: |
+            time() - max by (namespace) (
+              barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="lumen"}
+            ) > 26 * 3600
+          for: 15m
+          labels:
+            severity: warning
+            service: lumen-db
+          annotations:
+            summary: lumen-db has no successful base backup for more than 26 hours
+            description: >-
+              Last available base backup is {{ $value | humanizeDuration }} old.
+              Check: kubectl get backup -n lumen --sort-by=.metadata.creationTimestamp
+
+        # Fires when the metric disappears: plugin sidecar gone, PodMonitor
+        # broken, or no backup was ever taken. Without it, the alert above
+        # would stay silent forever.
+        - alert: CNPGBackupMetricsAbsent
+          expr: |
+            absent(barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="lumen"})
+          for: 1h
+          labels:
+            severity: warning
+            service: lumen-db
+          annotations:
+            summary: No backup metrics for lumen-db
+            description: >-
+              Prometheus has no barman_cloud_cloudnative_pg_io_last_available_backup_timestamp
+              for namespace lumen. Either no backup exists or the plugin/scrape is broken.
+
+        - alert: CNPGLastBackupFailed
+          expr: |
+            max by (namespace) (barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="lumen"})
+            >
+            max by (namespace) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="lumen"})
+          for: 5m
+          labels:
+            severity: warning
+            service: lumen-db
+          annotations:
+            summary: The most recent base backup of lumen-db failed
+            description: >-
+              Check: kubectl get backup -n lumen and the plugin-barman-cloud
+              container logs of the instance that ran it.
+
+        # Compares the last failure with the last success instead of watching
+        # seconds_since_last_archival: an idle database may not switch WAL
+        # segments for a long time, which is not an error.
+        - alert: CNPGWALArchivingFailing
+          expr: |
+            cnpg_pg_stat_archiver_last_failed_time{namespace="lumen"}
+            >
+            cnpg_pg_stat_archiver_last_archived_time{namespace="lumen"}
+          for: 10m
+          labels:
+            severity: critical
+            service: lumen-db
+          annotations:
+            summary: WAL archiving is failing on {{ $labels.pod }}
+            description: >-
+              The last WAL archive attempt failed and none succeeded since. Point
+              in time recovery stops at the last archived segment, and pg_wal
+              grows on the primary until the volume is full.
