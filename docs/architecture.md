@@ -145,10 +145,10 @@ Developer
                     └─────────────────┬───────────────────────┘
                                       │
                     ┌─────────────────▼───────────────────────┐
-                    │     LAYER 1 — OPA Gatekeeper             │
+                    │     LAYER 1: Kyverno                     │
                     │     (Admission Controller)               │
                     │                                          │
-                    │  ConstraintTemplate + Constraint:        │
+                    │  ValidatingPolicy (CEL):                 │
                     │  ✗ image tag :latest → BLOCKED           │
                     │  ✗ image not from 192.168.2.2:5000       │
                     │  ✗ no resource limits → BLOCKED          │
@@ -495,7 +495,7 @@ Deployment order matters: CRDs must exist before the resources that use them.
 ```
   Wave 0 (core infrastructure)
   ├── cert-manager          (CRDs: Certificate, ClusterIssuer)
-  ├── OPA Gatekeeper        (CRDs: ConstraintTemplate, Constraint)
+  ├── Kyverno               (CRDs: ValidatingPolicy, ClusterPolicy)
   └── MetalLB               (CRDs: IPAddressPool, L2Advertisement)
 
   Wave 1 (application dependencies)
@@ -741,7 +741,7 @@ VM provisioning and cluster configuration are fully automated. Two tools, two di
   └── multipass_instance.node2
       cpus=2, memory=4G, disk=30G          roles (11):
                                             ├── multipass   registry   images
-  cloud-init (injected at creation):        ├── k3s         metallb    opa
+  cloud-init (injected at creation):        ├── k3s         metallb    garage
   ├── SSH public key → authorized_keys      ├── argocd      gitea      vault
   ├── eth1 static IP via netplan            ├── dns         verify
   ├── Docker install (node-1 only)
@@ -777,7 +777,7 @@ cd 05-terraform && terraform destroy
 | Flow | Path |
 |------|------|
 | **Provision** | `terraform apply` → Multipass VMs + cloud-init (SSH, IP, Docker, sysctl) |
-| **Bootstrap** | `ansible-playbook site.yml` → K3s + MetalLB + OPA + ArgoCD + Gitea + Vault |
+| **Bootstrap** | `ansible-playbook site.yml` → K3s + MetalLB + ArgoCD + Gitea + Vault + Garage |
 | **Deploy** | `git push` → Gitea → ArgoCD → K8s API → Argo Rollouts → Pods |
 | **Image** | `docker build` → CI sign (Cosign) → Registry → containerd pull |
 | **Secret** | Vault KV → VSO → K8s Secret → Pod env |

@@ -1,0 +1,42 @@
+# Containers of workload controllers in lumen must set CPU and memory
+# requests and limits
+#
+# Migrated from the Gatekeeper constraint require-resources
+# (K8sRequiredResources): same kinds (Deployment, StatefulSet, DaemonSet),
+# same namespace (lumen), containers of the Pod template only (init
+# containers were not checked and still are not).
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: lumen-require-resources
+  annotations:
+    policies.kyverno.io/title: Require requests and limits
+    policies.kyverno.io/category: Resource management
+spec:
+  validationActions: [Deny]
+  failurePolicy: Ignore
+  matchConstraints:
+    # Namespace scope: matchConditions below (see 02-require-internal-registry.yaml)
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets, daemonsets]
+  matchConditions:
+    - name: lumen-namespace-only
+      expression: request.namespace == 'lumen'
+  variables:
+    - name: incomplete
+      expression: >-
+        object.spec.template.spec.containers.filter(c,
+          !('cpu' in c.?resources.?requests.orValue({})) ||
+          !('memory' in c.?resources.?requests.orValue({})) ||
+          !('cpu' in c.?resources.?limits.orValue({})) ||
+          !('memory' in c.?resources.?limits.orValue({})))
+        .map(c, c.name)
+  validations:
+    - expression: size(variables.incomplete) == 0
+      message: Containers need CPU and memory requests and limits
+      messageExpression: >-
+        'Containers need CPU and memory requests and limits, incomplete: '
+        + variables.incomplete.join(', ')

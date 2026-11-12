@@ -61,11 +61,10 @@ ansible-playbook 04-ansible/start.yml --ask-become-pass
 ```
 
 What it does:
-1. `multipass start node-1 node-2`
+1. `multipass start backup-1`, then `multipass start node-1 node-2`
 2. Waits for nodes to be Ready
 3. Restores the MetalLB ARP entry (`sudo arp -s 192.168.2.100 <MAC>`)
-4. Reinstalls OPA Gatekeeper constraint templates
-5. Unseals Vault
+4. Unseals Vault
 
 ### Stop the cluster gracefully
 
@@ -122,13 +121,13 @@ ansible-playbook 04-ansible/site.yml --skip-tags images --ask-become-pass
 │   ├── metallb/           # MetalLB + macOS ARP
 │   ├── argocd/            # ArgoCD + Applications
 │   ├── gitea/             # Gitea org/repo + git push
-│   ├── opa/               # Gatekeeper + constraints
+│   ├── garage/            # Garage (S3) on backup-1, PostgreSQL backups
 │   ├── vault/             # Wait for pods + unseal
 │   ├── dns/               # /etc/hosts + macOS CA trust
 │   └── verify/            # Health checks
 ├── site.yml               # Full bootstrap
 ├── unseal.yml             # Unseal Vault only
-├── start.yml              # Start VMs + ARP + OPA + unseal
+├── start.yml              # Start VMs + ARP + unseal
 └── stop.yml               # Drain + stop VMs
 ```
 

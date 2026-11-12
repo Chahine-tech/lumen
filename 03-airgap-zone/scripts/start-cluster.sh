@@ -3,20 +3,19 @@
 #
 # Run this script every time you restart your Mac or the VMs.
 # It handles everything that doesn't survive reboots:
-#   1. Start Multipass VMs
+#   1. Start Multipass VMs (backup-1, then node-1 and node-2)
 #   2. Restore ARP entry for MetalLB IP (192.168.2.100)
-#   3. Reinstall OPA Gatekeeper (bootstrap component, not in ArgoCD)
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-MANIFESTS_DIR="${SCRIPT_DIR}/../manifests/opa"
 METALLB_IP="192.168.2.100"
 
 echo "=== Lumen Cluster Startup ==="
 echo ""
 
-echo "[1/3] Starting Multipass VMs..."
+echo "[1/2] Starting Multipass VMs..."
+# backup-1 first: PostgreSQL archives WAL to Garage as soon as it starts
+multipass start backup-1
 multipass start node-1 node-2
 echo "Waiting for nodes to be Ready..."
 until multipass exec node-1 -- kubectl get nodes --no-headers 2>/dev/null | grep -q "Ready"; do
@@ -25,23 +24,10 @@ done
 multipass exec node-1 -- kubectl get nodes
 echo ""
 
-echo "[2/3] Restoring ARP entry for MetalLB ($METALLB_IP)..."
+echo "[2/2] Restoring ARP entry for MetalLB ($METALLB_IP)..."
 NODE1_MAC=$(multipass exec node-1 -- cat /sys/class/net/eth0/address)
 sudo arp -s "$METALLB_IP" "$NODE1_MAC"
 echo "ARP entry: $METALLB_IP -> $NODE1_MAC"
-echo ""
-
-echo "[3/3] Reinstalling OPA Gatekeeper..."
-multipass exec node-1 -- kubectl apply -f - < "${MANIFESTS_DIR}/01-gatekeeper-install.yaml" 2>&1 | tail -3
-echo "Waiting for Gatekeeper pods..."
-multipass exec node-1 -- kubectl wait --for=condition=Ready pods \
-  -l control-plane=controller-manager \
-  -n gatekeeper-system \
-  --timeout=120s
-sleep 15
-for f in 02-constraint-template-registry.yaml 03-constraint-template-labels.yaml 04-constraint-template-resources.yaml 05-constraint-template-no-latest.yaml; do
-  multipass exec node-1 -- kubectl apply -f - < "${MANIFESTS_DIR}/$f" 2>&1 | grep -v "unchanged" || true
-done
 echo ""
 
 echo "=== Cluster ready ==="

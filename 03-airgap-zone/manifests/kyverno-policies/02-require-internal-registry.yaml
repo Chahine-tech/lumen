@@ -1,0 +1,66 @@
+# Images must come from the internal registry (airgap: no external pull)
+#
+# Migrated from the Gatekeeper constraint require-internal-registry
+# (K8sRequiredRegistry): same scope, Pods in lumen and default, containers
+# and init containers.
+#
+# ValidatingPolicy (policies.kyverno.io/v1, CEL) rather than ClusterPolicy:
+# ClusterPolicy is deprecated since Kyverno 1.18 and planned for removal.
+#
+# failurePolicy Ignore, like the Gatekeeper webhook it replaces: with a single
+# Kyverno replica, Fail would block every Pod in lumen whenever Kyverno is
+# down. The trade-off: while Kyverno is down, nothing is checked.
+#
+# Namespace scope with matchConditions on request.namespace, not with a
+# namespaceSelector, for two reasons found on the k3d test (Kyverno 1.18.1):
+#   - Kyverno serves every ValidatingPolicy that shares a failurePolicy
+#     through ONE webhook with a single namespaceSelector: it kept "In
+#     [lumen]" from the other policies, and Pods in default never reached
+#     Kyverno.
+#   - autogen is skipped as soon as a namespaceSelector is set
+#     (CanAutoGen in pkg/cel/autogen/support.go), without any message.
+# The same applies to the three other lumen-* policies. Cost: the webhook now
+# receives Pod and workload requests from every namespace except kube-system
+# and kyverno, and Kyverno filters them itself.
+#
+# autogen: the same rule is also applied to Deployments, StatefulSets and
+# DaemonSets, so a bad image is rejected when the controller is created (and
+# shows up as an ArgoCD sync error) instead of later, silently, when the
+# ReplicaSet tries to create Pods.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: lumen-require-internal-registry
+  annotations:
+    policies.kyverno.io/title: Require the internal registry
+    policies.kyverno.io/category: Airgap
+spec:
+  validationActions: [Deny]
+  failurePolicy: Ignore
+  matchConstraints:
+    # Namespace scope: matchConditions below, not namespaceSelector (see header)
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets]
+  matchConditions:
+    - name: lumen-and-default-only
+      expression: request.namespace in ['lumen', 'default']
+  variables:
+    - name: images
+      expression: >-
+        (object.spec.containers + object.spec.?initContainers.orValue([]))
+        .map(c, c.image)
+    - name: external
+      expression: >-
+        variables.images.filter(i, !i.startsWith('192.168.2.2:5000/'))
+  validations:
+    - expression: size(variables.external) == 0
+      message: Images must come from the internal registry 192.168.2.2:5000/
+      messageExpression: >-
+        'Images must come from the internal registry 192.168.2.2:5000/, rejected: '
+        + variables.external.join(', ')

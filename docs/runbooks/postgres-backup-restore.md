@@ -170,7 +170,9 @@ checks the running Kubernetes version and stops before a step it does not
 support (`ALLOW_UNSUPPORTED_K8S=1` overrides it, at your own risk).
 
 K3s itself is upgraded one minor at a time too, which is outside the scope of
-these scripts (issue #10). `04-ansible/group_vars/all.yml` still pins
+these scripts (issue #10). Other components have to move along the way
+(cert-manager, ArgoCD, Argo Rollouts; Gatekeeper is removed): see
+[k3s-upgrade-path.md](k3s-upgrade-path.md) for the full order. `04-ansible/group_vars/all.yml` still pins
 `k3s_version: v1.28.5+k3s1`, which no plugin-capable CNPG version supports.
 
 Each operator upgrade restarts every PostgreSQL instance: replicas first, then

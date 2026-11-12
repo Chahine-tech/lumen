@@ -9,8 +9,7 @@
 #   1. Start Multipass VMs (backup-1, then node-1, node-2)
 #   2. Wait for K3s nodes to be Ready
 #   3. Restore ARP entry for MetalLB VIP (lost on reboot)
-#   4. Reinstall OPA Gatekeeper constraints (admission webhook, not in ArgoCD)
-#   5. Unseal Vault (includes unseal.yml)
+#   4. Unseal Vault (includes unseal.yml)
 
 - name: Start Multipass VMs
   hosts: localhost
@@ -61,69 +60,6 @@
     - name: Confirm ARP entry
       ansible.builtin.debug:
         msg: "ARP entry set: {{ metallb_vip }} -> {{ node1_mac.stdout | trim }}"
-
-- name: Reinstall OPA Gatekeeper constraints
-  hosts: localhost
-  gather_facts: false
-
-  tasks:
-    - name: Apply Gatekeeper install manifest
-      ansible.builtin.command: >
-        kubectl apply -f {{ opa_manifests_dir }}/01-gatekeeper-install.yaml
-      register: gk_install
-      changed_when: "'created' in gk_install.stdout or 'configured' in gk_install.stdout"
-
-    - name: Wait for Gatekeeper controller to be Ready
-      ansible.builtin.command: >
-        kubectl wait pods -l control-plane=controller-manager
-        -n gatekeeper-system --for=condition=Ready --timeout=120s
-      changed_when: false
-
-    - name: Wait for webhook to stabilize
-      ansible.builtin.pause:
-        seconds: 15
-
-    - name: Apply constraint template — registry
-      ansible.builtin.command: >
-        kubectl apply -f {{ opa_manifests_dir }}/02-constraint-template-registry.yaml
-      changed_when: false
-
-    - name: Pause between constraint templates
-      ansible.builtin.pause:
-        seconds: 5
-
-    - name: Apply constraint template — labels
-      ansible.builtin.command: >
-        kubectl apply -f {{ opa_manifests_dir }}/03-constraint-template-labels.yaml
-      changed_when: false
-
-    - name: Pause between constraint templates
-      ansible.builtin.pause:
-        seconds: 5
-
-    - name: Apply constraint template — resources
-      ansible.builtin.command: >
-        kubectl apply -f {{ opa_manifests_dir }}/04-constraint-template-resources.yaml
-      changed_when: false
-
-    - name: Pause between constraint templates
-      ansible.builtin.pause:
-        seconds: 5
-
-    - name: Apply constraint template — no-latest
-      ansible.builtin.command: >
-        kubectl apply -f {{ opa_manifests_dir }}/05-constraint-template-no-latest.yaml
-      changed_when: false
-
-    - name: Show OPA constraints
-      ansible.builtin.command: kubectl get constraints -A --no-headers
-      register: constraints
-      changed_when: false
-      failed_when: false
-
-    - name: Display constraints
-      ansible.builtin.debug:
-        msg: "{{ constraints.stdout_lines }}"
 
 - name: Unseal Vault
   ansible.builtin.import_playbook: unseal.yml

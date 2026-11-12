@@ -1,4 +1,4 @@
-.PHONY: help all build-connected setup-transit setup-airgap deploy test clean slo-generate test-alert-rules
+.PHONY: help all build-connected setup-transit setup-airgap deploy test clean slo-generate test-alert-rules test-policies
 
 # Colors for output
 GREEN  := \033[0;32m
@@ -24,7 +24,6 @@ build-connected: ## Pull and push images to transit registry (see 01-connected-z
 	@echo "  ./scripts/07-pull-traefik-images.sh"
 	@echo "  ./scripts/08-pull-kube-prometheus-stack.sh"
 	@echo "  ./scripts/09-pull-argocd.sh"
-	@echo "  ./scripts/10-pull-gatekeeper.sh"
 	@echo "  ./scripts/11-pull-observability-stack.sh"
 
 test-api-local: ## Test API locally with docker-compose
@@ -80,10 +79,6 @@ deploy-network-policies: ## Apply NetworkPolicies
 	@echo "$(YELLOW)[K8s]$(NC) Applying NetworkPolicies..."
 	kubectl apply -f 03-airgap-zone/manifests/network-policies/
 
-deploy-opa: ## Deploy OPA Gatekeeper policies
-	@echo "$(YELLOW)[K8s]$(NC) Deploying OPA policies..."
-	kubectl apply -f 03-airgap-zone/manifests/opa/
-
 deploy-monitoring: ## Deploy monitoring stack (managed by ArgoCD)
 	@echo "$(YELLOW)[K8s]$(NC) Monitoring is managed by ArgoCD (kube-prometheus-stack + loki + alloy + tempo)"
 	@echo "  Check status: multipass exec node-1 -- kubectl get apps -n argocd"
@@ -108,20 +103,6 @@ test-network-policies: ## Test NetworkPolicy enforcement
 	@POD=$$(kubectl get pod -n lumen -l app=lumen-api -o jsonpath='{.items[0].metadata.name}'); \
 	kubectl exec -n lumen $$POD -- timeout 2 nc -zv redis 6379 && echo "$(GREEN)PASS$(NC)" || echo "$(RED)FAIL$(NC)"
 
-test-opa: ## Test OPA policies
-	@echo "$(YELLOW)[Test]$(NC) OPA Gatekeeper policies..."
-	@echo "Testing: Deploying pod with :latest tag (should be rejected)"
-	@kubectl apply -f - <<EOF | grep -q "denied" && echo "$(GREEN)PASS: Latest tag blocked$(NC)" || echo "$(RED)FAIL$(NC)"
-	apiVersion: v1
-	kind: Pod
-	metadata:
-	  name: test-latest
-	  namespace: lumen
-	spec:
-	  containers:
-	  - name: test
-	    image: nginx:latest
-	EOF
 
 # Port forwarding
 forward-api: ## Port-forward to API (localhost:8080)
@@ -162,7 +143,6 @@ clean-k8s: ## Delete all Kubernetes resources
 	@echo "$(RED)Cleaning Kubernetes resources...$(NC)"
 	kubectl delete namespace lumen --ignore-not-found=true
 	kubectl delete namespace monitoring --ignore-not-found=true
-	kubectl delete namespace gatekeeper-system --ignore-not-found=true
 
 clean-docker: ## Clean Docker images and containers
 	@echo "$(RED)Cleaning Docker resources...$(NC)"
@@ -182,6 +162,9 @@ slo-generate: ## Regenerate SLO PrometheusRules from Sloth specs (03-airgap-zone
 		-i /work/slo/lumen-api.yaml \
 		-o /work/manifests/kube-prometheus-stack/lumen-api-slo-rules.yaml
 	@echo "$(GREEN)✓ Rules generated — commit both the spec and the generated file$(NC)"
+
+test-policies: ## Admission tests for the Kyverno lumen-* policies (server-side dry run, current context)
+	./03-airgap-zone/tests/kyverno/admission-tests.sh
 
 test-alert-rules: ## Unit-test PrometheusRules with promtool (03-airgap-zone/tests/prometheus/)
 	@mkdir -p 03-airgap-zone/tests/prometheus/.rules

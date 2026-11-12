@@ -38,7 +38,7 @@ Pod spec:
       cpu: 500m       ← cgroup.cpu.cfs_quota_us
 ```
 
-When a container exceeds its `memory.limit` → OOMKilled by the kernel. That's why all pods in this project have `requests` and `limits` (enforced by OPA Gatekeeper).
+When a container exceeds its `memory.limit` → OOMKilled by the kernel. That's why all pods in this project have `requests` and `limits` (enforced in `lumen` by the Kyverno policy `lumen-require-resources`).
 
 ### iptables
 
@@ -438,22 +438,22 @@ kubectl apply -f pod.yaml
        │   (e.g.: inject a sidecar)
        │
        ├── Validating Admission Webhooks  ← accepts or rejects
-       │   ├── OPA Gatekeeper             ← no :latest, resource limits...
+       │   ├── Kyverno                    ← no :latest, resource limits...
        │   └── PSS (Pod Security Standards) ← no root, no privileged...
        │
        └── Persisted in etcd → kubelet creates the pod
 ```
 
-**OPA Gatekeeper** uses `ConstraintTemplate` (Rego policy) + `Constraint` (configuration):
+**Kyverno** policies are `ValidatingPolicy` resources: a CEL expression plus the resources and namespaces it applies to:
 
 ```
-ConstraintTemplate: BlockLatestTag
-  → Rego code that checks if image tag == "latest"
-
-Constraint: block-latest-tag
-  → applied to all namespaces
+ValidatingPolicy: lumen-block-latest-tag
+  → CEL: every image has a tag other than latest, or a digest
+  → applied to Pods in lumen (and, through autogen, Deployments, StatefulSets, DaemonSets)
   → violation → request rejected + error message
 ```
+
+(OPA Gatekeeper did the same with `ConstraintTemplate` + `Constraint` until November 2026.)
 
 **Pod Security Standards** are built into K8s (since 1.25) — no external webhook. Configured by namespace label:
 ```

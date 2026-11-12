@@ -1,0 +1,55 @@
+# Images must carry an explicit tag other than latest, or a digest
+#
+# Migrated from the Gatekeeper constraint block-latest-tag (K8sBlockLatestTag),
+# with two defects fixed:
+#   - the Rego read spec.containers on Deployments/StatefulSets/DaemonSets,
+#     where containers live under spec.template.spec: only Pods were checked.
+#     Here Pods are matched, and autogen covers the three controllers.
+#   - "no tag" was detected as "no ':' in the image", but the registry
+#     192.168.2.2:5000 already contains one: 192.168.2.2:5000/redis (implicit
+#     latest) was accepted. The tag is now read after the last '/'.
+#   Init containers are now held to the same rule as containers.
+#
+# Same failurePolicy and autogen choices as 02-require-internal-registry.yaml.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: lumen-block-latest-tag
+  annotations:
+    policies.kyverno.io/title: Block the latest tag
+    policies.kyverno.io/category: Supply chain
+spec:
+  validationActions: [Deny]
+  failurePolicy: Ignore
+  matchConstraints:
+    # Namespace scope: matchConditions below (see 02-require-internal-registry.yaml)
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  autogen:
+    podControllers:
+      controllers: [deployments, statefulsets, daemonsets]
+  matchConditions:
+    - name: lumen-namespace-only
+      expression: request.namespace == 'lumen'
+  variables:
+    - name: images
+      expression: >-
+        (object.spec.containers + object.spec.?initContainers.orValue([]))
+        .map(c, c.image)
+    # Pinned by digest: accepted whatever the tag. Otherwise the last path
+    # segment (after the last '/') must contain ':' and a tag other than latest.
+    - name: unpinned
+      expression: >-
+        variables.images.filter(i,
+          !i.contains('@') && (
+            !i.substring(i.lastIndexOf('/') + 1).contains(':') ||
+            i.substring(i.lastIndexOf('/') + 1).split(':')[1] == 'latest'))
+  validations:
+    - expression: size(variables.unpinned) == 0
+      message: Images need an explicit tag other than latest, or a digest
+      messageExpression: >-
+        'Images need an explicit tag other than latest, or a digest, rejected: '
+        + variables.unpinned.join(', ')

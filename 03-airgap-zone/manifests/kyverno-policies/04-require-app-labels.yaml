@@ -1,0 +1,36 @@
+# Workload controllers in lumen must carry the labels app and tier
+#
+# Migrated from the Gatekeeper constraint require-app-labels
+# (K8sRequiredLabels): same kinds (Deployment, StatefulSet, DaemonSet), same
+# namespace (lumen), labels on the controller's own metadata. Argo Rollouts
+# (lumen-api) are not matched, as before.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: lumen-require-app-labels
+  annotations:
+    policies.kyverno.io/title: Require app and tier labels
+    policies.kyverno.io/category: Governance
+spec:
+  validationActions: [Deny]
+  failurePolicy: Ignore
+  matchConstraints:
+    # Namespace scope: matchConditions below (see 02-require-internal-registry.yaml)
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets, daemonsets]
+  matchConditions:
+    - name: lumen-namespace-only
+      expression: request.namespace == 'lumen'
+  variables:
+    - name: missing
+      expression: >-
+        ['app', 'tier'].filter(l, !(l in object.metadata.?labels.orValue({})))
+  validations:
+    - expression: size(variables.missing) == 0
+      message: Workloads in lumen need the labels app and tier
+      messageExpression: >-
+        object.kind + ' ' + object.metadata.name + ' is missing labels: '
+        + variables.missing.join(', ')

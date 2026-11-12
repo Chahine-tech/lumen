@@ -2,13 +2,13 @@
 
 > Defense-in-Depth: 5-Layer Security for Airgap Kubernetes
 
-This document covers the complete security implementation in the Lumen airgap Kubernetes project, including OPA Gatekeeper admission control, Pod Security Standards (PSS), NetworkPolicies, Falco runtime security, and Cosign image signing.
+This document covers the complete security implementation in the Lumen airgap Kubernetes project, including Kyverno admission policies (with Cosign signature verification), Pod Security Standards (PSS), NetworkPolicies and Falco runtime security.
 
 ## 📋 Table of Contents
 
 - [Overview](#overview)
 - [Architecture](#architecture)
-- [Layer 1: OPA Gatekeeper](#layer-1-opa-gatekeeper)
+- [Layer 1: Kyverno admission policies](#layer-1-kyverno-admission-policies)
 - [Layer 2: Pod Security Standards](#layer-2-pod-security-standards)
 - [Layer 3: NetworkPolicies](#layer-3-networkpolicies)
 - [Layer 4: Falco Runtime Security](#layer-4-falco-runtime-security)
@@ -25,7 +25,7 @@ The Lumen project implements **defense-in-depth security** using three complemen
 
 | Layer | Technology | Purpose | Enforcement Point |
 |-------|------------|---------|-------------------|
-| **1** | OPA Gatekeeper | Custom business policies | Admission webhook |
+| **1** | Kyverno | Registry, tags, labels, resources, image signatures | Admission webhook |
 | **2** | Pod Security Standards (PSS) | System security baselines | Built-in admission |
 | **3** | NetworkPolicies | Zero-trust networking | CNI (Flannel) |
 | **4** | Falco | Runtime threat detection | Kernel syscalls (eBPF) |
@@ -46,9 +46,9 @@ The Lumen project implements **defense-in-depth security** using three complemen
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Layer 1: OPA Gatekeeper (Custom Policies)                      │
+│  Layer 1: Kyverno (Admission Policies)                          │
 │  ├─ Block :latest tags                                          │
-│  ├─ Require internal registry (localhost:5000)                  │
+│  ├─ Require internal registry (192.168.2.2:5000)                │
 │  ├─ Enforce resource limits                                     │
 │  └─ Validate required labels (app, tier)                        │
 └────────────────────────────┬────────────────────────────────────┘
@@ -82,355 +82,78 @@ The Lumen project implements **defense-in-depth security** using three complemen
 ```
 
 **Enforcement Timeline:**
-1. **Admission time** (pre-creation): OPA Gatekeeper + PSS validate manifest
+1. **Admission time** (pre-creation): Kyverno + PSS validate manifest
 2. **Runtime** (post-creation): NetworkPolicies control network traffic
 
 ---
 
-## Layer 1: OPA Gatekeeper
+## Layer 1: Kyverno admission policies
 
-**What is OPA Gatekeeper?**
-- Kubernetes admission controller using Open Policy Agent (OPA)
-- Enforces custom policies written in Rego language
-- Validates resources BEFORE they're created in the cluster
-- Uses two CRD types:
-  - **ConstraintTemplate**: Defines the policy logic (Rego code)
-  - **Constraint**: Applies the policy to specific resources
+Kyverno 1.18.1 (admission controller only, `manifests/kyverno-helm/`) runs
+the policies in `manifests/kyverno-policies/`, synced by the ArgoCD
+Application `kyverno-policies`.
 
-**Why OPA Gatekeeper?**
-- **Custom policies**: Enforce business rules (e.g., "only use internal registry")
-- **Policy as Code**: Version-controlled Rego policies in Git
-- **Audit mode**: Report violations without blocking (warn/audit/enforce modes)
+| Policy | File | Kind | Scope | What it rejects |
+|---|---|---|---|---|
+| `verify-lumen-api-signature` | `01-verify-lumen-api-signature.yaml` | ClusterPolicy (verifyImages) | Pods in `lumen`, image `lumen-api` | lumen-api images without a valid Cosign signature |
+| `lumen-require-internal-registry` | `02-require-internal-registry.yaml` | ValidatingPolicy | Pods in `lumen` and `default` (+ autogen) | images outside `192.168.2.2:5000/`, containers and init containers |
+| `lumen-block-latest-tag` | `03-block-latest-tag.yaml` | ValidatingPolicy | Pods in `lumen` (+ autogen) | `:latest`, or no tag; a digest is accepted |
+| `lumen-require-app-labels` | `04-require-app-labels.yaml` | ValidatingPolicy | Deployments, StatefulSets, DaemonSets in `lumen` | missing `app` or `tier` label |
+| `lumen-require-resources` | `05-require-resources.yaml` | ValidatingPolicy | Deployments, StatefulSets, DaemonSets in `lumen` | a container without CPU and memory requests and limits |
 
-### Deployment
+"autogen" means the Pod rule is also applied to Deployments, StatefulSets and
+DaemonSets, so a bad image is rejected when the workload is created (an
+ArgoCD sync error) instead of later, silently, by the ReplicaSet controller.
+Argo Rollouts (lumen-api) are not matched by the workload rules; their Pods
+are checked by the Pod rules.
 
-**Components:**
-- **gatekeeper-controller-manager** (3 replicas): Admission webhook
-- **gatekeeper-audit** (1 replica): Audit + CRD generation
+### Why ValidatingPolicy
 
-**Critical Fix for v3.18.0:**
-Gatekeeper v3.18.0 requires `--operation=generate` flag for CRD creation:
+The four `lumen-*` policies replaced the OPA Gatekeeper constraints of the same
+names in November 2026 (Gatekeeper 3.18 was end of life, and no Gatekeeper
+release is tested on Kubernetes 1.34, see
+[k3s-upgrade-path.md](runbooks/k3s-upgrade-path.md)). They use
+`ValidatingPolicy` (`policies.kyverno.io/v1`, CEL) because `ClusterPolicy` is
+deprecated since Kyverno 1.18. The signature policy is still a
+`ClusterPolicy` and should move to `ImageValidatingPolicy`.
 
-```yaml
-# 03-airgap-zone/manifests/opa/01-gatekeeper-install.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: gatekeeper-audit
-spec:
-  template:
-    spec:
-      containers:
-        - name: manager
-          args:
-            - --operation=audit
-            - --operation=status
-            - --operation=mutation-status
-            - --operation=generate  # REQUIRED for v3.18.0
-            - --logtostderr
-```
+Two defects of the Gatekeeper version were fixed on the way:
+- the latest-tag rule read `spec.containers` on Deployments, StatefulSets and
+  DaemonSets, where containers live under `spec.template.spec`: only Pods were
+  really checked;
+- "no tag" was detected as "no `:` in the image", but `192.168.2.2:5000`
+  contains one: `192.168.2.2:5000/redis` (implicit latest) was accepted.
 
-**Without this flag:** ConstraintTemplates show `status.created: false` and CRDs are never created.
+### Design choices
 
-### Policy 1: Block `:latest` Tags
-
-**Why?**
-- `:latest` tag is mutable (same tag, different image)
-- Breaks reproducibility and auditability
-- Can cause unexpected behavior after image updates
-
-**ConstraintTemplate:**
-```yaml
-apiVersion: templates.gatekeeper.sh/v1
-kind: ConstraintTemplate
-metadata:
-  name: k8sblocklatesttag
-spec:
-  crd:
-    spec:
-      names:
-        kind: K8sBlockLatestTag
-  targets:
-    - target: admission.k8s.gatekeeper.sh
-      rego: |
-        package k8sblocklatesttag
-
-        violation[{"msg": msg}] {
-          container := input.review.object.spec.containers[_]
-          endswith(container.image, ":latest")
-          msg := sprintf("Container <%v> uses :latest tag", [container.name])
-        }
-
-        violation[{"msg": msg}] {
-          container := input.review.object.spec.containers[_]
-          not contains(container.image, ":")
-          msg := sprintf("Container <%v> has no tag (defaults to :latest)", [container.name])
-        }
-```
-
-**Constraint:**
-```yaml
-apiVersion: constraints.gatekeeper.sh/v1beta1
-kind: K8sBlockLatestTag
-metadata:
-  name: block-latest-tag
-spec:
-  match:
-    kinds:
-      - apiGroups: ["apps", ""]
-        kinds: ["Deployment", "StatefulSet", "DaemonSet", "Pod"]
-```
-
-**Test:**
-```bash
-# This will be BLOCKED
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: Pod
-metadata:
-  name: test-latest
-  namespace: lumen
-spec:
-  containers:
-    - name: nginx
-      image: nginx:latest  # ❌ VIOLATION
-EOF
-
-# Error: Container <nginx> uses :latest tag
-```
-
-### Policy 2: Require Internal Registry
-
-**Why?**
-- Airgap environment can only pull from local registry
-- Prevent accidental external image references
-- Enforce `localhost:5000/` prefix
-
-**ConstraintTemplate:**
-```yaml
-apiVersion: templates.gatekeeper.sh/v1
-kind: ConstraintTemplate
-metadata:
-  name: k8srequireinternalregistry
-spec:
-  crd:
-    spec:
-      names:
-        kind: K8sRequireInternalRegistry
-  targets:
-    - target: admission.k8s.gatekeeper.sh
-      rego: |
-        package k8srequireinternalregistry
-
-        violation[{"msg": msg}] {
-          container := input.review.object.spec.containers[_]
-          not startswith(container.image, "localhost:5000/")
-          msg := sprintf("Container <%v> must use localhost:5000 registry, got: %v",
-                        [container.name, container.image])
-        }
-```
-
-**Test:**
-```bash
-# This will be BLOCKED
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: Pod
-metadata:
-  name: test-external
-  namespace: lumen
-spec:
-  containers:
-    - name: nginx
-      image: docker.io/nginx:1.25  # ❌ VIOLATION
-EOF
-
-# Error: Container <nginx> must use localhost:5000 registry
-```
-
-### Policy 3: Require App Labels
-
-**Why?**
-- Enable consistent service discovery
-- Support monitoring/observability (Prometheus ServiceMonitors)
-- Enforce organizational standards
-
-**ConstraintTemplate:**
-```yaml
-apiVersion: templates.gatekeeper.sh/v1
-kind: ConstraintTemplate
-metadata:
-  name: k8srequireapplabels
-spec:
-  crd:
-    spec:
-      names:
-        kind: K8sRequireAppLabels
-  targets:
-    - target: admission.k8s.gatekeeper.sh
-      rego: |
-        package k8srequireapplabels
-
-        violation[{"msg": msg}] {
-          not input.review.object.metadata.labels.app
-          msg := "Workload must have 'app' label"
-        }
-
-        violation[{"msg": msg}] {
-          not input.review.object.metadata.labels.tier
-          msg := "Workload must have 'tier' label"
-        }
-```
-
-**Test:**
-```bash
-# This will be BLOCKED
-kubectl apply -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test-no-labels
-  namespace: lumen
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      name: test
-  template:
-    metadata:
-      labels:
-        name: test  # ❌ Missing 'app' and 'tier' labels
-    spec:
-      containers:
-        - name: nginx
-          image: localhost:5000/nginx:1.25
-EOF
-
-# Error: Workload must have 'app' label
-```
-
-### Policy 4: Require Resource Limits
-
-**Why?**
-- Prevent resource exhaustion (noisy neighbor problem)
-- Enable proper scheduling (bin packing)
-- Required for HPA (Horizontal Pod Autoscaler)
-
-**ConstraintTemplate (with multi-path support):**
-```yaml
-apiVersion: templates.gatekeeper.sh/v1
-kind: ConstraintTemplate
-metadata:
-  name: k8srequiredresources
-spec:
-  crd:
-    spec:
-      names:
-        kind: K8sRequiredResources
-  targets:
-    - target: admission.k8s.gatekeeper.sh
-      rego: |
-        package k8srequiredresources
-
-        # Support both Pods and Deployments/StatefulSets/DaemonSets
-        get_containers[container] {
-          container := input.review.object.spec.containers[_]
-        }
-
-        get_containers[container] {
-          container := input.review.object.spec.template.spec.containers[_]
-        }
-
-        violation[{"msg": msg}] {
-          container := get_containers[_]
-          not container.resources.requests.cpu
-          msg := sprintf("Container <%v> has no CPU request", [container.name])
-        }
-
-        violation[{"msg": msg}] {
-          container := get_containers[_]
-          not container.resources.requests.memory
-          msg := sprintf("Container <%v> has no memory request", [container.name])
-        }
-
-        violation[{"msg": msg}] {
-          container := get_containers[_]
-          not container.resources.limits.cpu
-          msg := sprintf("Container <%v> has no CPU limit", [container.name])
-        }
-
-        violation[{"msg": msg}] {
-          container := get_containers[_]
-          not container.resources.limits.memory
-          msg := sprintf("Container <%v> has no memory limit", [container.name])
-        }
-```
-
-**Why `get_containers` helper?**
-- Pods: `spec.containers[_]`
-- Deployments: `spec.template.spec.containers[_]`
-- Without helper: policy only checks one path ❌
-
-**Test:**
-```bash
-# This will be BLOCKED
-kubectl apply -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test-no-resources
-  namespace: lumen
-  labels:
-    app: test
-    tier: backend
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: test
-  template:
-    metadata:
-      labels:
-        app: test
-        tier: backend
-    spec:
-      containers:
-        - name: nginx
-          image: localhost:5000/nginx:1.25
-          # ❌ No resources defined
-EOF
-
-# Error: Container <nginx> has no CPU request
-```
-
-### Policy Summary
-
-| Policy | What It Blocks | Example Violation |
-|--------|----------------|-------------------|
-| **block-latest-tag** | `:latest` or no tag | `nginx:latest`, `nginx` |
-| **require-internal-registry** | External registries | `docker.io/nginx:1.25` |
-| **require-app-labels** | Missing `app`/`tier` labels | Deployment without labels |
-| **require-resources** | Missing CPU/memory requests/limits | Container without resources |
+- **`failurePolicy: Ignore`** on the four `lumen-*` policies, as Gatekeeper
+  had: with a single Kyverno replica, `Fail` would block every Pod in `lumen`
+  whenever Kyverno is down. The cost: while Kyverno is down nothing is checked
+  (verified on k3d). The signature policy keeps `Fail`.
+- **Namespace scope through `matchConditions` on `request.namespace`, not
+  `namespaceSelector`**, because of two Kyverno 1.18.1 behaviors seen on the
+  k3d test: ValidatingPolicies sharing a webhook ended up with a single
+  namespace selector (Pods in `default` were never sent to Kyverno), and
+  autogen is skipped as soon as a `namespaceSelector` is set (`CanAutoGen`,
+  `pkg/cel/autogen/support.go`). With `matchConditions`, Kyverno creates one
+  webhook per policy.
 
 ### Verification
 
 ```bash
-# Check Gatekeeper pods
-kubectl get pods -n gatekeeper-system
-
-# Check ConstraintTemplates (should show created=true)
-kubectl get constrainttemplates
-kubectl describe constrainttemplate k8sblocklatesttag
-
-# Check Constraints
-kubectl get constraints
-
-# Check violations (audit mode)
-kubectl get k8sblocklatesttag block-latest-tag -o yaml
-# Look for: status.violations (list of violating resources)
+# Policies compiled and ready
+kubectl get validatingpolicies.policies.kyverno.io \
+  -o custom-columns='NAME:.metadata.name,READY:.status.conditionStatus.ready'
+# Autogen generated for the two Pod policies (expect a non-empty map)
+kubectl get validatingpolicy lumen-require-internal-registry -o jsonpath='{.status.autogen}'
+# Admission test matrix (server-side dry run, creates nothing)
+make test-policies
 ```
 
----
+`make test-policies` runs `03-airgap-zone/tests/kyverno/admission-tests.sh`
+against the current kubectl context: 23 cases, each with its expected verdict
+(allow or deny), including the out-of-scope namespaces.
+
 
 ## Layer 2: Pod Security Standards (PSS)
 
@@ -443,7 +166,7 @@ kubectl get k8sblocklatesttag block-latest-tag -o yaml
 **Why PSS?**
 - **No operator needed**: Built into Kubernetes
 - **Industry standard**: Based on CIS Kubernetes Benchmark
-- **Defense in depth**: Complements OPA Gatekeeper (system security vs business policies)
+- **Defense in depth**: Complements Kyverno (system security vs project policies)
 
 ### Security Levels
 
@@ -624,20 +347,20 @@ EOF
 # seccompProfile (container "nginx" must set securityContext.seccompProfile.type to "RuntimeDefault" or "Localhost")
 ```
 
-### PSS vs OPA Gatekeeper
+### PSS vs Kyverno
 
-| Aspect | PSS | OPA Gatekeeper |
-|--------|-----|----------------|
-| **Focus** | System security | Business policies |
-| **Examples** | No privileged, must be non-root | Image registry, labels, tags |
-| **Deployment** | Namespace labels | CRDs (ConstraintTemplate + Constraint) |
-| **Customization** | 3 fixed levels | Fully customizable Rego |
+| Aspect | PSS | Kyverno |
+|--------|-----|---------|
+| **Focus** | System security | Project policies |
+| **Examples** | No privileged, must be non-root | Image registry, labels, tags, signatures |
+| **Deployment** | Namespace labels | Policy resources (ValidatingPolicy, ClusterPolicy) |
+| **Customization** | 3 fixed levels | CEL expressions |
 | **Performance** | Built-in (fast) | Webhook (slight latency) |
-| **Audit** | Audit logs | Constraint status |
+| **Audit** | Audit logs | Admission denials (reports controller disabled) |
 
 **Why both?**
 - PSS: System-level security (privilege, capabilities, host access)
-- OPA: Business-level policies (registry, tags, labels, resources)
+- Kyverno: Project-level policies (registry, tags, labels, resources, signatures)
 - **Overlap is good**: Defense in depth means redundancy
 
 ---
@@ -814,7 +537,7 @@ curl -k https://traefik.airgap.local/api/http/routers
 - Sends alerts as JSON to stdout → collected by Alloy → stored in Loki → visible in Grafana
 
 **Why Falco completes the stack?**
-- OPA + PSS prevent bad *deployments* — Falco detects bad *behavior at runtime*
+- Kyverno + PSS prevent bad *deployments*; Falco detects bad *behavior at runtime*
 - Example: a container that passes all admission checks but then opens a shell, reads `/etc/shadow`, or makes an unexpected network connection
 
 ### Driver: modern_ebpf
@@ -1195,12 +918,12 @@ spec:
             privileged: true  # ❌ Privileged container
 ```
 
-**Layer 1 (OPA Gatekeeper) - BLOCKED:**
+**Layer 1 (Kyverno) - BLOCKED:**
 ```
-❌ Violation: Container <hacker> uses :latest tag
-❌ Violation: Container <hacker> must use localhost:5000 registry
-❌ Violation: Workload must have 'tier' label
-❌ Violation: Container <hacker> has no CPU request
+❌ lumen-require-internal-registry: rejected: docker.io/alpine:latest
+❌ lumen-block-latest-tag: rejected: docker.io/alpine:latest
+❌ lumen-require-app-labels: Deployment malicious-app is missing labels: tier
+❌ lumen-require-resources: incomplete: hacker
 ```
 
 **Layer 2 (PSS) - Would also BLOCK if Layer 1 didn't:**
@@ -1225,7 +948,7 @@ spec:
                    │
                    ▼
          ┌─────────────────────┐
-         │  Layer 1: Gatekeeper │ ❌ BLOCKED (custom policies)
+         │  Layer 1: Kyverno    │ ❌ BLOCKED (admission policies)
          └─────────────────────┘
                    │ (if bypassed somehow)
                    ▼
@@ -1254,64 +977,18 @@ spec:
 
 - K3s cluster running
 - kubectl access
-- OPA Gatekeeper images in transit registry
+- Kyverno deployed (ArgoCD Application `kyverno`, wave 10)
 - ArgoCD (optional, for GitOps)
 
-### Step 1: Deploy OPA Gatekeeper (10 min)
+### Step 1: Admission policies (Kyverno)
+
+Kyverno and its policies are ArgoCD Applications (`kyverno`, wave 10, then
+`kyverno-policies`, wave 11): nothing to apply by hand.
 
 ```bash
-cd 03-airgap-zone
-
-# Apply Gatekeeper installation (4 CRDs + 2 deployments)
-kubectl apply -f manifests/opa/01-gatekeeper-install.yaml
-
-# Wait for pods ready
-kubectl wait --for=condition=ready pod -l control-plane=controller-manager \
-  -n gatekeeper-system --timeout=120s
-
-kubectl wait --for=condition=ready pod -l control-plane=audit-controller \
-  -n gatekeeper-system --timeout=120s
-
-# Verify pods
-kubectl get pods -n gatekeeper-system
-# Expected:
-# gatekeeper-controller-manager-xxx (3/3 Running)
-# gatekeeper-audit-xxx (1/1 Running)
-```
-
-### Step 2: Apply ConstraintTemplates (5 min)
-
-```bash
-# Apply all 4 ConstraintTemplates
-kubectl apply -f manifests/opa/02-constraint-template-latest-tag.yaml
-kubectl apply -f manifests/opa/03-constraint-template-registry.yaml
-kubectl apply -f manifests/opa/04-constraint-template-resources.yaml
-kubectl apply -f manifests/opa/05-constraint-template-labels.yaml
-
-# Wait for CRDs to be created (30 seconds)
-sleep 30
-
-# Verify ConstraintTemplates
-kubectl get constrainttemplates
-# Expected: 4 templates with CREATED=true
-
-# Check CRDs exist
-kubectl get crd | grep gatekeeper
-# Expected: k8sblocklatesttag.constraints.gatekeeper.sh, etc.
-```
-
-### Step 3: Apply Constraints (5 min)
-
-```bash
-# Apply all 4 Constraints
-kubectl apply -f manifests/opa/06-constraint-latest-tag.yaml
-kubectl apply -f manifests/opa/07-constraint-registry.yaml
-kubectl apply -f manifests/opa/08-constraint-resources.yaml
-kubectl apply -f manifests/opa/09-constraint-labels.yaml
-
-# Verify Constraints
-kubectl get constraints
-# Expected: 4 constraints with ENFORCEMENT-ACTION=deny
+kubectl get pods -n kyverno
+kubectl get validatingpolicies.policies.kyverno.io,clusterpolicies.kyverno.io
+make test-policies
 ```
 
 ### Step 4: Enable Pod Security Standards (2 min)
@@ -1357,7 +1034,7 @@ kubectl get networkpolicy -n traefik
 ```bash
 # Commit all changes
 git add .
-git commit -m "feat: implement 3-layer security (OPA Gatekeeper + PSS + NetworkPolicies)"
+git commit -m "feat: implement 3-layer security (Kyverno + PSS + NetworkPolicies)"
 git push-all
 
 # ArgoCD will automatically sync within 3 minutes
@@ -1368,112 +1045,25 @@ kubectl get application -n argocd
 
 ## Testing & Verification
 
-### Test Suite 1: OPA Gatekeeper Policies
+### Test Suite 1: Kyverno policies
 
-**Test 1.1: Block :latest tag**
+`make test-policies` covers the four `lumen-*` policies with server-side dry
+runs (nothing is created). One example by hand:
+
 ```bash
-kubectl apply -f - <<EOF
+kubectl apply --dry-run=server -f - <<EOF
 apiVersion: v1
 kind: Pod
 metadata:
   name: test-latest-tag
   namespace: lumen
-  labels:
-    app: test
-    tier: testing
 spec:
   containers:
-    - name: nginx
-      image: localhost:5000/nginx:latest
-      resources:
-        requests: {cpu: 100m, memory: 64Mi}
-        limits: {cpu: 200m, memory: 128Mi}
+    - name: redis
+      image: 192.168.2.2:5000/redis   # no tag: implicit latest
 EOF
-
-# Expected: ❌ Error: Container <nginx> uses :latest tag
-```
-
-**Test 1.2: Block external registry**
-```bash
-kubectl apply -f - <<EOF
-apiVersion: v1
-kind: Pod
-metadata:
-  name: test-external-registry
-  namespace: lumen
-  labels:
-    app: test
-    tier: testing
-spec:
-  containers:
-    - name: nginx
-      image: docker.io/nginx:1.25
-      resources:
-        requests: {cpu: 100m, memory: 64Mi}
-        limits: {cpu: 200m, memory: 128Mi}
-EOF
-
-# Expected: ❌ Error: Container <nginx> must use localhost:5000 registry
-```
-
-**Test 1.3: Block missing labels**
-```bash
-kubectl apply -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test-no-labels
-  namespace: lumen
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      name: test
-  template:
-    metadata:
-      labels:
-        name: test  # Missing app/tier
-    spec:
-      containers:
-        - name: nginx
-          image: localhost:5000/nginx:1.25
-          resources:
-            requests: {cpu: 100m, memory: 64Mi}
-            limits: {cpu: 200m, memory: 128Mi}
-EOF
-
-# Expected: ❌ Error: Workload must have 'app' label
-```
-
-**Test 1.4: Block missing resources**
-```bash
-kubectl apply -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: test-no-resources
-  namespace: lumen
-  labels:
-    app: test
-    tier: testing
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: test
-  template:
-    metadata:
-      labels:
-        app: test
-        tier: testing
-    spec:
-      containers:
-        - name: nginx
-          image: localhost:5000/nginx:1.25
-          # No resources
-EOF
-
-# Expected: ❌ Error: Container <nginx> has no CPU request
+# Expected: ❌ denied: Images need an explicit tag other than latest, or a
+# digest, rejected: 192.168.2.2:5000/redis
 ```
 
 ### Test Suite 2: Pod Security Standards
@@ -1615,79 +1205,24 @@ kubectl delete pod test-compliant -n lumen
 
 ## Troubleshooting
 
-### Issue 1: ConstraintTemplate shows `created: false`
-
-**Symptom:**
-```bash
-kubectl get constrainttemplate k8sblocklatesttag -o yaml
-# status:
-#   created: false
-```
+### Issue 1: A Kyverno policy does not reject what it should
 
 **Diagnosis:**
 ```bash
-kubectl logs -n gatekeeper-system deploy/gatekeeper-audit | grep "operation"
-# No "generate" operation found
+# Ready, and compiled? A CEL error shows up here
+kubectl get validatingpolicy <name> -o jsonpath='{.status.conditionStatus}'
+# Pod policies: autogen must not be empty for Deployments to be checked
+kubectl get validatingpolicy <name> -o jsonpath='{.status.autogen}'
+# Is the namespace sent to Kyverno at all?
+kubectl get validatingwebhookconfiguration kyverno-resource-validating-webhook-cfg \
+  -o jsonpath='{range .webhooks[*]}{.name}{"\t"}{.namespaceSelector}{"\n"}{end}'
+# Kyverno down? failurePolicy Ignore lets everything through
+kubectl get pods -n kyverno
 ```
 
-**Solution:**
-Gatekeeper v3.18.0 requires `--operation=generate` flag:
-```yaml
-# manifests/opa/01-gatekeeper-install.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: gatekeeper-audit
-spec:
-  template:
-    spec:
-      containers:
-        - name: manager
-          args:
-            - --operation=audit
-            - --operation=status
-            - --operation=mutation-status
-            - --operation=generate  # ADD THIS
-```
-
-**Verify:**
-```bash
-kubectl rollout restart deployment/gatekeeper-audit -n gatekeeper-system
-kubectl wait --for=condition=ready pod -l control-plane=audit-controller -n gatekeeper-system
-kubectl get constrainttemplate k8sblocklatesttag -o yaml
-# status.created: true ✅
-```
-
----
-
-### Issue 2: Resource policy not enforcing on Deployments
-
-**Symptom:**
-Deployments without resources are allowed, but Pods are blocked.
-
-**Diagnosis:**
-Rego only checks `spec.containers` (Pod path), not `spec.template.spec.containers` (Deployment path).
-
-**Solution:**
-Use `get_containers` helper:
-```yaml
-rego: |
-  package k8srequiredresources
-
-  get_containers[container] {
-    container := input.review.object.spec.containers[_]
-  }
-
-  get_containers[container] {
-    container := input.review.object.spec.template.spec.containers[_]
-  }
-
-  violation[{"msg": msg}] {
-    container := get_containers[_]
-    not container.resources.requests.cpu
-    msg := sprintf("Container <%v> has no CPU request", [container.name])
-  }
-```
+**Known causes:** a `namespaceSelector` in a ValidatingPolicy disables autogen
+and can be merged with other policies' selectors: scope namespaces with
+`matchConditions` instead (see Layer 1).
 
 ---
 
@@ -1804,10 +1339,9 @@ spec:
 
 ### What We Built
 
-✅ **Layer 1: OPA Gatekeeper**
-- 4 custom policies (tags, registry, labels, resources)
-- Admission webhook enforcement
-- Audit mode for compliance
+✅ **Layer 1: Kyverno**
+- 4 ValidatingPolicies (tags, registry, labels, resources) + Cosign signature verification
+- Admission webhook enforcement, tested with `make test-policies`
 
 ✅ **Layer 2: Pod Security Standards**
 - Restricted mode on lumen namespace
@@ -1832,7 +1366,7 @@ spec:
 - ❌ No network segmentation
 
 **After:**
-- ✅ Only localhost:5000 images with explicit tags
+- ✅ Only 192.168.2.2:5000 images with explicit tags (lumen, default)
 - ✅ No privileged containers, must run as non-root
 - ✅ Zero-trust networking with explicit allow rules
 - ✅ Resource limits enforced
@@ -1842,9 +1376,9 @@ spec:
 
 | Requirement | Status | Implementation |
 |-------------|--------|----------------|
-| **Admission control** | ✅ | OPA Gatekeeper + PSS |
+| **Admission control** | ✅ | Kyverno + PSS |
 | **Runtime security** | ✅ | NetworkPolicies + securityContext |
-| **Audit logging** | ✅ | PSS audit + Gatekeeper audit |
+| **Audit logging** | Partial | PSS audit; Kyverno reports controller disabled |
 | **Compliance** | ✅ | CIS Kubernetes Benchmark |
 | **Defense in depth** | ✅ | 4 independent layers |
 | **Runtime detection** | ✅ | Falco (syscall monitoring) |

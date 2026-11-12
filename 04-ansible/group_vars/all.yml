@@ -80,16 +80,10 @@ argocd_apps:
   - "15-application-vso.yaml"
   - "16-application-falco.yaml"
   - "17-application-argo-rollouts.yaml"
-
-# ──────────────────────────────────────────────────────────────────────────────
-# OPA Gatekeeper manifests (applied in order)
-# ──────────────────────────────────────────────────────────────────────────────
-opa_manifests:
-  - "01-gatekeeper-install.yaml"
-  - "02-constraint-template-registry.yaml"
-  - "03-constraint-template-labels.yaml"
-  - "04-constraint-template-resources.yaml"
-  - "05-constraint-template-no-latest.yaml"
+  - "18-application-chaos-mesh.yaml"
+  - "19-application-kyverno.yaml"           # admission controller
+  - "20-application-kyverno-policies.yaml"  # registry, tags, labels, resources, signatures
+  - "21-application-vso-config.yaml"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # DNS — airgap domains (all resolve to MetalLB VIP)
@@ -110,7 +104,6 @@ airgap_domains:
 # ──────────────────────────────────────────────────────────────────────────────
 project_root: "{{ playbook_dir }}/.."
 manifests_dir: "{{ project_root }}/03-airgap-zone/manifests"
-opa_manifests_dir: "{{ manifests_dir }}/opa"
 argocd_apps_dir: "{{ manifests_dir }}/argocd"
 ca_cert_path: "{{ project_root }}/03-airgap-zone/airgap-ca.crt"
 

@@ -12,7 +12,7 @@ See [docs/architecture.md](docs/architecture.md) for the full system overview.
 | Cluster | K3s (arm64), Flannel, MetalLB, Traefik v3 |
 | Databases | Redis 7 HA Sentinel + PostgreSQL 16 (CloudNativePG) |
 | Observability | Prometheus + Grafana + Loki + Alloy + Tempo + OpenTelemetry |
-| Security | OPA Gatekeeper + PSS + NetworkPolicies + Falco + Cosign + Kyverno (signature enforcement) |
+| Security | Kyverno (registry, tags, labels, resources, Cosign signatures) + PSS + NetworkPolicies + Falco |
 | Secrets / TLS | Vault HA (Raft) + cert-manager + VSO + mTLS |
 | GitOps / CI | ArgoCD + Gitea Actions + Argo Rollouts (canary) |
 | Resilience | Chaos Mesh (PodChaos, NetworkChaos) |

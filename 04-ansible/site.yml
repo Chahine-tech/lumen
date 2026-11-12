@@ -14,7 +14,7 @@
 #   3.  images     — Transfer registry data to node-1 (all container images)
 #   4.  k3s        — Install K3s + configure kubeconfig
 #   5.  metallb    — Install MetalLB + ARP macOS
-#   6.  opa        — Install Gatekeeper + constraint templates
+#   6.  (removed)  : admission policies are Kyverno, deployed by ArgoCD in step 7
 #   7.  argocd     — Install ArgoCD + register all Applications
 #   8.  gitea      — Create org/repo + push code (ArgoCD source)
 #   9.  vault      — Wait for Vault pods + unseal
@@ -59,13 +59,6 @@
   tags: [metallb]
   roles:
     - metallb
-
-- name: "[6/11] Install OPA Gatekeeper"
-  hosts: localhost
-  gather_facts: false
-  tags: [opa, gatekeeper]
-  roles:
-    - opa
 
 - name: "[7/11] Install ArgoCD + register Applications"
   hosts: localhost

@@ -920,6 +920,8 @@ kubectl port-forward -n monitoring svc/grafana 3000:3000
 
 ## 🔐 Phase 6: OPA Gatekeeper - Admission Control
 
+> Replaced by Kyverno ValidatingPolicies in November 2026: see [security.md](security.md#layer-1-kyverno-admission-policies) and [runbooks/gatekeeper-to-kyverno.md](runbooks/gatekeeper-to-kyverno.md).
+
 ### What is OPA Gatekeeper?
 
 Open Policy Agent (OPA) Gatekeeper is a **policy controller** for Kubernetes that enforces policies using admission webhooks. It validates, mutates, and audits resources before they're admitted to the cluster.
