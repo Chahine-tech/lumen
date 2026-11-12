@@ -1,11 +1,10 @@
-apiVersion: v1
-kind: Secret
-metadata:
-  name: gitea-runner-token
-  namespace: gitea
-type: Opaque
-stringData:
-  token: "0bu8nCWzBk9Y3m4QX2Q6dbBlvZRLLh0wrIMJmkWB"
+# Gitea Actions runner
+#
+# The registration token is NOT in this file: Secret gitea-runner-token is
+# synced by VSO from Vault lumen/gitea-runner (manifests/vso/06-gitea-runner-secret.yaml),
+# seeded by scripts/seed-gitea-runner-token.sh. It used to be written here in
+# clear, in a public repository (issue #1): that token must be considered
+# leaked and rotated.
 ---
 apiVersion: v1
 kind: ConfigMap

@@ -55,7 +55,7 @@ ansible-playbook 04-ansible/start.yml --ask-become-pass
 | URL | Credentials |
 |---|---|
 | https://argocd.airgap.local | admin / from secret |
-| https://gitea.airgap.local | gitea-admin / gitea-admin |
+| https://gitea.airgap.local | gitea-admin / from your password manager (`GITEA_ADMIN_PASSWORD`) |
 | https://grafana.airgap.local | admin / from Vault (`lumen/grafana`) |
 | https://prometheus.airgap.local | — |
 | https://vault.airgap.local | — |

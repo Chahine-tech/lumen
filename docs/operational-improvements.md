@@ -895,14 +895,14 @@ sleep 5
 # Create admin user
 kubectl exec -n gitea deploy/gitea -- su git -c "gitea admin user create \
   --username gitea-admin \
-  --password gitea-admin \
+  --password "$GITEA_ADMIN_PASSWORD" \
   --email admin@gitea.local \
   --admin"
 ```
 
 **Create organization and repository via API:**
 
-**File:** `03-airgap-zone/scripts/create-gitea-repo.sh`
+**File:** `03-airgap-zone/scripts/create-gitea-repo.sh` (removed since: the Ansible role `04-ansible/roles/gitea` does this)
 
 ```bash
 #!/bin/bash
@@ -910,7 +910,7 @@ set -e
 
 GITEA_URL="http://gitea.gitea.svc.cluster.local:3000"
 GITEA_USER="gitea-admin"
-GITEA_PASS="gitea-admin"
+GITEA_PASS="${GITEA_ADMIN_PASSWORD:?export GITEA_ADMIN_PASSWORD first}"
 
 # Create organization 'lumen'
 kubectl run gitea-create-org --image=curlimages/curl:latest --rm -it --restart=Never -- \
@@ -939,8 +939,8 @@ chmod +x create-gitea-repo.sh
 **Configure git remote:**
 
 ```bash
-# Add Gitea remote (with credentials embedded)
-git remote add gitea http://gitea-admin:gitea-admin@localhost:3001/lumen/lumen.git
+# Add Gitea remote (no credentials in the URL: git prompts, the keychain stores them)
+git remote add gitea http://gitea-admin@localhost:3001/lumen/lumen.git
 
 # Push repository
 git push gitea main --force
@@ -960,7 +960,7 @@ fi
 
 # Ensure gitea remote exists
 if ! git remote get-url gitea > /dev/null 2>&1; then
-    git remote add gitea http://gitea-admin:gitea-admin@localhost:3001/lumen/lumen.git
+    git remote add gitea http://gitea-admin@localhost:3001/lumen/lumen.git
 fi
 
 # Push to Gitea
@@ -1092,8 +1092,8 @@ kubectl port-forward -n monitoring svc/alertmanager 9093:9093 > /dev/null 2>&1 &
 
 echo "✅ All services accessible!"
 echo "ArgoCD:      https://localhost:8081"
-echo "Gitea:       http://localhost:3001 (gitea-admin/gitea-admin)"
-echo "Grafana:     http://localhost:3000 (admin/admin)"
+echo "Gitea:       http://localhost:3001 (gitea-admin, password from your password manager)"
+echo "Grafana:     http://localhost:3000 (credentials from Vault lumen/grafana)"
 echo "Prometheus:  http://localhost:9090"
 echo "AlertManager: http://localhost:9093"
 ```

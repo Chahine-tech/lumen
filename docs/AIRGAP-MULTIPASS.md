@@ -201,8 +201,8 @@ This fetches the CA from the cluster, imports it into the macOS keychain, and co
 | Service | URL | Credentials |
 |---------|-----|-------------|
 | ArgoCD | https://argocd.airgap.local | admin / (kubectl get secret argocd-initial-admin-secret) |
-| Gitea | https://gitea.airgap.local | gitea-admin / gitea-admin123 |
-| Grafana | https://grafana.airgap.local | admin / prom-operator |
+| Gitea | https://gitea.airgap.local | gitea-admin / from your password manager |
+| Grafana | https://grafana.airgap.local | from Vault (`lumen/grafana`) |
 | Prometheus | https://prometheus.airgap.local | — |
 | AlertManager | https://alertmanager.airgap.local | — |
 | Tempo | https://tempo.airgap.local | — |
@@ -210,9 +210,12 @@ This fetches the CA from the cluster, imports it into the macOS keychain, and co
 
 ## Git remote
 
-The Gitea remote uses the public HTTPS URL (no port-forward needed):
+The Gitea remote uses the public HTTPS URL (no port-forward needed). Keep the
+password out of the URL and out of `.git/config`: let the macOS keychain store it
+on the first push.
 ```bash
-git remote set-url gitea https://gitea-admin:gitea-admin123@gitea.airgap.local/lumen/lumen.git
+git remote set-url gitea https://gitea-admin@gitea.airgap.local/lumen/lumen.git
+git config credential.helper osxkeychain   # prompts once, then stored in the keychain
 ```
 
 ## CI/CD — Gitea Actions

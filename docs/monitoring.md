@@ -123,7 +123,8 @@ grafana:
     repository: grafana/grafana
     tag: "10.2.2"
 
-  adminPassword: admin
+  # Admin credentials come from Vault (KV lumen/grafana) through VSO:
+  # admin.existingSecret: grafana-admin-vault (see grafana-admin-vso.yaml)
 
   # Sidecar for auto-reload of dashboards
   sidecar:

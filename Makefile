@@ -1,4 +1,4 @@
-.PHONY: help all build-connected setup-transit setup-airgap deploy test clean slo-generate test-alert-rules test-policies
+.PHONY: help all build-connected setup-transit setup-airgap deploy test clean slo-generate test-alert-rules test-policies scan-secrets
 
 # Colors for output
 GREEN  := \033[0;32m
@@ -162,6 +162,10 @@ slo-generate: ## Regenerate SLO PrometheusRules from Sloth specs (03-airgap-zone
 		-i /work/slo/lumen-api.yaml \
 		-o /work/manifests/kube-prometheus-stack/lumen-api-slo-rules.yaml
 	@echo "$(GREEN)✓ Rules generated — commit both the spec and the generated file$(NC)"
+
+scan-secrets: ## Scan the full git history for secrets (gitleaks, same as CI)
+	docker run --rm -v $(PWD):/repo ghcr.io/gitleaks/gitleaks:v8.30.1 git /repo \
+		--config /repo/.gitleaks.toml --gitleaks-ignore-path /repo/.gitleaksignore --redact --no-banner
 
 test-policies: ## Admission tests for the Kyverno lumen-* policies (server-side dry run, current context)
 	./03-airgap-zone/tests/kyverno/admission-tests.sh

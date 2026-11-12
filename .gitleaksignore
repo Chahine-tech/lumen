@@ -1,0 +1,22 @@
+# Findings that exist only in already-pushed history (issue #1).
+# Rewriting public history does not un-leak a value: each one is handled by
+# rotation instead. Format: commit:file:rule:line (no secret value here).
+# Anything NOT listed here fails `make scan-secrets` and the CI scan.
+
+# Gitea runner registration token: MUST be rotated (docs/runbooks/rotate-leaked-credentials.md)
+2365b9e323d2e68d2315f360b3f6421c9fff3edf:03-airgap-zone/manifests/gitea-runner/01-runner.yaml:generic-api-key:8
+
+# old Traefik dashboard htpasswd (admin:admin), replaced by Vault lumen/traefik-dashboard in 6eb0299
+6c723311899037be062805d024088dff08e992eb:03-airgap-zone/manifests/traefik/08-middlewares.yaml:kubernetes-secret-yaml:98
+
+# documentation examples (admin:admin defaults, a sample ArgoCD password), values removed from the tree.
+# Not detected by gitleaks but also in history: the Gitea admin passwords and an
+# ArgoCD admin password in DEPLOYMENT.md, see docs/runbooks/rotate-leaked-credentials.md
+17e0b083f585408711ecec4e34c0e38ba6e238fb:docs/DEPLOYMENT.md:curl-auth-user:677
+17e0b083f585408711ecec4e34c0e38ba6e238fb:docs/DEPLOYMENT.md:curl-auth-user:815
+17e0b083f585408711ecec4e34c0e38ba6e238fb:docs/DEPLOYMENT.md:curl-auth-user:833
+b3363436d5ecaee3b2ab0ddeabb8bd4fc2128810:docs/DEPLOYMENT.md:generic-api-key:1473
+6c723311899037be062805d024088dff08e992eb:docs/DEPLOYMENT.md:curl-auth-user:2218
+
+# documentation example (admin:admin), file removed
+6c723311899037be062805d024088dff08e992eb:docs/traefik.md:curl-auth-user:465

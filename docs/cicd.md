@@ -96,6 +96,8 @@ Runs against `01-connected-zone/app/`, fails the pipeline on any test failure.
 | Trivy DB | Offline at `/var/cache/trivy` (pre-populated in connected zone) |
 | Registry | `192.168.2.2:5000` (node-1 Docker registry, port 5000) |
 | Gitea token | `CI_TOKEN` secret in Gitea repo settings |
+| Runner registration token | Vault `lumen/gitea-runner`, synced by VSO into Secret `gitea-runner-token` (`scripts/seed-gitea-runner-token.sh`) |
+| Secret scan | `.gitea/workflows/secret-scan.yaml`: gitleaks over the full history on every push (image `192.168.2.2:5000/gitleaks/gitleaks:v8.30.1`); same scan on GitHub (`.github/workflows/secret-scan.yml`) and locally (`make scan-secrets`) |
 
 ### Important: runner must be registered with NodePort URL
 

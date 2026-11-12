@@ -57,7 +57,10 @@ vault_keys_file: "{{ playbook_dir }}/../vault-keys.json"
 # Gitea
 # ──────────────────────────────────────────────────────────────────────────────
 gitea_admin_user: "gitea-admin"
-gitea_admin_password: "gitea-admin"
+# Never in this file (public repository, issue #1): exported by the operator
+# from a password manager before running the gitea role:
+#   read -rs GITEA_ADMIN_PASSWORD && export GITEA_ADMIN_PASSWORD
+gitea_admin_password: "{{ lookup('ansible.builtin.env', 'GITEA_ADMIN_PASSWORD') }}"
 gitea_org: "lumen"
 gitea_repo: "lumen"
 gitea_local_port: 3001  # port-forward local port

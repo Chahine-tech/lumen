@@ -47,19 +47,30 @@ fi
 
 echo "[2/3] Writing ${VAULT_PATH} to Vault..."
 # stdin carries the token on its first line, then the JSON document:
-# `read` consumes the first line, `vault kv put ... -` reads the rest
+# `read` consumes the first line, `cat` the rest (vault reading a slow
+# `kubectl exec -i` stdin itself stored empty values, see seed-gitea-runner-token.sh)
 {
   printf '%s\n' "$VAULT_TOKEN"
   KEY_ID="$KEY_ID" SECRET_KEY="$SECRET_KEY" REGION="$S3_REGION" python3 -c \
     'import json,os; print(json.dumps({"ACCESS_KEY_ID": os.environ["KEY_ID"], "ACCESS_SECRET_KEY": os.environ["SECRET_KEY"], "REGION": os.environ["REGION"]}))'
 } | multipass exec node-1 -- kubectl exec -i -n vault vault-0 -- sh -c \
-  'read -r VAULT_TOKEN; export VAULT_TOKEN VAULT_ADDR=http://127.0.0.1:8200; vault kv put '"$VAULT_PATH"' - > /dev/null'
+  'read -r VAULT_TOKEN; export VAULT_TOKEN VAULT_ADDR=http://127.0.0.1:8200
+   V=$(cat); [ -n "$V" ] || { echo "empty document, nothing written" >&2; exit 1; }
+   printf "%s" "$V" | vault kv put '"$VAULT_PATH"' - > /dev/null'
 echo "  ✅ Written"
 
-echo "[3/3] Waiting for VSO to sync Secret lumen-db-backup-s3..."
+echo "[3/3] Making VSO sync Secret lumen-db-backup-s3..."
+# VSO re-reads Vault only every refreshAfter (1h). Deleting the Secret makes it
+# recreate the Secret from Vault within seconds (k3d test, VSO 1.3.0): needed
+# when the key is rotated, harmless the first time. A WAL archive attempt that
+# lands in this gap fails and is retried by PostgreSQL.
+WANT=$(printf '%s' "$KEY_ID" | shasum -a 256 | cut -d' ' -f1)
+multipass exec node-1 -- kubectl delete secret lumen-db-backup-s3 -n lumen --ignore-not-found > /dev/null
 for _ in $(seq 1 30); do
-  if multipass exec node-1 -- kubectl get secret lumen-db-backup-s3 -n lumen > /dev/null 2>&1; then
-    echo "  ✅ Secret lumen-db-backup-s3 present in lumen"
+  have=$(multipass exec node-1 -- kubectl get secret lumen-db-backup-s3 -n lumen \
+    -o jsonpath='{.data.ACCESS_KEY_ID}' 2>/dev/null | base64 -d | shasum -a 256 | cut -d' ' -f1)
+  if [ "$have" = "$WANT" ]; then
+    echo "  ✅ Secret lumen-db-backup-s3 holds the new key"
     exit 0
   fi
   sleep 5

@@ -676,7 +676,7 @@ $ curl -s http://localhost:3000/api/health | jq
 }
 
 # Check datasources
-$ curl -s -u admin:admin http://localhost:3000/api/datasources | jq
+$ curl -s -u "admin:$GRAFANA_PASSWORD" http://localhost:3000/api/datasources | jq
 [
   {
     "id": 1,
@@ -814,7 +814,7 @@ Address: 10.43.6.17
 
 ```bash
 # Prometheus query via Grafana
-$ curl -s -u admin:admin \
+$ curl -s -u "admin:$GRAFANA_PASSWORD" \
   'http://localhost:3000/api/datasources/proxy/1/api/v1/label/__name__/values' | \
   jq -r '.status, (.data[:5] // [])'
 
@@ -832,7 +832,7 @@ $ curl -s -u admin:admin \
 
 ```bash
 # Check dashboard
-$ curl -s -u admin:admin 'http://localhost:3000/api/dashboards/uid/lumen-api' | \
+$ curl -s -u "admin:$GRAFANA_PASSWORD" 'http://localhost:3000/api/dashboards/uid/lumen-api' | \
   jq -r '.dashboard.title'
 
 Lumen API Dashboard
@@ -1467,14 +1467,14 @@ argocd-server-579f659dd5-2xjkm                     1/1     Running   0          
 kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath="{.data.password}" | base64 -d && echo
 
-# Output: xY9zK3mP2wQ7r (example)
+# Output: <generated> (example)
 
 # Port-forward
 kubectl port-forward svc/argocd-server -n argocd 8080:443
 
 # Access: https://localhost:8080
 # Username: admin
-# Password: xY9zK3mP2wQ7r
+# Password: <generated>
 ```
 
 **ArgoCD UI Screenshot:**
@@ -1974,7 +1974,7 @@ kubectl apply -f manifests/traefik/08-middlewares.yaml
 - `security-headers` - HSTS, CSP, X-Frame-Options
 - `compression` - Gzip compression
 - `rate-limit` - 100 req/s avg, 200 burst
-- `dashboard-auth` - Basic Auth (admin:admin)
+- `dashboard-auth` - Basic Auth (credentials from Vault lumen/traefik-dashboard)
 
 ##### Copy TLS Secrets
 
@@ -2047,12 +2047,12 @@ argocd       argocd-https             9m
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| Traefik Dashboard | https://traefik.airgap.local/dashboard/ | admin / admin |
-| Gitea | https://gitea.airgap.local | gitea-admin / gitea-admin |
-| Grafana | https://grafana.airgap.local | admin / admin |
+| Traefik Dashboard | https://traefik.airgap.local/dashboard/ | from Vault |
+| Gitea | https://gitea.airgap.local | gitea-admin / from your password manager |
+| Grafana | https://grafana.airgap.local | from Vault |
 | Prometheus | https://prometheus.airgap.local | (none) |
 | AlertManager | https://alertmanager.airgap.local | (none) |
-| ArgoCD | https://argocd.airgap.local | admin / aaGKhHCXIiJxgrsA |
+| ArgoCD | https://argocd.airgap.local | admin / `kubectl get secret argocd-initial-admin-secret -n argocd` |
 
 **ArgoCD password:**
 ```bash
@@ -2225,7 +2225,7 @@ $ curl -I http://gitea.airgap.local | grep Location
 Location: https://gitea.airgap.local/
 
 # Dashboard with auth
-$ curl -k -u admin:admin https://traefik.airgap.local/dashboard/ | grep Traefik
+$ curl -k -u "admin:$DASHBOARD_PASSWORD" https://traefik.airgap.local/dashboard/ | grep Traefik
 <title>Traefik</title>
 ```
 

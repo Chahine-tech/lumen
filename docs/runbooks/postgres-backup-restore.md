@@ -238,11 +238,15 @@ Run it after every change to the backup chain, and at least once a month.
    { printf '%s\n' "$VAULT_TOKEN"
      kubectl get secret lumen-db-app -n lumen -o jsonpath='{.data.password}' | base64 -d
    } | kubectl exec -i -n vault vault-0 -- sh -c \
-     'read -r VAULT_TOKEN; export VAULT_TOKEN VAULT_ADDR=http://127.0.0.1:8200; vault kv patch lumen/db password=-'
+     'read -r VAULT_TOKEN; export VAULT_TOKEN VAULT_ADDR=http://127.0.0.1:8200
+      V=$(cat); [ -n "$V" ] || { echo "empty password, nothing written" >&2; exit 1; }
+      printf "%s" "$V" | vault kv patch lumen/db password=-'
    ```
-   `kv patch` keeps `username` and `dbname`. VSO updates Secret
-   `lumen-db-vault` within `refreshAfter` (1h): restart lumen-api once it has
-   changed (`kubectl argo rollouts restart lumen-api -n lumen`).
+   `kv patch` keeps `username` and `dbname`. VSO re-reads Vault only every
+   `refreshAfter` (1h); to sync now, delete the Secret and VSO recreates it
+   from Vault within seconds (seen on the k3d test):
+   `kubectl delete secret lumen-db-vault -n lumen`. Then restart lumen-api
+   (`kubectl argo rollouts restart lumen-api -n lumen`).
 6. Update `02-cluster.yaml` in git with the new `serverName` (so the next
    restore reads from the right path), then re-enable auto-sync on `lumen-app`:
    ArgoCD restores the HPA and the replicas.

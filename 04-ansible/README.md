@@ -40,6 +40,16 @@ ssh ubuntu@192.168.2.3 echo "node-2 OK"
 `vault-keys.json` must exist at the project root for playbooks that unseal Vault.
 It is generated once during Vault init and must **never** be committed.
 
+### 4. Gitea admin password
+
+The `gitea` role reads it from the environment, never from a file in the
+repository (issue #1). Export it from your password manager before running
+`site.yml`:
+
+```bash
+read -rs GITEA_ADMIN_PASSWORD && export GITEA_ADMIN_PASSWORD
+```
+
 ---
 
 ## Daily usage

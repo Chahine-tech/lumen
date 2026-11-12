@@ -1,0 +1,14 @@
+# gitleaks configuration (issue #1): default rules, minus content we do not author
+#   make scan-secrets          full history scan (same as CI)
+#   pre-commit                 staged changes, see .pre-commit-config.yaml
+title = "lumen"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Upstream content: test fixtures of the vendored Helm charts, downloaded release artifacts"
+paths = [
+  '''03-airgap-zone/manifests/[^/]+-helm/.*/ci/''',
+  '''(^|/)artifacts/''',
+]

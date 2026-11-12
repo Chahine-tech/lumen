@@ -2,6 +2,14 @@
 # Role: gitea — Create Gitea org + repo and push the lumen repository
 # Gitea serves as the GitOps source for ArgoCD (in-cluster git)
 
+- name: Require the Gitea admin password from the environment
+  ansible.builtin.assert:
+    that: gitea_admin_password | length > 0
+    fail_msg: >-
+      GITEA_ADMIN_PASSWORD is not set. Export it from your password manager:
+      read -rs GITEA_ADMIN_PASSWORD && export GITEA_ADMIN_PASSWORD
+  no_log: true
+
 - name: Wait for Gitea pod to be ready
   ansible.builtin.command: >
     kubectl wait pod -l app=gitea -n gitea
@@ -33,6 +41,7 @@
       description: "Lumen airgap project"
     status_code: [201, 422]  # 422 = already exists
   register: create_org
+  no_log: true  # the request carries the admin password
 
 - name: Create Gitea repository 'lumen'
   ansible.builtin.uri:
@@ -49,32 +58,26 @@
       auto_init: false
     status_code: [201, 409]  # 409 = already exists
   register: create_repo
+  no_log: true  # the request carries the admin password
 
-- name: Add Gitea remote to local git repo
-  ansible.builtin.command: >
-    git -C {{ project_root }} remote remove gitea
-  failed_when: false
-  changed_when: false
-
-- name: Add Gitea remote
-  ansible.builtin.command: >
-    git -C {{ project_root }} remote add gitea
-    http://{{ gitea_admin_user }}:{{ gitea_admin_password }}@localhost:{{ gitea_local_port }}/{{ gitea_org }}/{{ gitea_repo }}.git
-  changed_when: true
-
+# Push straight to the URL: no remote added to the operator's repository (the
+# previous version removed the operator's own `gitea` remote), no credentials
+# in a URL, .git/config or a command line. GIT_ASKPASS reads them from the
+# environment; credential.helper is emptied so nothing lands in a keychain.
 - name: Push to Gitea
   ansible.builtin.command: >
-    git -C {{ project_root }} push gitea main --force
+    git -C {{ project_root }} -c credential.helper=
+    push http://localhost:{{ gitea_local_port }}/{{ gitea_org }}/{{ gitea_repo }}.git main --force
+  environment:
+    GIT_ASKPASS: "{{ role_path }}/files/git-askpass.sh"
+    GIT_TERMINAL_PROMPT: "0"
+    GITEA_USER: "{{ gitea_admin_user }}"
+    GITEA_PASSWORD: "{{ gitea_admin_password }}"
   changed_when: true
+  no_log: true
 
 - name: Stop port-forward
   ansible.builtin.command: pkill -f "kubectl port-forward -n gitea"
-  failed_when: false
-  changed_when: false
-
-- name: Clean up Gitea remote (optional, avoids credentials in git config)
-  ansible.builtin.command: >
-    git -C {{ project_root }} remote remove gitea
   failed_when: false
   changed_when: false
 
