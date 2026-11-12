@@ -3,9 +3,11 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -30,13 +32,28 @@ type PostgresStore struct {
 	eventsTotal *prometheus.CounterVec
 }
 
+// newPool opens a pool with explicit limits instead of the pgx defaults:
+// connections are recycled regularly (they follow a CNPG switchover to the
+// new primary) and checked in the background.
+func newPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	cfg.MaxConns = 10
+	cfg.MaxConnLifetime = 30 * time.Minute
+	cfg.MaxConnIdleTime = 5 * time.Minute
+	cfg.HealthCheckPeriod = 30 * time.Second
+	return pgxpool.NewWithConfig(ctx, cfg)
+}
+
 func NewPostgresStore(ctx context.Context, rwDSN, roDSN string, eventsTotal *prometheus.CounterVec) (*PostgresStore, error) {
-	rw, err := pgxpool.New(ctx, rwDSN)
+	rw, err := newPool(ctx, rwDSN)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to postgres rw: %w", err)
 	}
 
-	ro, err := pgxpool.New(ctx, roDSN)
+	ro, err := newPool(ctx, roDSN)
 	if err != nil {
 		rw.Close()
 		return nil, fmt.Errorf("failed to connect to postgres ro: %w", err)
@@ -95,7 +112,10 @@ func (s *PostgresStore) CreateItem(ctx context.Context, name string) (Item, erro
 		return Item{}, err
 	}
 
-	payload, _ := json.Marshal(map[string]any{"id": item.ID, "name": item.Name})
+	payload, err := json.Marshal(map[string]any{"id": item.ID, "name": item.Name})
+	if err != nil {
+		return Item{}, fmt.Errorf("encode event: %w", err)
+	}
 	_, err = tx.Exec(ctx,
 		`INSERT INTO events (type, aggregate, payload) VALUES ($1, $2, $3)`,
 		"ItemCreated", "item", payload,
@@ -111,8 +131,20 @@ func (s *PostgresStore) CreateItem(ctx context.Context, name string) (Item, erro
 	return item, nil
 }
 
-func (s *PostgresStore) GetItems(ctx context.Context) ([]Item, error) {
-	rows, err := s.ro.Query(ctx, `SELECT id, name, created_at FROM items ORDER BY id DESC`)
+// GetItems returns at most limit items, newest first. beforeID > 0 returns
+// the items older than that id (keyset pagination: stable while rows are
+// added, no OFFSET scan).
+func (s *PostgresStore) GetItems(ctx context.Context, limit, beforeID int) ([]Item, error) {
+	var rows pgx.Rows
+	var err error
+	if beforeID > 0 {
+		rows, err = s.ro.Query(ctx,
+			`SELECT id, name, created_at FROM items WHERE id < $1 ORDER BY id DESC LIMIT $2`,
+			beforeID, limit)
+	} else {
+		rows, err = s.ro.Query(ctx,
+			`SELECT id, name, created_at FROM items ORDER BY id DESC LIMIT $1`, limit)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -129,12 +161,26 @@ func (s *PostgresStore) GetItems(ctx context.Context) ([]Item, error) {
 	return items, rows.Err()
 }
 
+// GetItem reads from a replica. A row missing there may not be replicated
+// yet (read right after the POST that created it): the primary is asked
+// before answering ErrNotFound.
 func (s *PostgresStore) GetItem(ctx context.Context, id int) (Item, error) {
+	item, err := getItem(ctx, s.ro, id)
+	if errors.Is(err, ErrNotFound) {
+		return getItem(ctx, s.rw, id)
+	}
+	return item, err
+}
+
+func getItem(ctx context.Context, pool *pgxpool.Pool, id int) (Item, error) {
 	var item Item
-	err := s.ro.QueryRow(ctx,
+	err := pool.QueryRow(ctx,
 		`SELECT id, name, created_at FROM items WHERE id = $1`,
 		id,
 	).Scan(&item.ID, &item.Name, &item.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Item{}, ErrNotFound
+	}
 	return item, err
 }
 
@@ -150,10 +196,13 @@ func (s *PostgresStore) DeleteItem(ctx context.Context, id int) error {
 		return err
 	}
 	if result.RowsAffected() == 0 {
-		return fmt.Errorf("item %d not found", id)
+		return ErrNotFound
 	}
 
-	payload, _ := json.Marshal(map[string]any{"id": id})
+	payload, err := json.Marshal(map[string]any{"id": id})
+	if err != nil {
+		return fmt.Errorf("encode event: %w", err)
+	}
 	_, err = tx.Exec(ctx,
 		`INSERT INTO events (type, aggregate, payload) VALUES ($1, $2, $3)`,
 		"ItemDeleted", "item", payload,

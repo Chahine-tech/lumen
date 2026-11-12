@@ -58,7 +58,13 @@ func NewApp() (*App, error) {
 		slog.Warn("PostgreSQL not configured (PG_RW_DSN/PG_RO_DSN not set), /items routes unavailable")
 	}
 
-	h := handlers.NewHandler(redisStore, pgStore, m)
+	// A nil *PostgresStore stored in the interface would not compare equal to
+	// nil in the handlers: pass a nil interface when PostgreSQL is not configured
+	var items handlers.ItemStore
+	if pgStore != nil {
+		items = pgStore
+	}
+	h := handlers.NewHandler(redisStore, items, m)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", h.Health)

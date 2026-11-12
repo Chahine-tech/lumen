@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -14,13 +15,26 @@ import (
 
 var tracer = otel.Tracer("lumen-api")
 
+// ItemStore is the part of the PostgreSQL store used by the handlers.
+// *store.PostgresStore implements it; tests use a fake.
+type ItemStore interface {
+	Ping(ctx context.Context) error
+	CreateItem(ctx context.Context, name string) (store.Item, error)
+	GetItems(ctx context.Context, limit, beforeID int) ([]store.Item, error)
+	GetItem(ctx context.Context, id int) (store.Item, error)
+	DeleteItem(ctx context.Context, id int) error
+	GetEvents(ctx context.Context, eventType string, limit int) ([]store.Event, error)
+}
+
 type Handler struct {
 	store   *store.RedisStore
-	pgStore *store.PostgresStore
+	pgStore ItemStore
 	metrics *metrics.Metrics
 }
 
-func NewHandler(store *store.RedisStore, pgStore *store.PostgresStore, metrics *metrics.Metrics) *Handler {
+// NewHandler wires the handlers. pgStore must be a nil interface (not a
+// typed nil pointer) when PostgreSQL is not configured.
+func NewHandler(store *store.RedisStore, pgStore ItemStore, metrics *metrics.Metrics) *Handler {
 	return &Handler{
 		store:   store,
 		pgStore: pgStore,

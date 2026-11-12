@@ -11,6 +11,9 @@ import (
 )
 
 func (h *Handler) GetEvents(w http.ResponseWriter, r *http.Request) {
+	if !h.requireStore(w) {
+		return
+	}
 	ctx, span := tracer.Start(r.Context(), "events.list")
 	defer span.End()
 
@@ -27,9 +30,11 @@ func (h *Handler) GetEvents(w http.ResponseWriter, r *http.Request) {
 		attribute.Int("events.limit", limit),
 	)
 
-	_, dbSpan := tracer.Start(ctx, "db.select.events")
+	dbCtx, cancel := dbContext(ctx)
+	defer cancel()
+	_, dbSpan := tracer.Start(dbCtx, "db.select.events")
 	dbSpan.SetAttributes(attribute.String("db.operation", "SELECT"), attribute.String("db.table", "events"))
-	events, err := h.pgStore.GetEvents(ctx, eventType, limit)
+	events, err := h.pgStore.GetEvents(dbCtx, eventType, limit)
 	if err != nil {
 		dbSpan.RecordError(err)
 		dbSpan.SetStatus(codes.Error, err.Error())

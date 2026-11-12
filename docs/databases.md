@@ -101,7 +101,28 @@ type PostgresStore struct {
 
 Routes:
 - `POST /items`, `DELETE /items/{id}` → `rw` pool
-- `GET /items`, `GET /items/{id}` → `ro` pool
+- `GET /items`, `GET /items/{id}`, `GET /events` → `ro` pool
+- `GET /items/{id}` falls back to the `rw` pool when the replica does not have
+  the row: a read right after the `POST` that created it can arrive before
+  replication.
+
+Both pools: at most 10 connections, recycled every 30 minutes (they follow a
+switchover to the new primary), health-checked every 30 seconds. Every query
+runs with a 5 second timeout.
+
+API behavior:
+- `GET /items?limit=N&before=ID`: newest first, `limit` 1 to 1000 (default
+  100). When the page is full, the `X-Next-Before` header holds the `before`
+  value for the next page.
+- 404 only when the row does not exist. A database error answers 500, so it
+  counts against the availability SLO and the canary analysis (it used to be
+  a 404).
+- Without `PG_RW_DSN`/`PG_RO_DSN`, the `/items` and `/events` routes answer
+  503 (they used to panic).
+- Item names: 1 to 200 characters after trimming, no control characters.
+
+Store tests against a real PostgreSQL: see `internal/store/postgres_test.go`
+(skipped unless `LUMEN_TEST_PG_DSN` is set).
 
 ### Connection (lumen-api)
 
