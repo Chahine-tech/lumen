@@ -107,9 +107,12 @@ echo "[6/7] Deploying PostgreSQL Cluster..."
 # ObjectStore before the Cluster: the Cluster references it for WAL archiving.
 # Its credentials (Secret lumen-db-backup-s3) are synced by VSO from Vault
 # lumen/cnpg-backup, seeded by seed-cnpg-backup-creds.sh.
-for f in 03-network-policy.yaml 06-object-store.yaml 02-cluster.yaml 07-scheduled-backup.yaml; do
-    multipass transfer "${MANIFESTS_DIR}/${f}" "node-1:/tmp/cnpg-${f}"
-    multipass exec node-1 -- kubectl apply -f "/tmp/cnpg-${f}"
+apply_manifest() {
+    multipass transfer "${MANIFESTS_DIR}/$1" "node-1:/tmp/cnpg-$1"
+    multipass exec node-1 -- kubectl apply -f "/tmp/cnpg-$1"
+}
+for f in 03-network-policy.yaml 06-object-store.yaml 02-cluster.yaml; do
+    apply_manifest "$f"
 done
 
 echo "  Waiting for PostgreSQL cluster to be ready (may take 2-3 min)..."
@@ -117,8 +120,19 @@ multipass exec node-1 -- kubectl wait --for=condition=Ready \
     cluster/lumen-db \
     -n lumen \
     --timeout=300s
+multipass exec node-1 -- kubectl wait \
+    --for=jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}'=True \
+    cluster/lumen-db \
+    -n lumen \
+    --timeout=300s
 
-echo "  ✅ PostgreSQL cluster ready"
+echo "  ✅ PostgreSQL cluster ready, WAL archiving working"
+
+# Only now: `immediate: true` takes a backup the moment the ScheduledBackup is
+# created. Created before every instance runs the plugin sidecar, that first
+# backup fails ("requested plugin is not available") and is not retried
+# before the next scheduled run (seen on the k3d test, 2026-11-12).
+apply_manifest 07-scheduled-backup.yaml
 
 # ── Step 7: Verify ─────────────────────────────────────────────────────────
 echo ""

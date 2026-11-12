@@ -33,7 +33,10 @@ if [ "$(printf '%s\n%s\n' "$MIN_CNPG_VERSION" "$CNPG_VERSION" | sort -V | head -
   exit 1
 fi
 echo "  ✅ CloudNativePG ${CNPG_VERSION}"
-$KUBECTL get crd certificates.cert-manager.io > /dev/null
+if ! $KUBECTL get crd certificates.cert-manager.io > /dev/null 2>&1; then
+  echo "  ❌ cert-manager is not installed (CRD certificates.cert-manager.io missing)"
+  exit 1
+fi
 echo "  ✅ cert-manager CRDs present"
 if [ ! -f "$MANIFEST" ]; then
   echo "  ❌ Missing ${MANIFEST}: run 01-connected-zone/scripts/12-pull-cnpg.sh"

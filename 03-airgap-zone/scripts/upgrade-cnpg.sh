@@ -7,8 +7,10 @@
 #   2. applies the operator manifest (images rewritten to the airgap registry)
 #   3. waits for the operator, then for lumen-db to finish its rolling update
 #
-# Each operator upgrade restarts every PostgreSQL instance and ends with a
-# switchover (primaryUpdateStrategy: unsupervised): lumen-api reconnects.
+# Each operator upgrade restarts every PostgreSQL instance, replicas first,
+# then the primary in place (primaryUpdateMethod defaults to restart; CNPG
+# falls back to a switchover when a restart is not possible). lumen-api loses
+# its connections for the duration of the primary restart and reconnects.
 #
 # Prerequisites:
 #   - Manifests downloaded by 01-connected-zone/scripts/12-pull-cnpg.sh

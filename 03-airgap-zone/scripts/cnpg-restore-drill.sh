@@ -112,6 +112,10 @@ echo "  ✅ Backup ${BACKUP_NAME} completed"
 # ── 2. Markers around the target time ──────────────────────────────────────
 echo ""
 echo "[2/6] Writing markers..."
+# The 'after' marker is also what lets the recovery finish: PostgreSQL stops a
+# time-targeted recovery at the first commit past the target. Without a commit
+# after T in the archive, it fails with "recovery ended before configured
+# recovery target was reached" (seen on the k3d test, 2026-11-12).
 psql_on "$PRIMARY" "CREATE TABLE IF NOT EXISTS restore_drill_marker (
   run_id text NOT NULL, marker text NOT NULL, created_at timestamptz NOT NULL DEFAULT now())" > /dev/null
 psql_on "$PRIMARY" "INSERT INTO restore_drill_marker (run_id, marker) VALUES ('${RUN_ID}', 'before')" > /dev/null
@@ -142,6 +146,18 @@ apply_file "${DRILL_DIR}/01-network-policy.yaml"
 RESTORE_START=$SECONDS
 apply_file "/tmp/drill-cluster-${RUN_ID}.yaml"
 drill_ready() {
+  # A recovery that cannot complete makes CNPG retry the job forever: stop
+  # after 3 failed pods instead of waiting for the 30 minute timeout
+  local failed
+  failed=$($KUBECTL get pods -n "$NAMESPACE" --field-selector=status.phase=Failed -o name \
+    | grep -c "${DRILL_CLUSTER}-.*-full-recovery" || true)
+  if [ "$failed" -ge 3 ]; then
+    echo "  ❌ Recovery job failed ${failed} times. Logs:"
+    echo "     kubectl logs -n ${NAMESPACE} <${DRILL_CLUSTER}-1-full-recovery-…> -c full-recovery"
+    echo "     'recovery ended before configured recovery target was reached' means no"
+    echo "     transaction after the target time was archived"
+    exit 1
+  fi
   [ "$($KUBECTL get cluster "$DRILL_CLUSTER" -n "$NAMESPACE" -o jsonpath='{.status.phase}')" = "Cluster in healthy state" ]
 }
 wait_for "${DRILL_CLUSTER} healthy" 1800 drill_ready

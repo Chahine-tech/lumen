@@ -31,7 +31,9 @@ Garage on backup-1 (192.168.2.4:3900), bucket lumen-pg-backups
   segment not yet archived). Losing one instance loses nothing: replicas take
   over.
 - Recovery window: any point in time during the last 30 days.
-- RTO: unknown until the restore drill has run. Record it in the drill log below.
+- RTO: not measured on the lumen cluster yet. On the k3d test (1 GiB volumes,
+  a few MB of data) a full rebuild of the 3-instance cluster took 82s. Real
+  numbers go in the drill log below.
 
 **What this does not protect against:**
 
@@ -121,8 +123,18 @@ Existing cluster: upgrade the operator first (next section), then:
 ./03-airgap-zone/scripts/install-cnpg-plugin.sh
 kubectl apply -f 03-airgap-zone/manifests/cnpg/06-object-store.yaml
 kubectl apply -f 03-airgap-zone/manifests/cnpg/02-cluster.yaml    # adds .spec.plugins: rolling restart
+# Wait for the rolling restart AND for WAL archiving before the next command
+kubectl wait --for=condition=Ready cluster/lumen-db -n lumen --timeout=600s
+kubectl wait cluster/lumen-db -n lumen --timeout=300s \
+  --for=jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}'=True
 kubectl apply -f 03-airgap-zone/manifests/cnpg/07-scheduled-backup.yaml
 ```
+
+Do not apply `07-scheduled-backup.yaml` together with `02-cluster.yaml`: its
+`immediate: true` backup starts at once, lands on an instance that does not
+run the plugin sidecar yet, fails with `requested plugin is not available`,
+and is not retried before 02:00 UTC. If that happened, delete and re-apply
+the ScheduledBackup to trigger the immediate backup again.
 
 ### 8. Check
 
@@ -161,9 +173,13 @@ K3s itself is upgraded one minor at a time too, which is outside the scope of
 these scripts (issue #10). `04-ansible/group_vars/all.yml` still pins
 `k3s_version: v1.28.5+k3s1`, which no plugin-capable CNPG version supports.
 
-Each operator upgrade restarts every PostgreSQL instance and ends with a
-switchover: lumen-api reconnects. `upgrade-cnpg.sh` waits for `lumen-db` to be
-healthy before the next step.
+Each operator upgrade restarts every PostgreSQL instance: replicas first, then
+the primary in place (`primaryUpdateMethod` defaults to `restart`, with a
+switchover only when a restart is not possible). lumen-api loses its
+connections while the primary restarts and reconnects. `upgrade-cnpg.sh` waits
+for `lumen-db` to be healthy before the next step. Observed on the k3d test
+(1.29.3 to 1.30.1, 3 instances): all pods recreated with the new instance
+manager, primary unchanged, data intact.
 
 ## Restore
 
@@ -210,14 +226,31 @@ Run it after every change to the backup chain, and at least once a month.
 4. Wait for `Cluster in healthy state`, then take a base backup right away
    (`kubectl cnpg backup lumen-db -n lumen --method=plugin --plugin-name=barman-cloud.cloudnative-pg.io`,
    or a `Backup` resource as in the drill script).
-5. Check that lumen-api can log in. Its credentials come from Vault
-   `lumen/db`, seeded from the original `lumen-db-app` Secret: compare them
-   with the new `lumen-db-app` Secret and update Vault if they differ.
+5. Give lumen-api the new database password. The recovery bootstrap creates
+   a new `lumen-db-app` Secret and resets the password of role `app`: the old
+   password, the one in Vault `lumen/db` that lumen-api uses, is refused
+   (`password authentication failed`, seen on the k3d test). Copy the new
+   one into Vault through a pipe (admin token needed):
+   ```bash
+   # stdin: token on the first line, then the password (never in a command line)
+   { printf '%s\n' "$VAULT_TOKEN"
+     kubectl get secret lumen-db-app -n lumen -o jsonpath='{.data.password}' | base64 -d
+   } | kubectl exec -i -n vault vault-0 -- sh -c \
+     'read -r VAULT_TOKEN; export VAULT_TOKEN VAULT_ADDR=http://127.0.0.1:8200; vault kv patch lumen/db password=-'
+   ```
+   `kv patch` keeps `username` and `dbname`. VSO updates Secret
+   `lumen-db-vault` within `refreshAfter` (1h): restart lumen-api once it has
+   changed (`kubectl argo rollouts restart lumen-api -n lumen`).
 6. Update `02-cluster.yaml` in git with the new `serverName` (so the next
    restore reads from the right path), then re-enable auto-sync on `lumen-app`:
    ArgoCD restores the HPA and the replicas.
 
-This procedure has not been run yet. Rehearse it on a copy before trusting it.
+Tested once on a k3d cluster (Kubernetes 1.34.12, CNPG 1.30.1, plugin
+v0.16.0, Garage v2.5.0) on 2026-11-12: steps 2 to 5, nothing lost up to the
+last archived segment (the last row was written, its WAL segment switched and
+archived before the deletion), 82s to a healthy 3-instance cluster, new
+archive under `lumen-db-r1/`, old `lumen-db/` untouched. Not run on the lumen
+cluster yet.
 
 ## Monitoring
 
@@ -225,7 +258,7 @@ This procedure has not been run yet. Rehearse it on a copy before trusting it.
 |---|---|
 | `CNPGBaseBackupTooOld` | no successful base backup for 26h (daily schedule + slack) |
 | `CNPGBackupMetricsAbsent` | no backup metric at all for 1h (plugin or scrape broken, or no backup ever) |
-| `CNPGLastBackupFailed` | the last base backup failed |
+| `CNPGLastBackupFailed` | the last base backup failed in the plugin (a backup refused before it reaches the plugin leaves the metric at 0: only `CNPGBaseBackupTooOld` sees it) |
 | `CNPGWALArchivingFailing` | the last WAL archive attempt failed and none succeeded since |
 
 Unit tests: `make test-alert-rules` (promtool, `03-airgap-zone/tests/prometheus/`).
@@ -239,4 +272,5 @@ The CNPG Grafana dashboard already reads the plugin metrics
 
 | Date | Run ID | Result | Restore time | Notes |
 |---|---|---|---|---|
-| | | | | not run yet |
+| 2026-11-12 | 20261112133450 | PASS | 56s | k3d test cluster, not lumen. Two negative controls also run: a target after the `after` marker gives FAIL, a target with no later commit stops through the fail-fast check |
+| 2026-11-12 | 20261112135147 | PASS | 57s | k3d test cluster, rerun after adding the fail-fast check |

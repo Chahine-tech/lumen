@@ -51,6 +51,10 @@ spec:
               Prometheus has no barman_cloud_cloudnative_pg_io_last_available_backup_timestamp
               for namespace lumen. Either no backup exists or the plugin/scrape is broken.
 
+        # Only sees failures recorded by the plugin. A backup that fails before
+        # it reaches the plugin (e.g. "requested plugin is not available",
+        # seen on the k3d test) leaves this metric at 0: CNPGBaseBackupTooOld
+        # catches that case, later.
         - alert: CNPGLastBackupFailed
           expr: |
             max by (namespace) (barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp{namespace="lumen"})

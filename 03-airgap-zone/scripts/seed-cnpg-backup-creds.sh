@@ -27,7 +27,8 @@ S3_REGION="garage"
 VAULT_PATH="lumen/cnpg-backup"
 
 garage() {
-  multipass exec "$GARAGE_VM" -- sudo docker exec "$GARAGE_CONTAINER" /garage "$@"
+  # RUST_LOG=warn: the CLI logs its RPC connection at INFO level on stderr
+  multipass exec "$GARAGE_VM" -- sudo docker exec -e RUST_LOG=warn "$GARAGE_CONTAINER" /garage "$@"
 }
 
 echo "[1/3] Reading access key ${GARAGE_KEY_NAME} from Garage on ${GARAGE_VM}..."
