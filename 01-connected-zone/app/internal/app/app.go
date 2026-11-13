@@ -8,6 +8,7 @@ import (
 	"net/http/pprof"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -23,6 +24,11 @@ type App struct {
 	pgStore *store.PostgresStore
 	metrics *metrics.Metrics
 	server  *http.Server
+
+	// draining is set at SIGTERM: /readyz then answers 503 (probes.go)
+	draining atomic.Bool
+	// drainDelay: time between failing readiness and closing the listener
+	drainDelay time.Duration
 }
 
 func NewApp() (*App, error) {
@@ -32,6 +38,12 @@ func NewApp() (*App, error) {
 	redisMasterName := getEnv("REDIS_MASTER_NAME", "mymaster")
 	redisPassword   := getEnv("REDIS_PASSWORD", "")
 	port            := getEnv("PORT", "8080")
+
+	drainDelay, err := time.ParseDuration(getEnv("SHUTDOWN_DRAIN_DELAY", "5s"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid SHUTDOWN_DRAIN_DELAY: %w", err)
+	}
+	a := &App{drainDelay: drainDelay}
 
 	pgRWDSN := getEnv("PG_RW_DSN", "")
 	pgRODSN := getEnv("PG_RO_DSN", "")
@@ -67,6 +79,9 @@ func NewApp() (*App, error) {
 	h := handlers.NewHandler(redisStore, items, m)
 
 	mux := http.NewServeMux()
+	// Kubernetes probes (probes.go), and /health: dependency report for humans
+	mux.HandleFunc("GET /livez", a.livez)
+	mux.HandleFunc("GET /readyz", a.readyz)
 	mux.HandleFunc("/health", h.Health)
 	mux.HandleFunc("/hello", h.Hello)
 	mux.Handle("/metrics", promhttp.Handler())
@@ -107,12 +122,11 @@ func NewApp() (*App, error) {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	return &App{
-		store:   redisStore,
-		pgStore: pgStore,
-		metrics: m,
-		server:  server,
-	}, nil
+	a.store = redisStore
+	a.pgStore = pgStore
+	a.metrics = m
+	a.server = server
+	return a, nil
 }
 
 func (a *App) Run() error {
@@ -122,6 +136,7 @@ func (a *App) Run() error {
 	go func() {
 		slog.Info("Server starting", "addr", a.server.Addr)
 		slog.Info("Endpoints available",
+			"probes", "/livez, /readyz",
 			"health", "/health",
 			"hello", "/hello",
 			"items", "/items (POST/GET), /items/{id} (GET/DELETE)",
@@ -143,10 +158,12 @@ func (a *App) Run() error {
 	case sig := <-shutdown:
 		slog.Info("Received signal, starting graceful shutdown", "signal", sig.String())
 
+		// Drain delay + in-flight requests must fit in 30s, below the pod's
+		// terminationGracePeriodSeconds (45s in 03-lumen-api.yaml)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if err := a.server.Shutdown(ctx); err != nil {
+		if err := a.shutdown(ctx); err != nil {
 			slog.Error("Error during server shutdown", "error", err)
 			if closeErr := a.server.Close(); closeErr != nil {
 				return fmt.Errorf("could not stop server: %w", closeErr)

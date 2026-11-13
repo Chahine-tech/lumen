@@ -115,6 +115,8 @@ spec:
         prometheus.io/port: "8080"
         prometheus.io/path: "/metrics"
     spec:
+      # Above the app's 30s shutdown budget (drain delay + in-flight requests)
+      terminationGracePeriodSeconds: 45
       containers:
         - name: lumen-api
           image: 192.168.2.2:5000/lumen-api:v1.6.0
@@ -186,13 +188,32 @@ spec:
             limits:
               cpu: 500m
               memory: 128Mi
-          livenessProbe:
-            httpGet:
-              path: /health
+          # Liveness must not depend on Redis or PostgreSQL: /health checks
+          # them, so a short outage of either restarted every pod at once
+          # (k3d test, Redis down 130s: 8 restarts before, 0 with this).
+          # The TCP check works with every image. Readiness stays on /health
+          # until the deployed image has /readyz: during a Redis outage pods
+          # are unready (no restart, back within 30s).
+          #
+          # Once the image is a release with /livez and /readyz (after
+          # v1.6.0), switch to:
+          #   startupProbe:   httpGet /livez,  periodSeconds 2, failureThreshold 30
+          #   livenessProbe:  httpGet /livez,  periodSeconds 15, timeoutSeconds 5
+          #   readinessProbe: httpGet /readyz, periodSeconds 2, timeoutSeconds 2,
+          #                   failureThreshold 1 (503 from SIGTERM: leaves the
+          #                   Service within ~2s, the app drains 5s more)
+          # (docs/architecture.md, "Probes and shutdown")
+          startupProbe:
+            tcpSocket:
               port: 8080
-            initialDelaySeconds: 10
+            periodSeconds: 2
+            failureThreshold: 30     # up to 60s to start (schema migration)
+          livenessProbe:
+            tcpSocket:
+              port: 8080
             periodSeconds: 15
             timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /health

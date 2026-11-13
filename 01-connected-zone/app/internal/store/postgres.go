@@ -96,6 +96,14 @@ func (s *PostgresStore) Ping(ctx context.Context) error {
 	return nil
 }
 
+// PingReplica checks the read-only pool, which serves every GET route.
+func (s *PostgresStore) PingReplica(ctx context.Context) error {
+	if err := s.ro.Ping(ctx); err != nil {
+		return fmt.Errorf("ro ping failed: %w", err)
+	}
+	return nil
+}
+
 func (s *PostgresStore) CreateItem(ctx context.Context, name string) (Item, error) {
 	tx, err := s.rw.Begin(ctx)
 	if err != nil {

@@ -19,6 +19,7 @@ var tracer = otel.Tracer("lumen-api")
 // *store.PostgresStore implements it; tests use a fake.
 type ItemStore interface {
 	Ping(ctx context.Context) error
+	PingReplica(ctx context.Context) error
 	CreateItem(ctx context.Context, name string) (store.Item, error)
 	GetItems(ctx context.Context, limit, beforeID int) ([]store.Item, error)
 	GetItem(ctx context.Context, id int) (store.Item, error)
@@ -68,7 +69,9 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	status := "healthy"
 
 	_, redisSpan := tracer.Start(ctx, "redis.ping")
-	if err := h.store.Ping(ctx); err != nil {
+	redisCtx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
+	defer cancel()
+	if err := h.store.Ping(redisCtx); err != nil {
 		redisSpan.RecordError(err)
 		redisSpan.SetStatus(codes.Error, err.Error())
 		checks["redis"] = "unhealthy"
@@ -80,20 +83,8 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	}
 	redisSpan.End()
 
-	_, pgSpan := tracer.Start(ctx, "postgres.ping")
-	if h.pgStore != nil {
-		if err := h.pgStore.Ping(ctx); err != nil {
-			pgSpan.RecordError(err)
-			pgSpan.SetStatus(codes.Error, err.Error())
-			checks["postgres"] = "unhealthy"
-			status = "degraded"
-		} else {
-			checks["postgres"] = "healthy"
-		}
-	} else {
-		checks["postgres"] = "not configured"
-	}
-	pgSpan.End()
+	h.checkPostgres(ctx, "postgres", "postgres.ping", checks, &status, func(c context.Context) error { return h.pgStore.Ping(c) })
+	h.checkPostgres(ctx, "postgres_replica", "postgres.ping.replica", checks, &status, func(c context.Context) error { return h.pgStore.PingReplica(c) })
 
 	span.SetAttributes(attribute.String("health.status", status))
 
@@ -107,6 +98,26 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	} else {
 		writeJSON(w, http.StatusOK, response)
 	}
+}
+
+// checkPostgres runs one PostgreSQL check of /health under its own span.
+func (h *Handler) checkPostgres(ctx context.Context, key, spanName string, checks map[string]string, status *string, ping func(context.Context) error) {
+	_, span := tracer.Start(ctx, spanName)
+	defer span.End()
+	if h.pgStore == nil {
+		checks[key] = "not configured"
+		return
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, healthCheckTimeout)
+	defer cancel()
+	if err := ping(pingCtx); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		checks[key] = "unhealthy"
+		*status = "degraded"
+		return
+	}
+	checks[key] = "healthy"
 }
 
 func (h *Handler) Hello(w http.ResponseWriter, r *http.Request) {

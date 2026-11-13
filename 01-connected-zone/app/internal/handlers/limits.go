@@ -13,4 +13,7 @@ const (
 	// dbTimeout bounds every store call. Below the server WriteTimeout (10s),
 	// so a slow query still gets an error response.
 	dbTimeout = 5 * time.Second
+
+	// healthCheckTimeout bounds each dependency check of /health
+	healthCheckTimeout = 2 * time.Second
 )

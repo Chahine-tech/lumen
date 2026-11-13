@@ -18,6 +18,8 @@ import (
 type fakeItemStore struct {
 	items map[int]store.Item
 	err   error
+	// replicaErr is returned by PingReplica only
+	replicaErr error
 	// arguments of the last GetItems call
 	lastLimit, lastBefore int
 }
@@ -27,6 +29,8 @@ func newFakeItemStore() *fakeItemStore {
 }
 
 func (f *fakeItemStore) Ping(context.Context) error { return f.err }
+
+func (f *fakeItemStore) PingReplica(context.Context) error { return f.replicaErr }
 
 func (f *fakeItemStore) CreateItem(_ context.Context, name string) (store.Item, error) {
 	if f.err != nil {

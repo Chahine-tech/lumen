@@ -650,8 +650,12 @@ The API is the application workload that serves as the reason for all this infra
                     ┌────────────────▼────────────────┐
                     │           Handlers               │
                     │                                  │
+                    │  GET  /livez    → 200 (process)  │
+                    │  GET  /readyz   → 503 on SIGTERM │
+                    │                                  │
                     │  GET  /health   → redis.Ping     │
                     │                   + postgres.Ping│
+                    │                   (rw and ro)    │
                     │                   → healthy /    │
                     │                     degraded     │
                     │                                  │
@@ -692,6 +696,13 @@ The API is the application workload that serves as the reason for all this infra
 ```
 
 If the client receives a network timeout and retries the same request with the same `Idempotency-Key`, it gets exactly the same response — without creating a duplicate in the database. A critical pattern for financial APIs and distributed systems.
+
+**Probes and shutdown:**
+- `/livez` (liveness) and `/readyz` (readiness) do not check Redis or PostgreSQL. Both are shared by every replica: a probe that depends on them restarts or unreadies all pods at once. On a k3d test with Redis stopped for 130s, probes on `/health` gave 8 restarts and 0/2 pods ready; `/livez` + `/readyz` gave 0 restarts and 2/2 ready.
+- Rollout in two steps, because the image deployed today (v1.6.0) has no `/livez` or `/readyz`: `03-lumen-api.yaml` first uses a TCP liveness and startup probe and keeps readiness on `/health` (same k3d test: 0 restarts, pods unready during the outage and back within 30s). The switch to `/livez` and `/readyz` comes after the first release that contains them; the target probes are written in a comment of the manifest.
+- `/health` reports the dependencies (Redis, PostgreSQL primary and replica, 2s timeout each) for humans and scripts.
+- On SIGTERM, `/readyz` answers 503, the server keeps serving for `SHUTDOWN_DRAIN_DELAY` (default 5s) while the pod leaves the Service endpoints, then stops accepting connections and waits for in-flight requests (30s budget, `terminationGracePeriodSeconds: 45`).
+- A dependency missing at startup still makes the process exit: Kubernetes restarts it with backoff, and the `startupProbe` only covers a slow start.
 
 **Observability built into every handler:**
 - Each handler opens a child OTel span (`tracer.Start`) — Redis/PG errors are recorded in the span (`span.RecordError`)
