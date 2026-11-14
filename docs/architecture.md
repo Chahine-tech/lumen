@@ -671,8 +671,12 @@ The API is the application workload that serves as the reason for all this infra
                     │                   (append-only,  │
                     │                    replica read) │
                     │                                  │
-                    │  GET  /metrics  → Prometheus     │
-                    │  GET  /debug/pprof/              │
+                    ├──────────────────────────────────┤
+                    │  admin port 9090 (Prometheus     │
+                    │  only, not routed by Traefik):   │
+                    │  GET  /metrics                   │
+                    │  GET  /debug/pprof/ (off unless  │
+                    │       PPROF_ENABLED=true)        │
                     └──────────────────────────────────┘
 ```
 

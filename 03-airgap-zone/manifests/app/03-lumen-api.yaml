@@ -34,6 +34,12 @@ spec:
       targetPort: 8080
       protocol: TCP
       name: http
+    # /metrics and pprof (off by default), not routed by Traefik. Scraped
+    # once the deployed image has it: docs/runbooks/lumen-api-admin-port.md
+    - port: 9090
+      targetPort: 9090
+      protocol: TCP
+      name: admin
   selector:
     app: lumen-api
 

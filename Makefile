@@ -33,7 +33,7 @@ test-api-local: ## Test API locally with docker-compose
 	@echo "Testing endpoints..."
 	@curl -s http://localhost:8080/health | jq .
 	@curl -s http://localhost:8080/hello | jq .
-	@echo "Metrics available at: http://localhost:8080/metrics"
+	@echo "Metrics available at: http://localhost:9090/metrics"
 
 stop-local: ## Stop local docker-compose
 	cd 01-connected-zone && docker-compose down

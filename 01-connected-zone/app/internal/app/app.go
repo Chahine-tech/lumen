@@ -2,10 +2,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/http/pprof"
 	"os"
 	"os/signal"
 	"sync/atomic"
@@ -16,7 +16,6 @@ import (
 	"github.com/Chahine-tech/lumen/internal/metrics"
 	"github.com/Chahine-tech/lumen/internal/middleware"
 	"github.com/Chahine-tech/lumen/internal/store"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type App struct {
@@ -24,6 +23,8 @@ type App struct {
 	pgStore *store.PostgresStore
 	metrics *metrics.Metrics
 	server  *http.Server
+	// adminServer serves /metrics and, when enabled, pprof (admin.go)
+	adminServer *http.Server
 
 	// draining is set at SIGTERM: /readyz then answers 503 (probes.go)
 	draining atomic.Bool
@@ -38,6 +39,8 @@ func NewApp() (*App, error) {
 	redisMasterName := getEnv("REDIS_MASTER_NAME", "mymaster")
 	redisPassword   := getEnv("REDIS_PASSWORD", "")
 	port            := getEnv("PORT", "8080")
+	adminPort       := getEnv("ADMIN_PORT", "9090")
+	pprofEnabled    := getEnv("PPROF_ENABLED", "false") == "true"
 
 	drainDelay, err := time.ParseDuration(getEnv("SHUTDOWN_DRAIN_DELAY", "5s"))
 	if err != nil {
@@ -82,29 +85,7 @@ func NewApp() (*App, error) {
 	}
 	h := handlers.NewHandler(redisStore, items, m)
 
-	mux := http.NewServeMux()
-	// Kubernetes probes (probes.go), and /health: dependency report for humans
-	mux.HandleFunc("GET /livez", a.livez)
-	mux.HandleFunc("GET /readyz", a.readyz)
-	mux.HandleFunc("/health", h.Health)
-	mux.HandleFunc("/hello", h.Hello)
-	mux.Handle("/metrics", promhttp.Handler())
-
-	// Items CRUD routes (require PostgreSQL)
-	mux.HandleFunc("GET /items", h.GetItems)
-	mux.HandleFunc("POST /items", h.CreateItem)
-	mux.HandleFunc("GET /items/{id}", h.GetItem)
-	mux.HandleFunc("DELETE /items/{id}", h.DeleteItem)
-
-	// Event log — audit trail (append-only, read from replica)
-	mux.HandleFunc("GET /events", h.GetEvents)
-
-	// pprof endpoints for profiling (CPU, memory, goroutines)
-	mux.HandleFunc("/debug/pprof/", pprof.Index)
-	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	mux := a.publicMux(h)
 
 	handler := middleware.Recovery(
 		middleware.Tracing("lumen-api")(
@@ -126,6 +107,8 @@ func NewApp() (*App, error) {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	a.adminServer = newAdminServer(":"+adminPort, pprofEnabled)
+
 	a.store = redisStore
 	a.pgStore = pgStore
 	a.metrics = m
@@ -133,9 +116,31 @@ func NewApp() (*App, error) {
 	return a, nil
 }
 
+// publicMux holds the routes served on PORT: the API and the probes. The
+// metrics and pprof are on the admin listener, which is neither routed by
+// Traefik nor reachable from outside the monitoring namespace.
+func (a *App) publicMux(h *handlers.Handler) *http.ServeMux {
+	mux := http.NewServeMux()
+	// Kubernetes probes (probes.go), and /health: dependency report for humans
+	mux.HandleFunc("GET /livez", a.livez)
+	mux.HandleFunc("GET /readyz", a.readyz)
+	mux.HandleFunc("/health", h.Health)
+	mux.HandleFunc("/hello", h.Hello)
+
+	// Items CRUD routes (require PostgreSQL)
+	mux.HandleFunc("GET /items", h.GetItems)
+	mux.HandleFunc("POST /items", h.CreateItem)
+	mux.HandleFunc("GET /items/{id}", h.GetItem)
+	mux.HandleFunc("DELETE /items/{id}", h.DeleteItem)
+
+	// Event log: audit trail (append-only, read from replica)
+	mux.HandleFunc("GET /events", h.GetEvents)
+	return mux
+}
+
 func (a *App) Run() error {
 
-	serverErrors := make(chan error, 1)
+	serverErrors := make(chan error, 2)
 
 	go func() {
 		slog.Info("Server starting", "addr", a.server.Addr)
@@ -145,11 +150,14 @@ func (a *App) Run() error {
 			"hello", "/hello",
 			"items", "/items (POST/GET), /items/{id} (GET/DELETE)",
 			"events", "/events (GET), /events?type=ItemCreated&limit=50",
-			"metrics", "/metrics",
-			"pprof", "/debug/pprof/",
 		)
 
 		serverErrors <- a.server.ListenAndServe()
+	}()
+
+	go func() {
+		slog.Info("Admin server starting", "addr", a.adminServer.Addr)
+		serverErrors <- fmt.Errorf("admin: %w", a.adminServer.ListenAndServe())
 	}()
 
 	shutdown := make(chan os.Signal, 1)
@@ -169,7 +177,7 @@ func (a *App) Run() error {
 
 		if err := a.shutdown(ctx); err != nil {
 			slog.Error("Error during server shutdown", "error", err)
-			if closeErr := a.server.Close(); closeErr != nil {
+			if closeErr := errors.Join(a.server.Close(), a.adminServer.Close()); closeErr != nil {
 				return fmt.Errorf("could not stop server: %w", closeErr)
 			}
 		}

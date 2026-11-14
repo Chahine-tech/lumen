@@ -1024,6 +1024,10 @@ Alloy runs as a **DaemonSet** (one pod per node) and:
 /debug/pprof/cmdline   — command line args
 ```
 
+Since #17 they are on the admin port (9090, Prometheus only, not routed by
+Traefik) and off unless `PPROF_ENABLED=true`: see the
+[admin port runbook](runbooks/lumen-api-admin-port.md).
+
 **Structured JSON logging** via `log/slog` (stdlib, no external deps):
 ```json
 {"time":"2026-02-17T10:00:00Z","level":"INFO","msg":"request","method":"GET","path":"/hello","status":200,"duration_ms":1,"remote_addr":"10.0.0.1:12345"}

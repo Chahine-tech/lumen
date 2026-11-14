@@ -1,5 +1,9 @@
-# Allow external access to lumen-api
-# In production, this would be from an ingress controller or load balancer
+# lumen-api port 8080 (the API): from Traefik only
+#
+# Before: from every namespace, so any pod in the cluster reached the API
+# (and pprof) without going through Traefik and its mTLS. Prometheus has its
+# own policy (05-allow-monitoring.yaml); the kubelet probes are not subject
+# to NetworkPolicies.
 
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -7,7 +11,7 @@ metadata:
   name: allow-api-ingress
   namespace: lumen
   annotations:
-    description: "Allow external traffic to lumen-api on port 8080"
+    description: "Allow Traefik to reach lumen-api on port 8080"
 spec:
   podSelector:
     matchLabels:
@@ -15,10 +19,13 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Allow from anywhere (in airgap, "anywhere" is just internal network)
     - from:
-        - namespaceSelector: {}
-        - podSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
       ports:
         - protocol: TCP
           port: 8080

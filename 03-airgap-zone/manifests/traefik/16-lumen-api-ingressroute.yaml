@@ -37,7 +37,12 @@ spec:
   entryPoints:
     - websecure
   routes:
-    - match: Host(`lumen-api.airgap.local`)
+    # The API routes only: any other path (/metrics, /debug/pprof, a route
+    # added later by mistake) gets a 404 from Traefik and never reaches the
+    # pods. The metrics and pprof are on the admin port (9090), which no
+    # IngressRoute targets. One line: Traefik rejects a rule with line
+    # breaks, and the whole route then answers 404.
+    - match: Host(`lumen-api.airgap.local`) && (Path(`/hello`) || Path(`/health`) || Path(`/events`) || Path(`/items`) || PathPrefix(`/items/`))
       kind: Rule
       services:
         - name: lumen-api

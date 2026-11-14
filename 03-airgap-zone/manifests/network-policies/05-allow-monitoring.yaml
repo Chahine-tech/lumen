@@ -1,5 +1,13 @@
-# Allow Prometheus to scrape metrics from all pods
-# This enables observability while maintaining security
+# Allow Prometheus to scrape lumen-api
+#
+# 8080: /metrics up to v1.6.0. 9090: the admin port of later versions
+# (/metrics, and pprof when PPROF_ENABLED=true). Once the ServiceMonitor
+# scrapes the admin port (after the first release with it), 8080 can go:
+# docs/runbooks/lumen-api-admin-port.md
+#
+# kubernetes.io/metadata.name is set by Kubernetes on every namespace; the
+# `name: monitoring` label used before only exists if
+# deploy-kube-prometheus-stack.sh ran.
 
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -15,12 +23,15 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Allow from monitoring namespace (kube-prometheus-stack)
     - from:
         - namespaceSelector:
             matchLabels:
-              name: monitoring
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
       ports:
         - protocol: TCP
           port: 8080
-
+        - protocol: TCP
+          port: 9090

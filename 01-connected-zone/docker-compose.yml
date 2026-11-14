@@ -35,13 +35,33 @@ services:
     networks:
       - lumen-net
 
+  # Schema migrations, before the API (in the cluster: a PreSync Job,
+  # docs/runbooks/database-migrations.md). The API refuses to start on a
+  # database without the schema.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lumen-api:local
+    container_name: lumen-migrate
+    command: ["migrate"]
+    environment:
+      - PG_MIGRATE_DSN=postgresql://app:password@postgres:5432/app?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - lumen-net
+
   api:
     build:
       context: .
       dockerfile: Dockerfile
+    image: lumen-api:local
     container_name: lumen-api
     ports:
       - "8080:8080"
+      - "9090:9090"   # admin: /metrics, pprof with PPROF_ENABLED=true
     environment:
       - REDIS_ADDR=redis:6379
       - PORT=8080
@@ -52,6 +72,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
       interval: 10s

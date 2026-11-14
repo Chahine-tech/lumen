@@ -481,8 +481,8 @@ lumen namespace:
 ├── default-deny-all (block everything)
 ├── allow-dns (DNS egress to kube-system)
 ├── allow-lumen-api-to-redis (lumen-api → redis:6379)
-├── allow-traefik-ingress (traefik → lumen-api:8080)
-└── allow-prometheus-scraping (prometheus → lumen-api:8080)
+├── allow-api-ingress (traefik pods → lumen-api:8080, nothing else)
+└── allow-prometheus-scraping (prometheus pods → lumen-api:8080, 9090)
 
 monitoring namespace:
 ├── default-deny-all
@@ -517,7 +517,7 @@ kubectl exec -n lumen deploy/lumen-api -- wget -qO- --timeout=5 \
 ```bash
 # Prometheus can scrape lumen-api
 kubectl exec -n monitoring prometheus-kube-prometheus-stack-prometheus-0 -c prometheus -- \
-  wget -qO- http://lumen-api.lumen.svc.cluster.local:8080/metrics
+  wget -qO- http://lumen-api.lumen.svc.cluster.local:9090/metrics  # 8080 up to v1.6.0
 # Expected: HTTP 200 with metrics
 ```
 
@@ -1158,7 +1158,7 @@ kubectl exec -n lumen deploy/lumen-api -- nc -zv redis 6379
 **Test 3.4: Prometheus scraping allowed**
 ```bash
 kubectl exec -n monitoring prometheus-kube-prometheus-stack-prometheus-0 -c prometheus -- \
-  wget -qO- http://lumen-api.lumen.svc.cluster.local:8080/metrics
+  wget -qO- http://lumen-api.lumen.svc.cluster.local:9090/metrics  # 8080 up to v1.6.0
 
 # Expected: ✅ HTTP 200 with metrics
 ```
@@ -1290,7 +1290,7 @@ spec:
 **Verify:**
 ```bash
 kubectl exec -n monitoring prometheus-xxx -c prometheus -- \
-  wget -qO- http://lumen-api.lumen.svc.cluster.local:8080/metrics
+  wget -qO- http://lumen-api.lumen.svc.cluster.local:9090/metrics  # 8080 up to v1.6.0
 # Expected: HTTP 200 ✅
 ```
 

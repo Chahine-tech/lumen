@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -39,6 +40,7 @@ func writeProbe(w http.ResponseWriter, status int, state string) {
 // shutdown fails readiness, waits drainDelay for the endpoint removal to reach
 // kube-proxy and Traefik (requests keep being served meanwhile), then stops
 // accepting connections and waits for in-flight requests until ctx expires.
+// The admin listener stops last, so the metrics stay scrapable meanwhile.
 func (a *App) shutdown(ctx context.Context) error {
 	a.draining.Store(true)
 	slog.Info("Draining before shutdown", "delay", a.drainDelay.String())
@@ -46,5 +48,9 @@ func (a *App) shutdown(ctx context.Context) error {
 	case <-time.After(a.drainDelay):
 	case <-ctx.Done():
 	}
-	return a.server.Shutdown(ctx)
+	err := a.server.Shutdown(ctx)
+	if a.adminServer != nil {
+		err = errors.Join(err, a.adminServer.Shutdown(ctx))
+	}
+	return err
 }
