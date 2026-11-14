@@ -73,14 +73,25 @@ func (s *RedisStore) SetIdempotencyResult(ctx context.Context, key string, data 
 }
 
 // AcquireIdempotencyLock atomically claims a key for the duration of one request
-// (SETNX), so two concurrent requests with the same Idempotency-Key cannot both
-// execute the handler. Returns false if another request holds the lock.
-func (s *RedisStore) AcquireIdempotencyLock(ctx context.Context, key string, ttl time.Duration) (bool, error) {
-	return s.client.SetNX(ctx, "idempotency:lock:"+key, "1", ttl).Result()
+// (SET NX with a TTL), so two concurrent requests with the same Idempotency-Key
+// cannot both execute the handler. Returns false if another request holds the
+// lock. The value is the caller's random token, checked on release.
+func (s *RedisStore) AcquireIdempotencyLock(ctx context.Context, key, token string, ttl time.Duration) (bool, error) {
+	return s.client.SetNX(ctx, "idempotency:lock:"+key, token, ttl).Result()
 }
 
-func (s *RedisStore) ReleaseIdempotencyLock(ctx context.Context, key string) error {
-	return s.client.Del(ctx, "idempotency:lock:"+key).Err()
+// releaseLock deletes the lock only if it still holds the caller's token: a
+// request that outlived the TTL must not delete the lock of the request that
+// took over.
+var releaseLock = redis.NewScript(`
+if redis.call("GET", KEYS[1]) == ARGV[1] then
+  return redis.call("DEL", KEYS[1])
+end
+return 0
+`)
+
+func (s *RedisStore) ReleaseIdempotencyLock(ctx context.Context, key, token string) error {
+	return releaseLock.Run(ctx, s.client, []string{"idempotency:lock:" + key}, token).Err()
 }
 
 func (s *RedisStore) Close() error {

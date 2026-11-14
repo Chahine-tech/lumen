@@ -48,16 +48,35 @@ jobs:
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
           echo "dsn=postgres://postgres:test@127.0.0.1:${PORT}/postgres?sslmode=disable" >> "$GITHUB_OUTPUT"
 
+      # The idempotency lock tests need a real Redis (Lua compare-and-delete)
+      - name: Start Redis
+        id: redis
+        run: |
+          NAME="ci-redis-${{ github.run_id }}"
+          docker run -d --rm --name "$NAME" -p 127.0.0.1::6379 192.168.2.2:5000/redis:7-alpine
+          PORT=$(docker port "$NAME" 6379/tcp | head -1 | cut -d: -f2)
+          for i in $(seq 30); do
+            docker exec "$NAME" redis-cli ping 2>/dev/null | grep -q PONG && break
+            sleep 1
+          done
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "addr=127.0.0.1:${PORT}" >> "$GITHUB_OUTPUT"
+
       - name: Run tests
         working-directory: 01-connected-zone/app
         env:
           LUMEN_TEST_PG_DSN: ${{ steps.pg.outputs.dsn }}
+          LUMEN_TEST_REDIS_ADDR: ${{ steps.redis.outputs.addr }}
         # -p 1: the migrations and store tests use fixed database and role names
         run: go test ./... -v -count=1 -p 1
 
       - name: Stop PostgreSQL
         if: always() && steps.pg.outputs.name != ''
         run: docker stop "${{ steps.pg.outputs.name }}"
+
+      - name: Stop Redis
+        if: always() && steps.redis.outputs.name != ''
+        run: docker stop "${{ steps.redis.outputs.name }}"
 
   build-push:
     name: Build & Push

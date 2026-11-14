@@ -680,26 +680,57 @@ The API is the application workload that serves as the reason for all this infra
                     └──────────────────────────────────┘
 ```
 
-**Idempotency middleware** — the most interesting pattern in the API:
+**Idempotency middleware** (`POST` and `DELETE`, header `Idempotency-Key`):
 
 ```
-  POST /items  + header Idempotency-Key: <uuid>
+  POST /items  + Idempotency-Key: <uuid>
+       │
+       ├─ key not 1 to 128 visible ASCII characters ─────► 400
        │
        ▼
-  Redis.Get("idem:<uuid>") ──── hit ────► replay stored response
-       │                                  + header Idempotency-Replayed: true
+  fingerprint = sha256(method, path, query, body)
+       │
+  Redis GET idempotency:<key> ── error ──► 503 + Retry-After (not executed)
+       │
+       ├─ hit, same fingerprint ──► replay status, body, Content-Type,
+       │                            Location + Idempotency-Replayed: true
+       ├─ hit, other fingerprint ─► 422 (key used for another request)
        │ miss
        ▼
-  Execute handler
+  SET NX idempotency:lock:<key> <random token> 30s
+       ├─ error ──────► 503 + Retry-After
+       ├─ held ───────► 409 + Retry-After (same key in flight)
+       ▼
+  re-check the record, execute the handler
        │
        ▼
-  Redis.Set("idem:<uuid>", {status, body}, TTL=24h)
-       │
-       ▼
-  Return response
+  SET idempotency:<key> {status, body, headers, fingerprint} 24h  (not for 5xx)
+  release the lock only if it still holds our token (Lua compare-and-delete)
 ```
 
-If the client receives a network timeout and retries the same request with the same `Idempotency-Key`, it gets exactly the same response — without creating a duplicate in the database. A critical pattern for financial APIs and distributed systems.
+A client that times out and retries with the same key gets the same
+response, without a second row in the database. The guarantees and their
+limits:
+
+- **A key belongs to one request**: reusing it with another method, path
+  or body is a 422, not a replay of an unrelated response.
+- **Redis unavailable**: a request that carries a key gets a 503 and is
+  not executed, since running it without the record would break the
+  guarantee the client asked for. Requests without a key are not affected.
+  The 503 count against the availability SLO.
+- **Result not stored** (Redis fails after the handler ran): the client
+  gets its response, a retry with the key executes again. Logged as an
+  error.
+- **Record lost**: Redis evicts under `allkeys-lru`, and a Sentinel
+  failover can lose the last writes (asynchronous replication, #8). A
+  retry after that executes again.
+- **Key scope**: the record is per key, not per caller: the API has no
+  caller identity yet (#18). Two clients choosing the same key get a 422
+  or a 409, except when their requests are identical (same method, path
+  and body): the second then gets the first one's response.
+
+Exactly-once regardless of Redis needs the record in PostgreSQL, written in
+the same transaction as the item (unique constraint on the key). Not done.
 
 **Probes and shutdown:**
 - `/livez` (liveness) and `/readyz` (readiness) do not check Redis or PostgreSQL. Both are shared by every replica: a probe that depends on them restarts or unreadies all pods at once. On a k3d test with Redis stopped for 130s, probes on `/health` gave 8 restarts and 0/2 pods ready; `/livez` + `/readyz` gave 0 restarts and 2/2 ready.
