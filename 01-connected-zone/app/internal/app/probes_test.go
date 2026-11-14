@@ -16,7 +16,7 @@ func get(t *testing.T, url string) int {
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	return resp.StatusCode
 }
@@ -72,7 +72,7 @@ func TestShutdownDrainsBeforeClosing(t *testing.T) {
 			slow <- -1
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		slow <- resp.StatusCode
 	}()
 	time.Sleep(50 * time.Millisecond) // the slow request is in flight

@@ -22420,9 +22420,10 @@ spec:
               topologyKey: kubernetes.io/hostname
             weight: 5
       containers:
-      - args:
-        - /usr/local/bin/argocd-server
-        env:
+      # args are set further down (argocd-server --insecure, commit 1aef412).
+      # The upstream args key was left in place, twice the same key: kubectl
+      # kept the last one, kubeconform rejects the file
+      - env:
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:

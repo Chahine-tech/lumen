@@ -29,5 +29,5 @@
   when: not vault_keys_stat.stat.exists
 
 - name: Unseal Vault
-  ansible.builtin.include_tasks: "{{ playbook_dir }}/../unseal.yml"
+  ansible.builtin.include_tasks: unseal.yml
   when: vault_keys_stat.stat.exists

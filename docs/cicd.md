@@ -70,9 +70,13 @@ Developer
 
 #### `test`
 ```yaml
-- go test ./... -v -count=1
+- go vet ./...
+- go test ./... -v -count=1 -p 1 -coverpkg=./... -coverprofile=cover.out
+- ../../scripts/check/coverage.sh cover.out 55
 ```
-Runs against `01-connected-zone/app/`, fails the pipeline on any test failure.
+Runs against `01-connected-zone/app/`, with throwaway PostgreSQL and Redis
+containers for the integration tests. Fails the pipeline on any test
+failure or a coverage below 55% (see [Quality gates](#quality-gates)).
 
 #### `build-push` (on push to main)
 1. Compute `SHORT_SHA` (7 chars) from `github.sha`
@@ -98,6 +102,43 @@ Runs against `01-connected-zone/app/`, fails the pipeline on any test failure.
 | Gitea token | `CI_TOKEN` secret in Gitea repo settings |
 | Runner registration token | Vault `lumen/gitea-runner`, synced by VSO into Secret `gitea-runner-token` (`scripts/seed-gitea-runner-token.sh`) |
 | Secret scan | `.gitea/workflows/secret-scan.yaml`: gitleaks over the full history on every push (image `192.168.2.2:5000/gitleaks/gitleaks:v8.30.1`); same scan on GitHub (`.github/workflows/secret-scan.yml`) and locally (`make scan-secrets`) |
+
+## Quality gates
+
+`make check` runs every gate locally; `.github/workflows/checks.yml` runs the
+same scripts on every push and pull request of the GitHub mirror, whatever
+the paths. Images are pinned in `scripts/check/images.sh`.
+
+| Gate | Script | What fails it |
+|---|---|---|
+| Go | `scripts/check/go.sh` | golangci-lint v2.15.0 finding, `go vet`, a test under `-race` against throwaway PostgreSQL 16.6 and Redis 7 containers, coverage below the floor (55%, measured 58.3% on 14 November 2026) |
+| Manifests | `scripts/check/manifests.sh` | an object that fails kubeconform (strict: unknown fields rejected) |
+| Prometheus rules | `scripts/check/rules.sh` | `promtool check rules` error, `promtool test rules` failure, SLO rules that differ from `make slo-generate` |
+| Shell | `scripts/check/shell.sh` | a shellcheck warning or error (notes are not enforced) |
+| Terraform | `scripts/check/terraform.sh` | `terraform fmt -check` diff, `terraform validate` error |
+| Ansible | `scripts/check/ansible.sh` | ansible-lint, `production` profile (`04-ansible/.ansible-lint` lists the two skipped rules and why) |
+
+**What the manifest gate validates**: what reaches the cluster.
+`03-airgap-zone/tests/manifests/render.py` reads every ArgoCD Application,
+renders the Helm charts with their `releaseName`, namespace and
+`valueFiles` (Helm 3, as ArgoCD), copies the plain directories (recursively
+when `directory.recurse` is set), and adds the directories applied by
+scripts (`EXTRA_DIRS`). Schemas: Kubernetes 1.28.5 (`k3s_version` in
+`group_vars`), the CRDs rendered from the charts, and for the CRDs that are
+not in git (CNPG 1.30.1, Barman Cloud plugin v0.16.0, Traefik chart 39.0.1)
+the schemas committed in `03-airgap-zone/tests/manifests/schemas/`
+(`update-schemas.sh` regenerates them from the artifacts). MetalLB comes
+from the datreeio CRDs catalog, pinned. The CRDs themselves are skipped.
+
+**Not enforced**: promtool lint warnings. The kube-prometheus-stack chart
+has one upstream (`kube-apiserver-availability.rules`: a duplicate
+recording rule).
+
+**In the Gitea CI** (`.gitea/workflows/ci.yaml`, airgap): `go vet`, the
+tests against PostgreSQL and Redis, and the coverage floor. Not yet
+golangci-lint, `-race` (the job image has no cgo) or the other gates: their
+images have to be mirrored to `192.168.2.2:5000` first, then
+`CHECK_REGISTRY=192.168.2.2:5000/` points the scripts at them.
 
 ### Important: runner must be registered with NodePort URL
 

@@ -86,7 +86,7 @@ func TestIdempotencyReplaysCachedResponse(t *testing.T) {
 	handler := Idempotency(newFakeStore(), http.MethodPost)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(`{"id":1}`))
+		_, _ = w.Write([]byte(`{"id":1}`))
 	}))
 
 	first := httptest.NewRecorder()
@@ -193,7 +193,7 @@ func countingHandler(calls *atomic.Int32) http.Handler {
 		w.Header().Set("Location", "/items/1")
 		w.Header().Set("X-Not-Replayed", "1")
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(`{"id":1}`))
+		_, _ = w.Write([]byte(`{"id":1}`))
 	})
 }
 

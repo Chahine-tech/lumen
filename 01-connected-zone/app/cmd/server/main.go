@@ -36,7 +36,7 @@ func main() {
 	if err != nil {
 		slog.Warn("Tracing initialization failed, continuing without tracing", "error", err)
 	} else {
-		defer shutdown(ctx)
+		defer func() { _ = shutdown(ctx) }()
 	}
 
 	application, err := app.NewApp()

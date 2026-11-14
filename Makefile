@@ -1,4 +1,4 @@
-.PHONY: help all build-connected setup-transit setup-airgap deploy test clean slo-generate test-alert-rules test-policies scan-secrets
+.PHONY: help all build-connected setup-transit setup-airgap deploy test clean slo-generate test-alert-rules test-policies scan-secrets check check-go check-manifests check-rules check-shell check-terraform check-ansible
 
 # Colors for output
 GREEN  := \033[0;32m
@@ -166,6 +166,28 @@ slo-generate: ## Regenerate SLO PrometheusRules from Sloth specs (03-airgap-zone
 scan-secrets: ## Scan the full git history for secrets (gitleaks, same as CI)
 	docker run --rm -v $(PWD):/repo ghcr.io/gitleaks/gitleaks:v8.30.1 git /repo \
 		--config /repo/.gitleaks.toml --gitleaks-ignore-path /repo/.gitleaksignore --redact --no-banner
+
+# Quality gates (issue #15), the same as the GitHub workflow .github/workflows/checks.yml.
+# Pinned images: scripts/check/images.sh
+check: check-go check-manifests check-rules check-shell check-terraform check-ansible ## Run every quality gate
+
+check-go: ## Go: golangci-lint, vet, tests with -race against PostgreSQL and Redis, coverage floor
+	./scripts/check/go.sh
+
+check-manifests: ## Render ArgoCD apps and charts, validate every object with kubeconform (strict)
+	./scripts/check/manifests.sh
+
+check-rules: check-manifests ## promtool check/test on the PrometheusRules, SLO rules up to date
+	./scripts/check/rules.sh
+
+check-shell: ## shellcheck on every tracked shell script
+	./scripts/check/shell.sh
+
+check-terraform: ## terraform fmt and validate
+	./scripts/check/terraform.sh
+
+check-ansible: ## ansible-lint (production profile)
+	./scripts/check/ansible.sh
 
 test-policies: ## Admission tests for the Kyverno lumen-* policies (server-side dry run, current context)
 	./03-airgap-zone/tests/kyverno/admission-tests.sh

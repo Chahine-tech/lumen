@@ -17,6 +17,7 @@
     --disk {{ node1_disk }}
   when: node1_info.rc != 0
   register: node1_launch
+  changed_when: true  # runs only when the VM does not exist
 
 - name: Check if node-2 exists
   ansible.builtin.command: multipass info node-2
@@ -33,6 +34,7 @@
     --disk {{ node2_disk }}
   when: node2_info.rc != 0
   register: node2_launch
+  changed_when: true  # runs only when the VM does not exist
 
 - name: Ensure node-1 is running
   ansible.builtin.command: multipass start node-1

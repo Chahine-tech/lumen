@@ -19,6 +19,7 @@
   when: not registry_data_stat.stat.exists
 
 - name: Create tar archive of registry data
+  # noqa: command-instead-of-module (unarchive extracts; archive is in community.general, not installed)
   ansible.builtin.command: >
     tar -czf /tmp/registry-data.tar.gz -C {{ project_root }}/02-transit-zone registry-data
   when: registry_data_stat.stat.exists

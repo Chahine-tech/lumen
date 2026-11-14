@@ -59,3 +59,6 @@ cosign.key
 
 # Generated cert artifacts (retrieve via: kubectl get cm airgap-ca -n traefik -o jsonpath='{.data.ca\.crt}')
 *.crt
+
+# Output of the checks (make check): rendered manifests, schemas, rules
+.cache/

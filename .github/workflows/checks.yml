@@ -1,0 +1,63 @@
+name: Checks
+
+# Quality gates (issue #15): the same scripts as `make check`, with the
+# pinned images of scripts/check/images.sh. Runs on every push and pull
+# request, whatever the paths: a broken manifest fails here before ArgoCD
+# applies it.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go (lint, vet, race, coverage)
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout v7.0.1, pinned by commit (issue #14)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: ./scripts/check/go.sh
+
+  manifests:
+    name: Manifests and Prometheus rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: PyYAML
+        run: python3 -c 'import yaml' 2>/dev/null || pip install pyyaml==6.0.2
+      - run: ./scripts/check/manifests.sh
+      - run: ./scripts/check/rules.sh
+
+  shell:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: ./scripts/check/shell.sh
+
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: ./scripts/check/terraform.sh
+
+  ansible:
+    name: ansible-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: ./scripts/check/ansible.sh

@@ -13,7 +13,6 @@ NC='\033[0m'
 # Configuration
 K3S_VERSION="v1.28.5+k3s1"
 REGISTRY_HOST="registry.airgap.local"
-REGISTRY_PORT="5000"
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then

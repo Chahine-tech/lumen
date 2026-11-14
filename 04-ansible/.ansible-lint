@@ -1,0 +1,10 @@
+# ansible-lint configuration (issue #15). Run: make check-ansible
+profile: production
+
+skip_list:
+  # Registered variables are named after what they hold (node1_info,
+  # lumen_health). Prefixing every one with its role name would rename
+  # variables across all roles without fixing a defect.
+  - var-naming[no-role-prefix]
+  # Task names end with the bucket or key they act on, which is a variable
+  - name[template]

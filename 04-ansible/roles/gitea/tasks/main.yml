@@ -65,6 +65,7 @@
 # in a URL, .git/config or a command line. GIT_ASKPASS reads them from the
 # environment; credential.helper is emptied so nothing lands in a keychain.
 - name: Push to Gitea
+  # noqa: command-instead-of-module (ansible.builtin.git clones and pulls, it does not push)
   ansible.builtin.command: >
     git -C {{ project_root }} -c credential.helper=
     push http://localhost:{{ gitea_local_port }}/{{ gitea_org }}/{{ gitea_repo }}.git main --force

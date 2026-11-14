@@ -70,7 +70,7 @@ func Up(ctx context.Context, dsn string, fsys fs.FS, runtimeRole string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if err := waitForDatabase(ctx, db, connectTimeout); err != nil {
 		return err
 	}
@@ -86,7 +86,7 @@ func Up(ctx context.Context, dsn string, fsys fs.FS, runtimeRole string) error {
 	if err != nil {
 		return err
 	}
-	defer provider.Close()
+	defer func() { _ = provider.Close() }()
 
 	results, err := provider.Up(ctx)
 	for _, r := range results {
@@ -158,7 +158,7 @@ func grantRuntime(ctx context.Context, db *sql.DB, role string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // no-op after Commit
 	for _, s := range statements {
 		if _, err := tx.ExecContext(ctx, s); err != nil {
 			return fmt.Errorf("%s: %w", s, err)

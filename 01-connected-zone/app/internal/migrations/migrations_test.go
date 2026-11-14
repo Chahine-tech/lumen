@@ -55,7 +55,7 @@ func testDatabase(t *testing.T) (dsnAs func(role string) string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Close(ctx)
+	defer func() { _ = admin.Close(ctx) }()
 	for _, s := range []string{
 		"DROP DATABASE IF EXISTS " + testDB + " WITH (FORCE)",
 		"DROP ROLE IF EXISTS " + runtimeRole,
@@ -85,7 +85,7 @@ func connect(t *testing.T, dsn string) *pgx.Conn {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { conn.Close(context.Background()) })
+	t.Cleanup(func() { _ = conn.Close(context.Background()) })
 	return conn
 }
 

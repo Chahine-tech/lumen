@@ -12,7 +12,8 @@ if ! nc -z localhost 3001 2>/dev/null; then
     PF_PID=$!
     sleep 3
 
-    # Cleanup on exit
+    # Cleanup on exit. Double quotes on purpose: PF_PID is expanded now
+    # shellcheck disable=SC2064
     trap "kill $PF_PID 2>/dev/null || true" EXIT
 fi
 
