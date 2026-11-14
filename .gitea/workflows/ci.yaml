@@ -30,9 +30,34 @@ jobs:
         with:
           github-server-url: http://192.168.2.2:30300
 
+      # The migration and store tests need a real PostgreSQL: the image the
+      # CNPG cluster runs, already in the registry. Started on the host
+      # Docker (the runner's socket), on a random loopback port: the job
+      # container uses the host network (gitea-runner/01-runner.yaml).
+      - name: Start PostgreSQL
+        id: pg
+        run: |
+          NAME="ci-pg-${{ github.run_id }}"
+          docker run -d --rm --name "$NAME" -p 127.0.0.1::5432 \
+            -e POSTGRES_PASSWORD=test 192.168.2.2:5000/postgresql:16.6
+          PORT=$(docker port "$NAME" 5432/tcp | head -1 | cut -d: -f2)
+          for i in $(seq 60); do
+            docker exec "$NAME" pg_isready -U postgres -h 127.0.0.1 >/dev/null 2>&1 && break
+            sleep 1
+          done
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "dsn=postgres://postgres:test@127.0.0.1:${PORT}/postgres?sslmode=disable" >> "$GITHUB_OUTPUT"
+
       - name: Run tests
         working-directory: 01-connected-zone/app
-        run: go test ./... -v -count=1
+        env:
+          LUMEN_TEST_PG_DSN: ${{ steps.pg.outputs.dsn }}
+        # -p 1: the migrations and store tests use fixed database and role names
+        run: go test ./... -v -count=1 -p 1
+
+      - name: Stop PostgreSQL
+        if: always() && steps.pg.outputs.name != ''
+        run: docker stop "${{ steps.pg.outputs.name }}"
 
   build-push:
     name: Build & Push

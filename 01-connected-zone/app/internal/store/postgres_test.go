@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Chahine-tech/lumen/internal/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -50,21 +51,23 @@ func newTestStore(t *testing.T) (*PostgresStore, *pgxpool.Pool) {
 			t.Fatal(err)
 		}
 	}
+	// The schema exists on a real replica; apply it to both databases
+	for _, db := range []string{"lumen_test_primary", "lumen_test_replica"} {
+		if err := migrations.Up(ctx, dbDSN(db), migrations.Files(), ""); err != nil {
+			t.Fatal(err)
+		}
+	}
 	counter := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_events_total"}, []string{"type"})
 	s, err := NewPostgresStore(ctx, dbDSN("lumen_test_primary"), dbDSN("lumen_test_replica"), counter)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(s.Close)
-	// The schema exists on a real replica; create it on the fake one
 	replica, err := pgxpool.New(ctx, dbDSN("lumen_test_replica"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(replica.Close)
-	if err := (&PostgresStore{rw: replica}).migrate(ctx); err != nil {
-		t.Fatal(err)
-	}
 	return s, replica
 }
 

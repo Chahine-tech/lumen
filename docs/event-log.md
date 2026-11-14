@@ -32,7 +32,8 @@ CREATE INDEX events_type_idx       ON events (type);
 CREATE INDEX events_created_at_idx ON events (created_at DESC);
 ```
 
-Migration runs automatically on startup (`migrate()` in `store/postgres.go`).
+The schema is migration `00001_initial_schema.sql`, applied by `lumen-api migrate`
+(see the [database migrations runbook](runbooks/database-migrations.md)).
 
 ---
 

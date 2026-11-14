@@ -235,12 +235,21 @@ data:
     # ─────────────────────────────────────────────
     echo "[9/10] Creating policies..."
 
-    # lumen-api policy: read app secrets
+    # lumen-api policy: read app secrets. PostgreSQL: the runtime role only
+    # (DML), not the owner credentials of lumen/db
     vault policy write lumen-api-policy - <<'POLICY'
-    path "lumen/data/db" {
+    path "lumen/data/db-runtime" {
       capabilities = ["read"]
     }
     path "lumen/data/redis" {
+      capabilities = ["read"]
+    }
+    POLICY
+
+    # lumen-db-owner policy: VSO reads the credentials of the database owner,
+    # used by the migration Job (manifests/vso/03-lumen-db-secret.yaml)
+    vault policy write lumen-db-owner-policy - <<'POLICY'
+    path "lumen/data/db" {
       capabilities = ["read"]
     }
     POLICY
@@ -328,6 +337,14 @@ data:
       policies=grafana-admin-policy \
       ttl=1h
 
+    # Role for VSO syncing the PostgreSQL owner credentials (lumen namespace).
+    # Dedicated ServiceAccount (manifests/vso/03-lumen-db-secret.yaml)
+    vault write auth/kubernetes/role/lumen-db-owner \
+      bound_service_account_names=lumen-db-owner-vso \
+      bound_service_account_namespaces=lumen \
+      policies=lumen-db-owner-policy \
+      ttl=1h
+
     # Role for VSO syncing the PostgreSQL backup S3 credentials (lumen namespace).
     # Bound to a dedicated ServiceAccount, not `default`
     # (manifests/vso/05-cnpg-backup-secret.yaml)
@@ -364,6 +381,18 @@ data:
     else
       echo "  ⚠️  lumen-db-app Secret not found or empty — seed manually:"
       echo "       vault kv put lumen/db username=app password=<password> dbname=app"
+    fi
+
+    # Password of lumen_runtime, the DML-only role lumen-api runs as (CNPG
+    # managed role, cnpg/02-cluster.yaml). Generated only if not already
+    # seeded; synced by VSO to the Secret lumen-db-runtime, which CNPG applies
+    echo "  Seeding PostgreSQL runtime role credentials into Vault KV..."
+    if vault kv get lumen/db-runtime > /dev/null 2>&1; then
+      echo "  ✓ lumen/db-runtime already seeded, keeping the existing password"
+    else
+      PG_RUNTIME_PASSWORD=$(head -c 48 /dev/urandom | base64 | tr -d '/+=\n' | cut -c1-32)
+      vault kv put lumen/db-runtime username=lumen_runtime password="$PG_RUNTIME_PASSWORD"
+      echo "  ✓ PostgreSQL runtime credentials stored in lumen/db-runtime"
     fi
 
     # Generate the Redis password (only if not already seeded — keeps re-init

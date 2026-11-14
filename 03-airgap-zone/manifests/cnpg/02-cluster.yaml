@@ -15,6 +15,20 @@ spec:
       database: app
       owner: app
 
+  # lumen_runtime: the role lumen-api runs as. DML only: the migration Job
+  # (lumen-api migrate, as the owner app) grants it SELECT, INSERT, UPDATE and
+  # DELETE on the tables, and it owns nothing, so it cannot change the schema.
+  # Password from Vault lumen/db-runtime, synced by VSO to lumen-db-runtime
+  # (vso/03-lumen-db-secret.yaml). docs/runbooks/database-migrations.md
+  managed:
+    roles:
+      - name: lumen_runtime
+        ensure: present
+        login: true
+        inherit: true
+        passwordSecret:
+          name: lumen-db-runtime
+
   storage:
     size: 1Gi
     storageClass: local-path

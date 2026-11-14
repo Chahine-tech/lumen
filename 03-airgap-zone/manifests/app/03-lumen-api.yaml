@@ -162,6 +162,11 @@ spec:
             # PostgreSQL DSNs (read/write splitting)
             # lumen-db-vault Secret is managed by Vault Secrets Operator (VSO)
             # Source of truth: Vault KV v2 at lumen/db
+            # This is the owner of the database: v1.6.0 creates the schema at
+            # startup. After the first release with `lumen-api migrate`, the
+            # schema moves to a PreSync Job and lumen-api to the DML-only role
+            # lumen_runtime (Secret lumen-db-runtime): step 2 of
+            # docs/runbooks/database-migrations.md
             - name: PG_PASSWORD
               valueFrom:
                 secretKeyRef:

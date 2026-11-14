@@ -65,6 +65,10 @@ func NewApp() (*App, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize PostgreSQL: %w", err)
 		}
+		if err := checkSchema(pgStore); err != nil {
+			pgStore.Close()
+			return nil, err
+		}
 		slog.Info("PostgreSQL connected successfully")
 	} else {
 		slog.Warn("PostgreSQL not configured (PG_RW_DSN/PG_RO_DSN not set), /items routes unavailable")

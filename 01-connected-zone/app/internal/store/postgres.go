@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Chahine-tech/lumen/internal/migrations"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
@@ -59,34 +60,13 @@ func NewPostgresStore(ctx context.Context, rwDSN, roDSN string, eventsTotal *pro
 		return nil, fmt.Errorf("failed to connect to postgres ro: %w", err)
 	}
 
-	s := &PostgresStore{rw: rw, ro: ro, eventsTotal: eventsTotal}
-	if err := s.migrate(ctx); err != nil {
-		rw.Close()
-		ro.Close()
-		return nil, fmt.Errorf("migration failed: %w", err)
-	}
-
-	return s, nil
+	return &PostgresStore{rw: rw, ro: ro, eventsTotal: eventsTotal}, nil
 }
 
-func (s *PostgresStore) migrate(ctx context.Context) error {
-	_, err := s.rw.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS items (
-			id         SERIAL PRIMARY KEY,
-			name       TEXT NOT NULL,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);
-		CREATE TABLE IF NOT EXISTS events (
-			id         BIGSERIAL PRIMARY KEY,
-			type       TEXT NOT NULL,
-			aggregate  TEXT NOT NULL,
-			payload    JSONB NOT NULL,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);
-		CREATE INDEX IF NOT EXISTS events_type_idx ON events (type);
-		CREATE INDEX IF NOT EXISTS events_created_at_idx ON events (created_at DESC);
-	`)
-	return err
+// SchemaVersion returns the migration version of the database, read on the
+// primary. The schema itself is applied by `lumen-api migrate`.
+func (s *PostgresStore) SchemaVersion(ctx context.Context) (int64, error) {
+	return migrations.Version(ctx, s.rw)
 }
 
 func (s *PostgresStore) Ping(ctx context.Context) error {
