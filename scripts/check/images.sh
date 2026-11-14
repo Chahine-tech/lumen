@@ -1,3 +1,4 @@
+# shellcheck shell=bash disable=SC2034  # sourced: the variables are used by the other scripts
 # Pinned images of the checks (issue #15), sourced by the scripts of this
 # directory. CHECK_REGISTRY prefixes them, e.g. "192.168.2.2:5000/" in the
 # airgap zone once they are mirrored.

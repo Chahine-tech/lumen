@@ -1,6 +1,6 @@
 #!/bin/bash
-# shellcheck on every tracked shell script, warnings and errors (notes are
-# reported by `shellcheck` run by hand, not enforced)
+# Runs shellcheck on every tracked shell script: warnings and errors fail,
+# notes are not enforced
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 . scripts/check/images.sh

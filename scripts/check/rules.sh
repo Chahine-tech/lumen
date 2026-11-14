@@ -22,7 +22,7 @@ docker run --rm -v "$PWD/03-airgap-zone/tests/prometheus:/w" -w /w --entrypoint 
 
 echo "== SLO rules up to date with 03-airgap-zone/slo (make slo-generate)"
 rm -rf .cache/slo && mkdir -p .cache/slo
-docker run --rm -v "$PWD/03-airgap-zone:/work:ro" -v "$PWD/.cache/slo:/out" "$SLOTH_IMAGE" generate \
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/03-airgap-zone:/work:ro" -v "$PWD/.cache/slo:/out" "$SLOTH_IMAGE" generate \
   -i /work/slo/lumen-api.yaml -o /out/lumen-api-slo-rules.yaml >/dev/null
 diff -u 03-airgap-zone/manifests/kube-prometheus-stack/lumen-api-slo-rules.yaml .cache/slo/lumen-api-slo-rules.yaml
 echo "SLO rules up to date"
