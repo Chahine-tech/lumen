@@ -1,0 +1,214 @@
+# Test resources for kyverno-test.yaml: the cases of ../admission-tests.sh,
+# evaluated offline by the Kyverno CLI. Names are unique across kinds: the
+# results of kyverno-test.yaml refer to them by namespace/name. No
+# securityContext: Pod Security admission does not run here.
+#
+# Pods
+apiVersion: v1
+kind: Pod
+metadata: {name: p-external, namespace: lumen}
+spec:
+  containers: [{name: main, image: "docker.io/library/nginx:1.27"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-external, namespace: default}
+spec:
+  containers: [{name: main, image: "nginx:1.27"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-external, namespace: kube-public}
+spec:
+  containers: [{name: main, image: "nginx:1.27"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-internal, namespace: lumen}
+spec:
+  containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-external-init, namespace: lumen}
+spec:
+  initContainers: [{name: init, image: "busybox:1.37"}]
+  containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-latest, namespace: lumen}
+spec:
+  containers: [{name: main, image: "192.168.2.2:5000/redis:latest"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-untagged, namespace: lumen}
+spec:
+  # No tag behind a registry port: the ':' belongs to the host
+  containers: [{name: main, image: "192.168.2.2:5000/redis"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-init-latest, namespace: lumen}
+spec:
+  initContainers: [{name: init, image: "192.168.2.2:5000/busybox:latest"}]
+  containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-digest, namespace: lumen}
+spec:
+  containers: [{name: main, image: "192.168.2.2:5000/redis@sha256:0000000000000000000000000000000000000000000000000000000000000000"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-latest-ish, namespace: lumen}
+spec:
+  containers: [{name: main, image: "192.168.2.2:5000/redis:latest-ish"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-latest, namespace: kube-public}
+spec:
+  containers: [{name: main, image: "redis:latest"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-internal-latest, namespace: default}
+spec:
+  containers: [{name: main, image: "192.168.2.2:5000/redis:latest"}]
+---
+# Workloads: the Pod policies apply to their template (autogen)
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: d-external, namespace: lumen, labels: {app: a, tier: t}}
+spec:
+  selector: {matchLabels: {k: v}}
+  template:
+    metadata: {labels: {k: v}}
+    spec:
+      containers:
+        - name: main
+          image: "nginx:1.27"
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 50m, memory: 32Mi}}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: s-latest, namespace: lumen, labels: {app: a, tier: t}}
+spec:
+  serviceName: s
+  selector: {matchLabels: {k: v}}
+  template:
+    metadata: {labels: {k: v}}
+    spec:
+      containers:
+        - name: main
+          image: "192.168.2.2:5000/redis:latest"
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 50m, memory: 32Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: w-no-tier, namespace: lumen, labels: {app: a}}
+spec:
+  selector: {matchLabels: {k: v}}
+  template:
+    metadata: {labels: {k: v}}
+    spec:
+      containers:
+        - name: main
+          image: "192.168.2.2:5000/redis:7.4.1"
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 50m, memory: 32Mi}}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: w-no-app, namespace: lumen, labels: {tier: t}}
+spec:
+  serviceName: s
+  selector: {matchLabels: {k: v}}
+  template:
+    metadata: {labels: {k: v}}
+    spec:
+      containers:
+        - name: main
+          image: "192.168.2.2:5000/redis:7.4.1"
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 50m, memory: 32Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: w-labels, namespace: lumen, labels: {app: a, tier: t}}
+spec:
+  selector: {matchLabels: {k: v}}
+  template:
+    metadata: {labels: {k: v}}
+    spec:
+      containers:
+        - name: main
+          image: "192.168.2.2:5000/redis:7.4.1"
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 50m, memory: 32Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: w-any, namespace: kube-public}
+spec:
+  selector: {matchLabels: {k: v}}
+  template:
+    metadata: {labels: {k: v}}
+    spec:
+      containers: [{name: main, image: "nginx:1.27"}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: r-none, namespace: lumen, labels: {app: a, tier: t}}
+spec:
+  selector: {matchLabels: {k: v}}
+  template:
+    metadata: {labels: {k: v}}
+    spec:
+      containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: r-no-cpu-limit, namespace: lumen, labels: {app: a, tier: t}}
+spec:
+  selector: {matchLabels: {k: v}}
+  template:
+    metadata: {labels: {k: v}}
+    spec:
+      containers:
+        - name: main
+          image: "192.168.2.2:5000/redis:7.4.1"
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {memory: 32Mi}}
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: r-full, namespace: lumen, labels: {app: a, tier: t}}
+spec:
+  selector: {matchLabels: {k: v}}
+  template:
+    metadata: {labels: {k: v}}
+    spec:
+      containers:
+        - name: main
+          image: "192.168.2.2:5000/redis:7.4.1"
+          resources: {requests: {cpu: 10m, memory: 16Mi}, limits: {cpu: 50m, memory: 32Mi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: d-internal, namespace: default}
+spec:
+  selector: {matchLabels: {k: v}}
+  template:
+    metadata: {labels: {k: v}}
+    spec:
+      containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: d-external-default, namespace: default}
+spec:
+  selector: {matchLabels: {k: v}}
+  template:
+    metadata: {labels: {k: v}}
+    spec:
+      containers: [{name: main, image: "nginx:1.27"}]

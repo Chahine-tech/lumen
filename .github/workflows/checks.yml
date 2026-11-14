@@ -24,7 +24,7 @@ jobs:
       - run: ./scripts/check/go.sh
 
   manifests:
-    name: Manifests and Prometheus rules
+    name: Manifests, Prometheus rules and Kyverno policies
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -34,6 +34,7 @@ jobs:
         run: python3 -c 'import yaml' 2>/dev/null || pip install pyyaml==6.0.2
       - run: ./scripts/check/manifests.sh
       - run: ./scripts/check/rules.sh
+      - run: ./scripts/check/policies.sh
 
   shell:
     name: shellcheck

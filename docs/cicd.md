@@ -114,6 +114,7 @@ the paths. Images are pinned in `scripts/check/images.sh`.
 | Go | `scripts/check/go.sh` | golangci-lint v2.15.0 finding, `go vet`, a test under `-race` against throwaway PostgreSQL 16.6 and Redis 7 containers, coverage below the floor (55%, measured 58.3% on 14 November 2026) |
 | Manifests | `scripts/check/manifests.sh` | an object that fails kubeconform (strict: unknown fields rejected) |
 | Prometheus rules | `scripts/check/rules.sh` | `promtool check rules` error, `promtool test rules` failure, SLO rules that differ from `make slo-generate` |
+| Kyverno policies | `scripts/check/policies.sh` | `kyverno test` (CLI v1.18.1, offline) on the four `lumen-*` ValidatingPolicies: a case of `03-airgap-zone/tests/kyverno/cli/kyverno-test.yaml` with another verdict, or a listed resource that does not exist |
 | Shell | `scripts/check/shell.sh` | a shellcheck warning or error (notes are not enforced) |
 | Terraform | `scripts/check/terraform.sh` | `terraform fmt -check` diff, `terraform validate` error |
 | Ansible | `scripts/check/ansible.sh` | ansible-lint, `production` profile (`04-ansible/.ansible-lint` lists the two skipped rules and why) |

@@ -11,6 +11,7 @@ HELM_IMAGE="${R}alpine/helm:3.18.4"                     # ArgoCD embeds Helm 3
 KUBECONFORM_IMAGE="${R}ghcr.io/yannh/kubeconform:v0.7.0-alpine"
 PROMETHEUS_IMAGE="${R}prom/prometheus:v3.1.0"           # promtool
 SLOTH_IMAGE="${R}ghcr.io/slok/sloth:v0.11.0"
+KYVERNO_CLI_IMAGE="${R}ghcr.io/kyverno/kyverno-cli:v1.18.1"   # the version deployed (kyverno-helm)
 SHELLCHECK_IMAGE="${R}koalaman/shellcheck:v0.10.0"
 TERRAFORM_IMAGE="${R}hashicorp/terraform:1.12.2"
 PYTHON_IMAGE="${R}python:3.12-slim"

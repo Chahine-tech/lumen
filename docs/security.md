@@ -154,6 +154,14 @@ make test-policies
 against the current kubectl context: 23 cases, each with its expected verdict
 (allow or deny), including the out-of-scope namespaces.
 
+The same cases run without a cluster on every push (`make check-policies`,
+`scripts/check/policies.sh`): `kyverno test` on
+`03-airgap-zone/tests/kyverno/cli/`. That run checks the CEL logic, scope
+and autogen of the four ValidatingPolicies; it does not check how the webhook
+is registered (failure policy, which namespaces reach Kyverno) nor
+`verify-lumen-api-signature`, which needs the registry. Both still need
+`make test-policies` on a cluster.
+
 
 ## Layer 2: Pod Security Standards (PSS)
 

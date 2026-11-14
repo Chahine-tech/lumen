@@ -1,0 +1,97 @@
+# Offline tests of the lumen-* ValidatingPolicies with the Kyverno CLI
+# (scripts/check/policies.sh): the cases of ../admission-tests.sh, without a
+# cluster. fail = the policy denies the resource, skip = out of its scope.
+#
+# Not covered here: 01-verify-lumen-api-signature (verifyImages needs the
+# registry and the signatures), and how the webhook is registered (failure
+# policy, namespace selection). make test-policies checks those on a cluster.
+#
+# The CLI ignores a result whose resource does not exist: policies.sh checks
+# that every resource listed below was evaluated.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: lumen-policies
+policies:
+  - ../../../manifests/kyverno-policies/02-require-internal-registry.yaml
+  - ../../../manifests/kyverno-policies/03-block-latest-tag.yaml
+  - ../../../manifests/kyverno-policies/04-require-app-labels.yaml
+  - ../../../manifests/kyverno-policies/05-require-resources.yaml
+resources:
+  - resources.yaml
+results:
+  # Registry: lumen and default
+  - policy: lumen-require-internal-registry
+    kind: Pod
+    resources: [lumen/p-external, default/p-external, lumen/p-external-init]
+    result: fail
+  - policy: lumen-require-internal-registry
+    kind: Pod
+    resources: [lumen/p-internal, lumen/p-latest, default/p-internal-latest]
+    result: pass
+  - policy: lumen-require-internal-registry
+    kind: Pod
+    resources: [kube-public/p-external]
+    result: skip
+  - policy: lumen-require-internal-registry
+    kind: Deployment
+    resources: [lumen/d-external, default/d-external-default]
+    result: fail
+  - policy: lumen-require-internal-registry
+    kind: Deployment
+    resources: [default/d-internal]
+    result: pass
+  - policy: lumen-require-internal-registry
+    kind: Deployment
+    resources: [kube-public/w-any]
+    result: skip
+
+  # Latest tag: lumen only
+  - policy: lumen-block-latest-tag
+    kind: Pod
+    resources: [lumen/p-latest, lumen/p-untagged, lumen/p-init-latest]
+    result: fail
+  - policy: lumen-block-latest-tag
+    kind: Pod
+    resources: [lumen/p-internal, lumen/p-digest, lumen/p-latest-ish]
+    result: pass
+  - policy: lumen-block-latest-tag
+    kind: Pod
+    resources: [kube-public/p-latest, default/p-internal-latest]
+    result: skip
+  - policy: lumen-block-latest-tag
+    kind: StatefulSet
+    resources: [lumen/s-latest]
+    result: fail
+
+  # Labels: workloads in lumen
+  - policy: lumen-require-app-labels
+    kind: Deployment
+    resources: [lumen/w-no-tier]
+    result: fail
+  - policy: lumen-require-app-labels
+    kind: StatefulSet
+    resources: [lumen/w-no-app]
+    result: fail
+  - policy: lumen-require-app-labels
+    kind: Deployment
+    resources: [lumen/w-labels]
+    result: pass
+  - policy: lumen-require-app-labels
+    kind: Deployment
+    resources: [kube-public/w-any, default/d-internal]
+    result: skip
+
+  # Resources: workloads in lumen
+  - policy: lumen-require-resources
+    kind: Deployment
+    resources: [lumen/r-none, lumen/r-no-cpu-limit]
+    result: fail
+  - policy: lumen-require-resources
+    kind: DaemonSet
+    resources: [lumen/r-full]
+    result: pass
+  - policy: lumen-require-resources
+    kind: Deployment
+    resources: [kube-public/w-any, default/d-internal]
+    result: skip
