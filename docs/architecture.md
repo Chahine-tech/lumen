@@ -737,7 +737,7 @@ the same transaction as the item (unique constraint on the key). Not done.
 - Rollout in two steps, because the image deployed today (v1.6.0) has no `/livez` or `/readyz`: `03-lumen-api.yaml` first uses a TCP liveness and startup probe and keeps readiness on `/health` (same k3d test: 0 restarts, pods unready during the outage and back within 30s). The switch to `/livez` and `/readyz` comes after the first release that contains them; the target probes are written in a comment of the manifest.
 - `/health` reports the dependencies (Redis, PostgreSQL primary and replica, 2s timeout each) for humans and scripts.
 - On SIGTERM, `/readyz` answers 503, the server keeps serving for `SHUTDOWN_DRAIN_DELAY` (default 5s) while the pod leaves the Service endpoints, then stops accepting connections and waits for in-flight requests (30s budget, `terminationGracePeriodSeconds: 45`).
-- A dependency missing at startup still makes the process exit: Kubernetes restarts it with backoff, and the `startupProbe` only covers a slow start.
+- At startup, Redis and PostgreSQL are retried every 2s for up to 30s, within the `startupProbe` budget (60s). A new pod has no DNS for its first seconds, until its NetworkPolicies are programmed. On k3d, every new pod (6 of 6) restarted once because its first lookup of `redis` timed out; with the retry, 0 of 6 restarted and each retried once. A dependency still missing after 30s makes the process exit, and Kubernetes restarts it with backoff.
 
 **Observability built into every handler:**
 - Each handler opens a child OTel span (`tracer.Start`) — Redis/PG errors are recorded in the span (`span.RecordError`)

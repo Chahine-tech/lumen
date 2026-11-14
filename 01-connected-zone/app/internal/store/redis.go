@@ -46,6 +46,7 @@ func NewRedisStore(addr, mode, sentinelAddrs, masterName, password string) (*Red
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
+		_ = client.Close()
 		return nil, fmt.Errorf("redis connection failed: %w", err)
 	}
 

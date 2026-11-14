@@ -52,7 +52,13 @@ func NewApp() (*App, error) {
 	pgRODSN := getEnv("PG_RO_DSN", "")
 
 	slog.Info("Connecting to Redis", "addr", redisAddr, "mode", redisMode)
-	redisStore, err := store.NewRedisStore(redisAddr, redisMode, sentinelAddrs, redisMasterName, redisPassword)
+	var redisStore *store.RedisStore
+	err = waitFor("redis", startupTimeout, startupRetry, func(context.Context) error {
+		// NewRedisStore pings with its own 5s timeout
+		s, err := store.NewRedisStore(redisAddr, redisMode, sentinelAddrs, redisMasterName, redisPassword)
+		redisStore = s
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Redis: %w", err)
 	}
@@ -66,6 +72,12 @@ func NewApp() (*App, error) {
 		slog.Info("Connecting to PostgreSQL")
 		pgStore, err = store.NewPostgresStore(context.Background(), pgRWDSN, pgRODSN, m.EventsTotal)
 		if err != nil {
+			return nil, fmt.Errorf("failed to initialize PostgreSQL: %w", err)
+		}
+		// The pools connect lazily: the first query is the connection test
+		if err := waitFor("postgresql", startupTimeout, startupRetry, pgStore.Ping); err != nil {
+			pgStore.Close()
+			_ = redisStore.Close()
 			return nil, fmt.Errorf("failed to initialize PostgreSQL: %w", err)
 		}
 		if err := checkSchema(pgStore); err != nil {

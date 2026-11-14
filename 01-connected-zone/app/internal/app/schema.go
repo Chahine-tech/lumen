@@ -25,8 +25,6 @@ type schemaVersioner interface {
 // expected while an older version is still running during a canary, or after
 // a rollback; migrations are written for it (docs/databases.md, expand and
 // contract).
-//
-// It is also the startup connectivity check: the pools connect lazily.
 func checkSchema(s schemaVersioner) error {
 	latest, err := migrations.Latest(migrations.Files())
 	if err != nil {
