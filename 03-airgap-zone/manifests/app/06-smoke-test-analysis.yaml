@@ -1,0 +1,45 @@
+# Smoke test of the canary, an analysis step of the lumen-api Rollout
+# (03-lumen-api.yaml): docs/runbooks/lumen-api-smoke-test.md.
+#
+# Pinned image, not the canary's, and not rewritten by the CI release step
+# (it edits 03-lumen-api.yaml only): a rollback to a version without
+# `lumen-api smoke` must still pass. Bump it when the smoke test changes.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: smoke-test
+  namespace: lumen
+spec:
+  metrics:
+    - name: smoke-test
+      provider:
+        job:
+          spec:
+            backoffLimit: 0
+            activeDeadlineSeconds: 120
+            template:
+              metadata:
+                labels:
+                  app: lumen-smoke-test
+              spec:
+                restartPolicy: Never
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1000
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: smoke-test
+                    image: 192.168.2.2:5000/lumen-api:v1.7.0
+                    args: [smoke]
+                    env:
+                      - name: SMOKE_URL
+                        value: http://lumen-api-canary.lumen.svc.cluster.local:8080
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities:
+                        drop: [ALL]
+                    resources:
+                      requests: {cpu: 10m, memory: 16Mi}
+                      limits: {cpu: 100m, memory: 64Mi}

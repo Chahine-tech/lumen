@@ -1,6 +1,5 @@
 # Smoke test Job (lumen-api smoke), run by the Rollout's canary analysis
 # before traffic moves to a new version: docs/runbooks/lumen-api-smoke-test.md.
-# Selects no pod until that analysis step is enabled.
 #
 # The API port is otherwise reachable from Traefik only (04-allow-api-ingress.yaml).
 

@@ -13,6 +13,8 @@ pprof exposes heap contents and the command line, and `/debug/pprof/profile` and
 
 ## Status: two steps
 
+Step 2 ships with v1.7.0, applied once that release is deployed: [release v1.7.0](release-v1.7.0.md).
+
 The deployed image (v1.6.0) serves `/metrics` on 8080 and has no admin port.
 
 - **Step 1 (now)**:

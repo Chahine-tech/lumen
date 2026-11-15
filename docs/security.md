@@ -491,7 +491,7 @@ lumen namespace:
 ├── allow-lumen-api-to-redis (lumen-api → redis:6379)
 ├── allow-api-ingress (traefik pods → lumen-api:8080)
 ├── allow-smoke-test-to-api (smoke test Job → lumen-api:8080, runbooks/lumen-api-smoke-test.md)
-└── allow-prometheus-scraping (prometheus pods → lumen-api:8080, 9090)
+└── allow-prometheus-scraping (prometheus pods → lumen-api:9090)
 
 monitoring namespace:
 ├── default-deny-all

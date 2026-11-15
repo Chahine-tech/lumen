@@ -39,6 +39,8 @@ Traefik only.
 
 ## Status: two steps
 
+Step 2 ships with v1.7.0, applied once that release is deployed: [release v1.7.0](release-v1.7.0.md).
+
 - **Step 1 (now)**: the `smoke` subcommand, its tests, and the
   NetworkPolicy (it selects no pod yet).
 - **Step 2, after the first release with `smoke`**: add the AnalysisTemplate
