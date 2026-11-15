@@ -45,14 +45,23 @@ kubectl get cluster lumen-db -n lumen -o jsonpath='{.status.managedRolesStatus}'
 ```bash
 git checkout main
 git push gitea main
+```
+
+Wait for the `main` pipeline: its `build-push` job builds the image of this
+source, runs the Trivy gate, pushes and signs it (issue #12). The release
+does not build: tagging before that job finished fails with `no image ...
+for this source`.
+
+```bash
 git tag v1.7.0
 git push gitea v1.7.0
 git push origin v1.7.0
 ```
 
-The Gitea CI (`.gitea/workflows/ci.yaml`) runs the tests, then the
-`release` job: build, push, cosign signature, and a commit
-`chore: update lumen-api image to v1.7.0 [skip ci]` pushed to Gitea `main`.
+The `release` job verifies the signature, runs the Trivy gate again, tags
+the image `v1.7.0` and pushes a commit
+`chore: update lumen-api image to v1.7.0 [skip ci]` to Gitea `main`. The
+manifest gets `lumen-api:v1.7.0@sha256:<digest>`.
 Bring it to the local `main` and GitHub:
 
 ```bash
@@ -79,11 +88,26 @@ scraped in between (the `lumen-api` target is down in Prometheus).
 ```bash
 git checkout main
 git merge --no-ff release-v1.7.0-step2
-git push-all
 ```
 
-The branch sets the same `v1.7.0` image as the release commit, so the merge
-does not conflict on it.
+The branch leaves the Rollout's image line to the release commit, so the
+merge keeps `v1.7.0@sha256:<digest>`. It adds the migration Job and the
+smoke test template with `lumen-api:v1.7.0`, without the digest, unknown
+until the release: pin them to the Rollout's reference before pushing.
+
+```bash
+REF=$(grep -m1 'image: 192.168.2.2:5000/lumen-api:' 03-airgap-zone/manifests/app/03-lumen-api.yaml | awk '{print $2}')
+echo "$REF"   # 192.168.2.2:5000/lumen-api:v1.7.0@sha256:...
+sed -i '' "s|image: 192.168.2.2:5000/lumen-api:v1.7.0\$|image: $REF|" \
+  03-airgap-zone/manifests/app/03-lumen-api.yaml \
+  03-airgap-zone/manifests/app/06-smoke-test-analysis.yaml
+grep -n 'image: 192.168.2.2:5000/lumen-api' 03-airgap-zone/manifests/app/0[36]-*.yaml   # 3 lines, all with the digest
+git commit -am "chore: pin the migration Job and the smoke test to the v1.7.0 digest"
+```
+
+```bash
+git push-all
+```
 
 ArgoCD runs the PreSync Job `lumen-db-migrate`, then applies the manifests.
 The Rollout's pod template changed (role, probes, ports), so a new canary

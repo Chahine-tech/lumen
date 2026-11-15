@@ -21,15 +21,18 @@ This document covers the full CI/CD pipeline: automated build/push via Gitea Act
 
 ```
 Developer
+  ├── git push gitea main
+  │     └── build-push: docker build → :src-<hash> + :<sha>
+  │                     trivy gate (CRITICAL fixable, offline DB)
+  │                     docker push, cosign sign <image>@sha256:<digest>
   └── git tag v1.x.x && git push gitea v1.x.x
         │
         ▼
   Gitea Actions (act_runner v0.2.11, node-1)
         ├── go test ./...
-        ├── docker build → 192.168.2.2:5000/lumen-api:v1.x.x
-        ├── trivy scan (HIGH/CRITICAL, offline)
-        ├── docker push (:semver + :sha + :latest)
-        └── sed manifest + git push → Gitea
+        ├── release: no rebuild. Image :src-<hash> of this source,
+        │            cosign verify, trivy gate again, tag :v1.x.x
+        └── sed manifest (:v1.x.x@sha256:<digest>) + git push → Gitea
               │
               ▼
         ArgoCD (detects diff in manifest)
@@ -57,7 +60,7 @@ Developer
 
 | Event | Job triggered |
 |-------|---------------|
-| Push to `main` (app/Dockerfile paths) | `test` + `build-push` |
+| Push to `main` (app, Dockerfile, workflow, `scripts/ci/lumen-api-image.sh`) | `test` + `build-push` |
 | Pull request to `main` | `test` only |
 | Git tag `v*` | `test` + `release` |
 | Manual dispatch | all |
@@ -78,17 +81,30 @@ Runs against `01-connected-zone/app/`, with throwaway PostgreSQL and Redis
 containers for the integration tests. Fails the pipeline on any test
 failure or a coverage below 55% (see [Quality gates](#quality-gates)).
 
+Both jobs run `scripts/ci/lumen-api-image.sh` (issue #12). The image of a
+source is built once: its tag `src-<hash>` is a hash of the build inputs
+(the `01-connected-zone/app` tree and the Dockerfile), so a tag on a commit
+that did not change them finds the image built earlier. No `:latest` is
+pushed.
+
 #### `build-push` (on push to main)
-1. Compute `SHORT_SHA` (7 chars) from `github.sha`
-2. `docker build` → tags `:$SHORT_SHA` + `:latest`
-3. Trivy scan (offline DB from `/var/cache/trivy`, exit-code 0 — non-blocking)
-4. `docker push` both tags to `192.168.2.2:5000`
+1. If `:src-<hash>` exists and its signature verifies, reuse it.
+2. Otherwise `docker build` → `:src-<hash>` and `:<short sha>`.
+3. Trivy (offline DB in `/var/cache/trivy`): HIGH and CRITICAL reported;
+   a fixable CRITICAL fails the job before the push.
+4. `docker push`, then `cosign sign` of `<image>@sha256:<digest>` (legacy
+   `.sig` format, which Kyverno reads).
 
 #### `release` (on tag `v*`)
-1. Build → tags `:$SEMVER` + `:$SHORT_SHA` + `:latest`
-2. Push all 3 tags
-3. **Update manifest**: `sed` replaces the image tag in `03-airgap-zone/manifests/app/03-lumen-api.yaml`
-4. `git commit + git push` back to Gitea → triggers ArgoCD sync
+1. No build: pull `:src-<hash>` of the tagged commit. Fails if build-push
+   has not built this source yet (tag after the `main` pipeline finished).
+2. `cosign verify` with the CI key, and the Trivy gate again (the database
+   may be newer than at build time).
+3. Push the tag `:$SEMVER` (same digest).
+4. **Update manifest**: `sed` writes `:$SEMVER@sha256:<digest>` in
+   `03-airgap-zone/manifests/app/03-lumen-api.yaml`. The digest is what
+   runs; repointing the tag in the registry does not change it.
+5. `git commit + git push` back to Gitea → triggers ArgoCD sync
 
 ### CI infrastructure
 
