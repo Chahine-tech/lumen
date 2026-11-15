@@ -1,5 +1,6 @@
-# Multi-stage build for minimal image size
-# Perfect for airgap: small binaries, fewer dependencies
+# lumen-api: a static Go binary on scratch. The runtime image holds the
+# binary and the CA bundle, nothing else: no shell, no package manager, no
+# base image to mirror into the airgap besides the Go builder.
 
 # Stage 1: Build
 FROM golang:1.26-alpine AS builder
@@ -15,39 +16,28 @@ RUN go mod download
 # Copy source code
 COPY app/ ./
 
+# Set by BuildKit for the target platform (docker buildx --platform). Empty
+# with the legacy builder: go then builds for the platform it runs on.
+ARG TARGETOS
+ARG TARGETARCH
+
 # Build static binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
-    -ldflags="-w -s" \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+    -trimpath -ldflags="-w -s" \
     -o /build/lumen-api \
     ./cmd/server
 
-# Stage 2: Runtime (minimal size)
-FROM alpine:3.21
+# Stage 2: Runtime
+FROM scratch
 
-# Add ca-certificates for HTTPS (if needed)
-RUN apk --no-cache add ca-certificates tzdata
-
-# Create non-root user
-RUN addgroup -g 1000 appuser && \
-    adduser -D -u 1000 -G appuser appuser
-
-WORKDIR /app
-
-# Copy binary from builder
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /build/lumen-api /app/lumen-api
 
-# Change ownership
-RUN chown -R appuser:appuser /app
+# Numeric: scratch has no /etc/passwd. The pods set the same (runAsUser: 1000)
+USER 1000:1000
 
-# Switch to non-root user
-USER appuser
+# API, and admin (/metrics, pprof)
+EXPOSE 8080 9090
 
-# Expose port
-EXPOSE 8080
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
-
-# Run
+# No HEALTHCHECK: Kubernetes ignores it and runs the pod probes
 ENTRYPOINT ["/app/lumen-api"]

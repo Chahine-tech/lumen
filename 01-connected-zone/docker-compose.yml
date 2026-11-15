@@ -74,11 +74,6 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
     networks:
       - lumen-net
 
