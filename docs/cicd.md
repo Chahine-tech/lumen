@@ -115,6 +115,7 @@ the paths. Images are pinned in `scripts/check/images.sh`.
 | Manifests | `scripts/check/manifests.sh` | an object that fails kubeconform (strict: unknown fields rejected) |
 | Prometheus rules | `scripts/check/rules.sh` | `promtool check rules` error, `promtool test rules` failure, SLO rules that differ from `make slo-generate` |
 | Kyverno policies | `scripts/check/policies.sh` | `kyverno test` (CLI v1.18.1, offline) on the four `lumen-*` ValidatingPolicies: a case of `03-airgap-zone/tests/kyverno/cli/kyverno-test.yaml` with another verdict, or a listed resource that does not exist |
+| Misconfigurations | `scripts/check/misconfig.sh` | `trivy config` (0.59.1, built-in checks, no network) HIGH or CRITICAL finding on the sources of this repository (plain directories, applied by ArgoCD or by scripts) that is not in `03-airgap-zone/tests/manifests/trivy-ignore.yaml`. On the Helm charts the findings are listed, not enforced |
 | Shell | `scripts/check/shell.sh` | a shellcheck warning or error (notes are not enforced) |
 | Terraform | `scripts/check/terraform.sh` | `terraform fmt -check` diff, `terraform validate` error |
 | Ansible | `scripts/check/ansible.sh` | ansible-lint, `production` profile (`04-ansible/.ansible-lint` lists the two skipped rules and why) |
@@ -130,6 +131,11 @@ not in git (CNPG 1.30.1, Barman Cloud plugin v0.16.0, Traefik chart 39.0.1)
 the schemas committed in `03-airgap-zone/tests/manifests/schemas/`
 (`update-schemas.sh` regenerates them from the artifacts). MetalLB comes
 from the datreeio CRDs catalog, pinned. The CRDs themselves are skipped.
+
+**Accepted misconfigurations**: `trivy-ignore.yaml` lists each accepted
+finding with the reason and what would remove it (ArgoCD upstream RBAC,
+Gitea and its runner for issue #29, the vault-init and cert-generation
+Jobs). An entry covers one check in one rendered file.
 
 **Not enforced**: promtool lint warnings. The kube-prometheus-stack chart
 has one upstream (`kube-apiserver-availability.rules`: a duplicate

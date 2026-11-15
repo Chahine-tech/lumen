@@ -1,0 +1,50 @@
+# Accepted trivy config findings on the sources of this repository
+# (scripts/check/misconfig.sh). Paths are the files rendered by render.py:
+# app-<Application>.yaml, extra-<directory>.yaml.
+#
+# Each entry says why it is accepted, and what would remove it. An entry
+# covers one check in one rendered file: a new resource with the same
+# finding in that file is covered too, so keep the list short.
+misconfigurations:
+  # ArgoCD install manifest (03-airgap-zone/manifests/argocd/02-install-airgap.yaml),
+  # upstream, applied as is: the controllers manage the whole cluster.
+  - id: KSV041
+    paths: ["extra-argocd.yaml"]
+    statement: "Upstream ArgoCD RBAC, the applicationset controller reads Secrets (get, list, watch) cluster-wide."
+  - id: KSV044
+    paths: ["extra-argocd.yaml"]
+    statement: "Upstream ArgoCD RBAC, the argocd-application-controller ClusterRole grants every verb on every resource."
+  - id: KSV046
+    paths: ["extra-argocd.yaml"]
+    statement: "Upstream ArgoCD RBAC, ArgoCD applies every kind of resource. AppProjects (issue 28) would restrict what each Application may deploy."
+
+  # Gitea and its Actions runner, deployed by scripts (issue 29 covers a
+  # production-grade deployment).
+  - id: KSV006
+    paths: ["extra-gitea-runner.yaml"]
+    statement: "The runner builds images through the node Docker socket. Removing it means a rootless builder (issue 29)."
+  - id: KSV014
+    paths: ["extra-gitea.yaml", "extra-gitea-runner.yaml"]
+    statement: "Not tested with a read-only root filesystem yet (issue 29)."
+  - id: KSV118
+    paths: ["extra-gitea.yaml", "extra-gitea-runner.yaml"]
+    statement: "No securityContext set yet (issue 29)."
+
+  # vault-init Job (03-airgap-zone/manifests/vault/02-vault-init-job.yaml)
+  - id: AVD-KSV-0109
+    paths: ["extra-vault.yaml"]
+    statement: "False positive, the script names password variables; the values are generated at run time or read from Secrets, none is in the ConfigMap."
+  - id: KSV014
+    paths: ["extra-vault.yaml"]
+    statement: "Not tested with a read-only root filesystem yet: the script runs vault and kubectl, whose writes are not mapped; needs a run against the real Vault."
+
+  # cert-generation Job (03-airgap-zone/manifests/traefik/02-cert-generation-job.yaml)
+  - id: KSV041
+    paths: ["app-traefik.yaml"]
+    statement: "Writes the airgap-tls Secret into five namespaces. A Role per namespace would replace the ClusterRole; not done yet."
+  - id: KSV014
+    paths: ["app-traefik.yaml"]
+    statement: "Installs openssl and writes the certificates at run time; not tested with a read-only root filesystem yet."
+  - id: KSV118
+    paths: ["app-traefik.yaml"]
+    statement: "No securityContext yet; the Job installs packages at run time, which needs root."

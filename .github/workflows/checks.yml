@@ -24,7 +24,7 @@ jobs:
       - run: ./scripts/check/go.sh
 
   manifests:
-    name: Manifests, Prometheus rules and Kyverno policies
+    name: Manifests, rules, policies and misconfigurations
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -35,6 +35,7 @@ jobs:
       - run: ./scripts/check/manifests.sh
       - run: ./scripts/check/rules.sh
       - run: ./scripts/check/policies.sh
+      - run: ./scripts/check/misconfig.sh
 
   shell:
     name: shellcheck

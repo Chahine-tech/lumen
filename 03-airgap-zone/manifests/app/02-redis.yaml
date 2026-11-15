@@ -197,6 +197,7 @@ spec:
                   key: password
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
             seccompProfile:
@@ -242,6 +243,7 @@ spec:
             periodSeconds: 5
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
             seccompProfile:
@@ -314,6 +316,7 @@ spec:
                   key: password
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
             seccompProfile:
@@ -357,6 +360,7 @@ spec:
             periodSeconds: 5
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
             seccompProfile:
@@ -434,6 +438,7 @@ spec:
                   key: password
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
             seccompProfile:
@@ -475,6 +480,7 @@ spec:
             timeoutSeconds: 5
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
             seccompProfile:

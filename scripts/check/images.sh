@@ -14,6 +14,7 @@ SLOTH_IMAGE="${R}ghcr.io/slok/sloth:v0.11.0"
 KYVERNO_CLI_IMAGE="${R}ghcr.io/kyverno/kyverno-cli:v1.18.1"   # the version deployed (kyverno-helm)
 SHELLCHECK_IMAGE="${R}koalaman/shellcheck:v0.10.0"
 TERRAFORM_IMAGE="${R}hashicorp/terraform:1.12.2"
+TRIVY_IMAGE="${R}aquasec/trivy:0.59.1"                   # as in .gitea/workflows/ci.yaml
 PYTHON_IMAGE="${R}python:3.12-slim"
 ANSIBLE_LINT_VERSION="26.10.1"   # installed with pip from PyPI at each run
 ANSIBLE_CORE_VERSION="2.21.6"

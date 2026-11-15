@@ -7,6 +7,9 @@
   directory.recurse is set), as ArgoCD reads it.
 - The directories applied by scripts instead of ArgoCD (EXTRA_DIRS).
 
+The rendered Helm charts are listed in <output dir>/.charts, one file name
+per line: scripts/check/misconfig.sh reports on them without failing.
+
 Usage: render.py <repo root> <output dir>
 HELM: the helm command, default "helm" (the Makefile runs Helm 3 in a
 container; ArgoCD embeds Helm 3).
@@ -58,6 +61,7 @@ def main(root, out):
             if d and d.get("kind") == "Application":
                 apps.append(d)
     seen = set()
+    charts = []
     for app in apps:
         name = app["metadata"]["name"]
         if name in seen:
@@ -80,10 +84,13 @@ def main(root, out):
             print(f"helm  {name}: {path}", file=sys.stderr)
             with open(target, "w") as fh:
                 subprocess.run(cmd, check=True, stdout=fh)
+            charts.append(os.path.basename(target))
         else:
             recurse = src.get("directory", {}).get("recurse", False)
             print(f"dir   {name}: {path}{' (recursive)' if recurse else ''}", file=sys.stderr)
             copy_dir(path, target, recurse)
+    with open(os.path.join(out, ".charts"), "w") as fh:
+        fh.write("".join(c + "\n" for c in charts))
     for d in EXTRA_DIRS:
         print(f"extra {d}", file=sys.stderr)
         copy_dir(d, os.path.join(out, "extra-" + d.split("manifests/")[1].replace("/", "-") + ".yaml"), False)
