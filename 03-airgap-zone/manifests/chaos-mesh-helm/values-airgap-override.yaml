@@ -48,7 +48,7 @@ chaos-mesh:
         memory: 128Mi
 
   dnsServer:
-    enabled: false  # DNSChaos not needed — avoids extra CoreDNS deployment
+    create: false  # DNSChaos not needed: avoids an extra CoreDNS deployment
 
   prometheus:
     enabled: false  # kube-prometheus-stack already present

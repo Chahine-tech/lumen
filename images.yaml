@@ -1,0 +1,93 @@
+# Images the cluster pulls from the airgap registry (issue #31).
+#
+# scripts/check/image-list.sh fails when a rendered manifest references an
+# image absent from this list, or when an entry is referenced by none.
+#
+#   source: where the connected zone pulls it (docker pull)
+#   mirror: its path and tag in 192.168.2.2:5000, when it is not the source
+#           without its registry host (and without library/ for docker.io)
+#   build:  built here instead of pulled; no tag on `mirror` means any tag
+#   floating: true for a tag that moves upstream (7-alpine); reported
+#
+# A manifest may reference an image by its upstream name: K3s mirrors
+# docker.io, quay.io, ghcr.io, gcr.io and registry.k8s.io to the airgap
+# registry under the same path (03-airgap-zone/config/registries.yaml).
+#
+# Not yet the source of the pull and push scripts (01-connected-zone/scripts,
+# 02-transit-zone), which carry their own versions. Images that no rendered
+# manifest references (CNPG operator, MetalLB, K3s system images, CI tools)
+# are not listed yet.
+registry: 192.168.2.2:5000
+images:
+  # Built in this repository
+  - mirror: lumen-api
+    build: 01-connected-zone/Dockerfile, by .gitea/workflows/ci.yaml
+  - mirror: falcosecurity/k8smeta-plugin:0.4.1
+    build: docs/security.md, "Custom image for airgap"
+
+  # ArgoCD (manifests/argocd)
+  - source: quay.io/argoproj/argocd:v3.2.0
+  - source: ghcr.io/dexidp/dex:v2.41.1
+  - source: docker.io/library/redis:7.2.6-alpine
+
+  # Argo Rollouts
+  - source: quay.io/argoproj/argo-rollouts:v1.8.0
+
+  # cert-manager
+  - source: quay.io/jetstack/cert-manager-controller:v1.17.1
+  - source: quay.io/jetstack/cert-manager-webhook:v1.17.1
+  - source: quay.io/jetstack/cert-manager-cainjector:v1.17.1
+  - source: quay.io/jetstack/cert-manager-startupapicheck:v1.17.1
+
+  # Chaos Mesh
+  - source: ghcr.io/chaos-mesh/chaos-mesh:v2.7.2
+  - source: ghcr.io/chaos-mesh/chaos-daemon:v2.7.2
+  - source: ghcr.io/chaos-mesh/chaos-dashboard:v2.7.2
+
+  # CloudNativePG clusters (cnpg, cnpg/restore-drill)
+  - source: ghcr.io/cloudnative-pg/postgresql:16.6
+    mirror: postgresql:16.6
+
+  # Falco
+  - source: docker.io/falcosecurity/falco:0.43.0
+  - source: docker.io/falcosecurity/k8s-metacollector:0.1.1   # in no pull script
+
+  # Gitea and its runner
+  - source: docker.io/gitea/gitea:1.21.5
+  - source: docker.io/gitea/act_runner:0.2.11                 # in no pull script
+
+  # kube-prometheus-stack
+  - source: quay.io/prometheus/prometheus:v3.1.0
+  - source: quay.io/prometheus/alertmanager:v0.28.0
+  - source: quay.io/prometheus/node-exporter:v1.8.2
+  - source: quay.io/prometheus-operator/prometheus-operator:v0.80.0
+  - source: quay.io/prometheus-operator/prometheus-config-reloader:v0.80.0
+  - source: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.14.0
+  - source: docker.io/grafana/grafana:11.4.1
+  - source: quay.io/kiwigrid/k8s-sidecar:1.28.0
+
+  # Kyverno
+  - source: ghcr.io/kyverno/kyverno:v1.18.1
+  - source: ghcr.io/kyverno/kyvernopre:v1.18.1
+
+  # Loki, Alloy, Tempo
+  - source: docker.io/grafana/loki:3.6.5
+  - source: docker.io/nginxinc/nginx-unprivileged:1.29-alpine
+    floating: true
+  - source: docker.io/kiwigrid/k8s-sidecar:1.30.9
+  - source: docker.io/grafana/alloy:v1.13.1
+  - source: quay.io/prometheus-operator/prometheus-config-reloader:v0.81.0
+  - source: docker.io/grafana/tempo:2.10.0
+
+  # lumen (app/02-redis.yaml)
+  - source: docker.io/library/redis:7-alpine
+    floating: true
+
+  # Traefik certificate Job (traefik/02-cert-generation-job.yaml)
+  - source: docker.io/bitnami/kubectl:latest
+
+  # Vault and the Vault Secrets Operator
+  - source: docker.io/hashicorp/vault:1.19.0
+  - source: docker.io/hashicorp/vault-k8s:1.6.2
+  - source: docker.io/hashicorp/vault-secrets-operator:1.3.0
+  - source: quay.io/brancz/kube-rbac-proxy:v0.18.1             # in no pull script

@@ -1,4 +1,4 @@
-.PHONY: help all build-connected setup-transit setup-airgap deploy test clean slo-generate test-alert-rules test-policies scan-secrets check check-go check-manifests check-rules check-policies check-misconfig check-shell check-terraform check-ansible
+.PHONY: help all build-connected setup-transit setup-airgap deploy test clean slo-generate test-alert-rules test-policies scan-secrets check check-go check-manifests check-rules check-policies check-misconfig check-image-list check-shell check-terraform check-ansible
 
 # Colors for output
 GREEN  := \033[0;32m
@@ -169,7 +169,7 @@ scan-secrets: ## Scan the full git history for secrets (gitleaks, same as CI)
 
 # Quality gates (issue #15), the same as the GitHub workflow .github/workflows/checks.yml.
 # Pinned images: scripts/check/images.sh
-check: check-go check-manifests check-rules check-policies check-misconfig check-shell check-terraform check-ansible ## Run every quality gate
+check: check-go check-manifests check-rules check-policies check-misconfig check-image-list check-shell check-terraform check-ansible ## Run every quality gate
 
 check-go: ## Go: golangci-lint, vet, tests with -race against PostgreSQL and Redis, coverage floor
 	./scripts/check/go.sh
@@ -185,6 +185,9 @@ check-policies: ## kyverno test on the lumen-* policies, offline (03-airgap-zone
 
 check-misconfig: check-manifests ## trivy config: HIGH/CRITICAL fail on this repository's sources, reported on Helm charts
 	./scripts/check/misconfig.sh
+
+check-image-list: check-manifests ## Every image of the rendered manifests is in images.yaml, every entry is used
+	./scripts/check/image-list.sh
 
 check-shell: ## shellcheck on every tracked shell script
 	./scripts/check/shell.sh
