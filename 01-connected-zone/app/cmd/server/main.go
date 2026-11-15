@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
+	"time"
 
 	"github.com/Chahine-tech/lumen/internal/app"
 	"github.com/Chahine-tech/lumen/internal/migrations"
+	"github.com/Chahine-tech/lumen/internal/smoke"
 	"github.com/Chahine-tech/lumen/internal/tracing"
 )
 
@@ -25,8 +28,15 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "smoke":
+			if err := smokeTest(); err != nil {
+				slog.Error("Smoke test failed", "error", err)
+				os.Exit(1)
+			}
+			slog.Info("Smoke test passed")
+			return
 		default:
-			fmt.Fprintf(os.Stderr, "unknown command %q (usage: lumen-api [migrate])\n", os.Args[1])
+			fmt.Fprintf(os.Stderr, "unknown command %q (usage: lumen-api [migrate|smoke])\n", os.Args[1])
 			os.Exit(2)
 		}
 	}
@@ -60,4 +70,17 @@ func migrate() error {
 		return fmt.Errorf("PG_MIGRATE_DSN is not set")
 	}
 	return migrations.Up(context.Background(), dsn, migrations.Files(), os.Getenv("PG_RUNTIME_ROLE"))
+}
+
+// smokeTest checks a deployed lumen-api (SMOKE_URL, e.g.
+// http://lumen-api-canary.lumen.svc:8080) through its public API.
+// docs/runbooks/lumen-api-smoke-test.md
+func smokeTest() error {
+	url := os.Getenv("SMOKE_URL")
+	if url == "" {
+		return fmt.Errorf("SMOKE_URL is not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	return smoke.Run(ctx, &http.Client{Timeout: 10 * time.Second}, url)
 }

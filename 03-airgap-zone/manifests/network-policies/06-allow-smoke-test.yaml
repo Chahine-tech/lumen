@@ -1,0 +1,50 @@
+# Smoke test Job (lumen-api smoke), run by the Rollout's canary analysis
+# before traffic moves to a new version: docs/runbooks/lumen-api-smoke-test.md.
+# Selects no pod until that analysis step is enabled.
+#
+# The API port is otherwise reachable from Traefik only (04-allow-api-ingress.yaml).
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-smoke-test-to-api
+  namespace: lumen
+  annotations:
+    description: "Allow the smoke test Job to reach lumen-api on port 8080"
+spec:
+  podSelector:
+    matchLabels:
+      app: lumen-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: lumen-smoke-test
+      ports:
+        - protocol: TCP
+          port: 8080
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: smoke-test-egress-to-api
+  namespace: lumen
+  annotations:
+    description: "Allow the smoke test Job to reach lumen-api on port 8080 (DNS: 02-allow-dns.yaml)"
+spec:
+  podSelector:
+    matchLabels:
+      app: lumen-smoke-test
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: lumen-api
+      ports:
+        - protocol: TCP
+          port: 8080
