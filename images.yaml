@@ -72,16 +72,14 @@ images:
 
   # Loki, Alloy, Tempo
   - source: docker.io/grafana/loki:3.6.5
-  - source: docker.io/nginxinc/nginx-unprivileged:1.29-alpine
-    floating: true
+  - source: docker.io/nginxinc/nginx-unprivileged:1.29.8-alpine
   - source: docker.io/kiwigrid/k8s-sidecar:1.30.9
   - source: docker.io/grafana/alloy:v1.13.1
   - source: quay.io/prometheus-operator/prometheus-config-reloader:v0.81.0
   - source: docker.io/grafana/tempo:2.10.0
 
   # lumen (app/02-redis.yaml)
-  - source: docker.io/library/redis:7-alpine
-    floating: true
+  - source: docker.io/library/redis:7.4.12-alpine
 
   # Traefik certificate Job (traefik/02-cert-generation-job.yaml)
   - source: docker.io/bitnami/kubectl:latest

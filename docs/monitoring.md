@@ -993,7 +993,7 @@ loki:
 | Image | Tag | Role |
 |-------|-----|------|
 | `localhost:5000/grafana/loki` | `3.6.5` | Log storage + query engine |
-| `localhost:5000/nginxinc/nginx-unprivileged` | `1.29-alpine` | Loki gateway |
+| `localhost:5000/nginxinc/nginx-unprivileged` | `1.29.8-alpine` | Loki gateway |
 | `localhost:5000/kiwigrid/k8s-sidecar` | `1.30.9` | Config sidecar |
 
 ### Grafana Alloy v1.13.1 — Log Collector

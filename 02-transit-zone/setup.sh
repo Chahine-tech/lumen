@@ -45,9 +45,9 @@ if docker images | grep -q "lumen-api"; then
 fi
 
 # Re-tag and push redis
-if docker images | grep -q "redis.*7-alpine"; then
-    docker tag redis:7-alpine ${REGISTRY}/redis:7-alpine
-    docker push ${REGISTRY}/redis:7-alpine
+if docker images | grep -q "redis.*7.4.12-alpine"; then
+    docker tag redis:7.4.12-alpine ${REGISTRY}/redis:7.4.12-alpine
+    docker push ${REGISTRY}/redis:7.4.12-alpine
     echo -e "${GREEN}✓ Pushed redis${NC}"
 fi
 

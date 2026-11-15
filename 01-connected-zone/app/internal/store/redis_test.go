@@ -10,7 +10,7 @@ import (
 // Integration tests against a real Redis. Skipped unless LUMEN_TEST_REDIS_ADDR
 // points to a server the test may write keys to:
 //
-//	docker run -d --rm --name redis-test -p 127.0.0.1:56379:6379 redis:7-alpine
+//	docker run -d --rm --name redis-test -p 127.0.0.1:56379:6379 redis:7.4.12-alpine
 //	LUMEN_TEST_REDIS_ADDR=127.0.0.1:56379 go test ./internal/store/
 func newTestRedis(t *testing.T) *RedisStore {
 	t.Helper()
