@@ -24,7 +24,10 @@ type Event struct {
 	Type      string          `json:"type"`
 	Aggregate string          `json:"aggregate"`
 	Payload   json.RawMessage `json:"payload"`
-	CreatedAt time.Time       `json:"created_at"`
+	// Actor is the caller that performed the action; null for the events
+	// written before it was recorded (migration 00002)
+	Actor     *string   `json:"actor"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type PostgresStore struct {
@@ -84,7 +87,9 @@ func (s *PostgresStore) PingReplica(ctx context.Context) error {
 	return nil
 }
 
-func (s *PostgresStore) CreateItem(ctx context.Context, name string) (Item, error) {
+// CreateItem inserts the item and its ItemCreated event, recorded with
+// actor, in one transaction.
+func (s *PostgresStore) CreateItem(ctx context.Context, name, actor string) (Item, error) {
 	tx, err := s.rw.Begin(ctx)
 	if err != nil {
 		return Item{}, fmt.Errorf("begin tx: %w", err)
@@ -105,8 +110,8 @@ func (s *PostgresStore) CreateItem(ctx context.Context, name string) (Item, erro
 		return Item{}, fmt.Errorf("encode event: %w", err)
 	}
 	_, err = tx.Exec(ctx,
-		`INSERT INTO events (type, aggregate, payload) VALUES ($1, $2, $3)`,
-		"ItemCreated", "item", payload,
+		`INSERT INTO events (type, aggregate, payload, actor) VALUES ($1, $2, $3, $4)`,
+		"ItemCreated", "item", payload, actor,
 	)
 	if err != nil {
 		return Item{}, fmt.Errorf("insert event: %w", err)
@@ -172,7 +177,9 @@ func getItem(ctx context.Context, pool *pgxpool.Pool, id int) (Item, error) {
 	return item, err
 }
 
-func (s *PostgresStore) DeleteItem(ctx context.Context, id int) error {
+// DeleteItem deletes the item and records its ItemDeleted event with actor,
+// in one transaction.
+func (s *PostgresStore) DeleteItem(ctx context.Context, id int, actor string) error {
 	tx, err := s.rw.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -192,8 +199,8 @@ func (s *PostgresStore) DeleteItem(ctx context.Context, id int) error {
 		return fmt.Errorf("encode event: %w", err)
 	}
 	_, err = tx.Exec(ctx,
-		`INSERT INTO events (type, aggregate, payload) VALUES ($1, $2, $3)`,
-		"ItemDeleted", "item", payload,
+		`INSERT INTO events (type, aggregate, payload, actor) VALUES ($1, $2, $3, $4)`,
+		"ItemDeleted", "item", payload, actor,
 	)
 	if err != nil {
 		return fmt.Errorf("insert event: %w", err)
@@ -214,10 +221,10 @@ func (s *PostgresStore) GetEvents(ctx context.Context, eventType string, limit i
 	var query string
 	var args []any
 	if eventType != "" {
-		query = `SELECT id, type, aggregate, payload, created_at FROM events WHERE type = $1 ORDER BY id DESC LIMIT $2`
+		query = `SELECT id, type, aggregate, payload, actor, created_at FROM events WHERE type = $1 ORDER BY id DESC LIMIT $2`
 		args = []any{eventType, limit}
 	} else {
-		query = `SELECT id, type, aggregate, payload, created_at FROM events ORDER BY id DESC LIMIT $1`
+		query = `SELECT id, type, aggregate, payload, actor, created_at FROM events ORDER BY id DESC LIMIT $1`
 		args = []any{limit}
 	}
 
@@ -230,7 +237,7 @@ func (s *PostgresStore) GetEvents(ctx context.Context, eventType string, limit i
 	var events []Event
 	for rows.Next() {
 		var e Event
-		if err := rows.Scan(&e.ID, &e.Type, &e.Aggregate, &e.Payload, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Type, &e.Aggregate, &e.Payload, &e.Actor, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		events = append(events, e)

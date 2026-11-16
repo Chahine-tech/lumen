@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Chahine-tech/lumen/internal/app"
@@ -73,14 +74,24 @@ func migrate() error {
 }
 
 // smokeTest checks a deployed lumen-api (SMOKE_URL, e.g.
-// http://lumen-api-canary.lumen.svc:8080) through its public API.
-// docs/runbooks/lumen-api-smoke-test.md
+// http://lumen-api-canary.lumen.svc:8080) through its public API, with the
+// bearer token in SMOKE_TOKEN_FILE (a projected ServiceAccount token).
+// SMOKE_EXPECT_AUTH=true also checks that a request without a token is
+// refused. docs/runbooks/lumen-api-smoke-test.md
 func smokeTest() error {
 	url := os.Getenv("SMOKE_URL")
 	if url == "" {
 		return fmt.Errorf("SMOKE_URL is not set")
 	}
+	opts := smoke.Options{ExpectAuth: os.Getenv("SMOKE_EXPECT_AUTH") == "true"}
+	if f := os.Getenv("SMOKE_TOKEN_FILE"); f != "" {
+		token, err := os.ReadFile(f)
+		if err != nil {
+			return err
+		}
+		opts.Token = strings.TrimSpace(string(token))
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	return smoke.Run(ctx, &http.Client{Timeout: 10 * time.Second}, url)
+	return smoke.Run(ctx, &http.Client{Timeout: 10 * time.Second}, url, opts)
 }

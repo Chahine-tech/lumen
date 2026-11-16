@@ -67,6 +67,9 @@ services:
       - PORT=8080
       - PG_RW_DSN=postgresql://app:password@postgres:5432/app
       - PG_RO_DSN=postgresql://app:password@postgres:5432/app
+      # No token issuer locally: requests are served without a caller
+      # (docs/runbooks/lumen-api-authentication.md)
+      - AUTH_MODE=report
     depends_on:
       redis:
         condition: service_healthy

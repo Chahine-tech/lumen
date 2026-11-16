@@ -3,6 +3,7 @@ module github.com/Chahine-tech/lumen
 go 1.26.0
 
 require (
+	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/prometheus/client_golang v1.23.2

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Chahine-tech/lumen/internal/auth"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -75,8 +76,8 @@ func (cw *capturingWriter) Write(b []byte) (int, error) {
 // an Idempotency-Key header. Results are cached in Redis for 24 hours.
 // Only applied to methods passed in applyTo (typically POST and DELETE).
 //
-// A key belongs to one request: reusing it with another method, path or body
-// is answered 422. While Redis is unavailable, requests that carry a key are
+// A key belongs to one caller and one request: reusing it with another
+// method, path or body is answered 422. While Redis is unavailable, requests that carry a key are
 // answered 503 instead of running without deduplication; requests without a
 // key are not affected. docs/architecture.md, "Idempotency".
 func Idempotency(store idempotencyStore, applyTo ...string) func(http.Handler) http.Handler {
@@ -98,7 +99,7 @@ func Idempotency(store idempotencyStore, applyTo ...string) func(http.Handler) h
 				return
 			}
 			if !validIdempotencyKey(key) {
-				writeIdempotencyError(w, http.StatusBadRequest,
+				writeJSONError(w, http.StatusBadRequest,
 					"Idempotency-Key must be 1 to 128 visible ASCII characters")
 				return
 			}
@@ -111,14 +112,15 @@ func Idempotency(store idempotencyStore, applyTo ...string) func(http.Handler) h
 			if err != nil {
 				var tooLarge *http.MaxBytesError
 				if errors.As(err, &tooLarge) {
-					writeIdempotencyError(w, http.StatusRequestEntityTooLarge, "request body too large")
+					writeJSONError(w, http.StatusRequestEntityTooLarge, "request body too large")
 					return
 				}
-				writeIdempotencyError(w, http.StatusBadRequest, "could not read the request body")
+				writeJSONError(w, http.StatusBadRequest, "could not read the request body")
 				return
 			}
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			fp := fingerprint(r, body)
+			key = scopedKey(auth.Caller(ctx), key)
 
 			// unavailable answers 503: running the handler without the
 			// record would break the guarantee the client asked for.
@@ -127,7 +129,7 @@ func Idempotency(store idempotencyStore, applyTo ...string) func(http.Handler) h
 				span.RecordError(err)
 				span.SetStatus(codes.Error, op)
 				w.Header().Set("Retry-After", "5")
-				writeIdempotencyError(w, http.StatusServiceUnavailable,
+				writeJSONError(w, http.StatusServiceUnavailable,
 					"idempotency store unavailable, retry later")
 			}
 
@@ -155,7 +157,7 @@ func Idempotency(store idempotencyStore, applyTo ...string) func(http.Handler) h
 			if !locked {
 				span.SetAttributes(attribute.Bool("idempotency.conflict", true))
 				w.Header().Set("Retry-After", "1")
-				writeIdempotencyError(w, http.StatusConflict,
+				writeJSONError(w, http.StatusConflict,
 					"a request with this Idempotency-Key is already in progress")
 				return
 			}
@@ -228,6 +230,18 @@ func validIdempotencyKey(key string) bool {
 	return true
 }
 
+// scopedKey gives each caller its own keys: two clients that choose the
+// same key get separate records. The key has no space (validIdempotencyKey),
+// so the separator is unambiguous. A request without a caller (report mode,
+// issue #18) keeps the unscoped key of the versions before authentication,
+// whose records it still finds.
+func scopedKey(caller, key string) string {
+	if caller == "" {
+		return key
+	}
+	return caller + " " + key
+}
+
 // fingerprint identifies the request a key was first used for.
 func fingerprint(r *http.Request, body []byte) string {
 	h := sha256.New()
@@ -253,7 +267,7 @@ func lookup(ctx context.Context, store idempotencyStore, key string) (*cachedRes
 // replay writes the stored response, or 422 when it belongs to another request.
 func replay(w http.ResponseWriter, resp *cachedResponse, fp string) {
 	if resp.Fingerprint != "" && resp.Fingerprint != fp {
-		writeIdempotencyError(w, http.StatusUnprocessableEntity,
+		writeJSONError(w, http.StatusUnprocessableEntity,
 			"Idempotency-Key already used for a different request")
 		return
 	}
@@ -268,7 +282,7 @@ func replay(w http.ResponseWriter, resp *cachedResponse, fp string) {
 	_, _ = w.Write(resp.Body)
 }
 
-func writeIdempotencyError(w http.ResponseWriter, status int, msg string) {
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})

@@ -124,6 +124,25 @@ spec:
     spec:
       # Above the app's 30s shutdown budget (drain delay + in-flight requests)
       terminationGracePeriodSeconds: 45
+      serviceAccountName: lumen-api
+      automountServiceAccountToken: false
+      volumes:
+        # Read by the API to fetch the API server's signing keys, which
+        # verify the callers' ServiceAccount tokens (07-api-auth.yaml)
+        - name: kube-api
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+        - name: auth
+          configMap:
+            name: lumen-api-auth
       containers:
         - name: lumen-api
           image: 192.168.2.2:5000/lumen-api:v1.6.0
@@ -192,6 +211,26 @@ spec:
               value: "postgresql://$(PG_USER):$(PG_PASSWORD)@lumen-db-rw.lumen.svc.cluster.local:5432/$(PG_DBNAME)"
             - name: PG_RO_DSN
               value: "postgresql://$(PG_USER):$(PG_PASSWORD)@lumen-db-ro.lumen.svc.cluster.local:5432/$(PG_DBNAME)"
+            - name: AUTH_CONFIG
+              value: /etc/lumen-api/auth/auth.json
+            # Authentication (issue #18, 07-api-auth.yaml). report: requests
+            # without a valid token or permission are served and counted
+            # (lumen_auth_results_total), while callers move to tokens;
+            # enforce: 401 and 403. Set here, not in the ConfigMap: a change
+            # goes through the canary and its smoke test.
+            # docs/runbooks/lumen-api-authentication.md
+            - name: AUTH_MODE
+              value: report
+            # Requests per second per caller, all replicas together (0: off)
+            - name: CALLER_RATE_LIMIT
+              value: "50"
+          volumeMounts:
+            - name: kube-api
+              mountPath: /var/run/secrets/lumen-api/kube-api
+              readOnly: true
+            - name: auth
+              mountPath: /etc/lumen-api/auth
+              readOnly: true
           resources:
             requests:
               cpu: 100m

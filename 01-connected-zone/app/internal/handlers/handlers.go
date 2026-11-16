@@ -20,10 +20,10 @@ var tracer = otel.Tracer("lumen-api")
 type ItemStore interface {
 	Ping(ctx context.Context) error
 	PingReplica(ctx context.Context) error
-	CreateItem(ctx context.Context, name string) (store.Item, error)
+	CreateItem(ctx context.Context, name, actor string) (store.Item, error)
 	GetItems(ctx context.Context, limit, beforeID int) ([]store.Item, error)
 	GetItem(ctx context.Context, id int) (store.Item, error)
-	DeleteItem(ctx context.Context, id int) error
+	DeleteItem(ctx context.Context, id int, actor string) error
 	GetEvents(ctx context.Context, eventType string, limit int) ([]store.Event, error)
 }
 

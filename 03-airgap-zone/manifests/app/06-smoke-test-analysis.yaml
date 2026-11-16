@@ -23,6 +23,18 @@ spec:
                   app: lumen-smoke-test
               spec:
                 restartPolicy: Never
+                # Its token, audience lumen-api, authenticates the smoke
+                # test (07-api-auth.yaml)
+                serviceAccountName: lumen-smoke-test
+                automountServiceAccountToken: false
+                volumes:
+                  - name: token
+                    projected:
+                      sources:
+                        - serviceAccountToken:
+                            path: token
+                            audience: lumen-api
+                            expirationSeconds: 600
                 securityContext:
                   runAsNonRoot: true
                   runAsUser: 1000
@@ -35,6 +47,13 @@ spec:
                     env:
                       - name: SMOKE_URL
                         value: http://lumen-api-canary.lumen.svc.cluster.local:8080
+                      # Read from v1.8.0 on (issue #18); ignored before
+                      - name: SMOKE_TOKEN_FILE
+                        value: /var/run/secrets/lumen-api/token
+                    volumeMounts:
+                      - name: token
+                        mountPath: /var/run/secrets/lumen-api
+                        readOnly: true
                     securityContext:
                       allowPrivilegeEscalation: false
                       readOnlyRootFilesystem: true

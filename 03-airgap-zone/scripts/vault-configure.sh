@@ -194,6 +194,36 @@ vault write auth/kubernetes/role/gitea-runner \
 
 echo "  ok: Kubernetes auth configured"
 
+# Identity tokens for lumen-api callers outside the cluster (issue #18,
+# docs/runbooks/lumen-api-authentication.md). lumen-api checks the
+# issuer below and the audience lumen-api, and reads the caller from
+# entity_name: vault:<entity name>
+echo "  Configuring identity tokens for lumen-api clients..."
+vault write identity/oidc/config issuer=https://vault.airgap.local > /dev/null
+vault write identity/oidc/key/lumen-api algorithm=RS256 \
+  allowed_client_ids=lumen-api rotation_period=24h verification_ttl=24h > /dev/null
+vault write identity/oidc/role/lumen-client key=lumen-api client_id=lumen-api ttl=1h \
+  template='{"entity_name": {{identity.entity.name}}}' > /dev/null
+vault policy write lumen-client-policy - <<'POLICY'
+path "identity/oidc/token/lumen-client" {
+  capabilities = ["read"]
+}
+POLICY
+vault auth enable approle > /dev/null 2>&1 || echo "  (approle already enabled)"
+vault write auth/approle/role/lumen-client token_policies=lumen-client-policy \
+  token_ttl=15m token_max_ttl=1h secret_id_ttl=720h > /dev/null
+# The AppRole logs in as the entity named lumen-client (an entity created
+# at login would get a generated name)
+ROLE_ID=$(vault read -field=role_id auth/approle/role/lumen-client/role-id)
+ACCESSOR=$(vault read -field=accessor sys/auth/approle)
+vault read identity/entity/name/lumen-client > /dev/null 2>&1 || \
+  vault write identity/entity name=lumen-client > /dev/null
+ENTITY_ID=$(vault read -field=id identity/entity/name/lumen-client)
+if [ -z "$(vault write -field=id identity/lookup/entity alias_name="$ROLE_ID" alias_mount_accessor="$ACCESSOR" 2>/dev/null)" ]; then
+  vault write identity/entity-alias name="$ROLE_ID" canonical_id="$ENTITY_ID" mount_accessor="$ACCESSOR" > /dev/null
+fi
+echo "  ok: lumen-api client tokens: AppRole lumen-client, entity lumen-client"
+
 # ---------------------------------------------
 # Audit device and Raft snapshots (issue #4)
 # ---------------------------------------------

@@ -61,3 +61,35 @@ func TestIdempotencyLockReleaseChecksToken(t *testing.T) {
 		t.Fatalf("after the owner's release: %v, %v", ok, err)
 	}
 }
+
+// The per-caller counter counts each caller separately, starts again at
+// each window and does not keep its keys.
+func TestCountRequest(t *testing.T) {
+	s := newTestRedis(t)
+	ctx := context.Background()
+	alice := "test:" + t.Name() + time.Now().Format("150405.000000")
+	window := 300 * time.Millisecond
+	// Start at the beginning of a window, so the three counts share it
+	time.Sleep(window - time.Duration(time.Now().UnixNano()%int64(window)))
+
+	for want := int64(1); want <= 3; want++ {
+		n, err := s.CountRequest(ctx, alice, window)
+		if err != nil || n != want {
+			t.Fatalf("count %d: %d, %v", want, n, err)
+		}
+	}
+	if n, err := s.CountRequest(ctx, alice+"-bob", window); err != nil || n != 1 {
+		t.Fatalf("another caller: %d, %v", n, err)
+	}
+	keys, err := s.client.Keys(ctx, "ratelimit:"+alice+":*").Result()
+	if err != nil || len(keys) != 1 {
+		t.Fatalf("keys %v, %v", keys, err)
+	}
+	if ttl, err := s.client.PTTL(ctx, keys[0]).Result(); err != nil || ttl <= 0 || ttl > 2*window {
+		t.Fatalf("TTL %s, %v; want in (0, %s]", ttl, err, 2*window)
+	}
+	time.Sleep(window)
+	if n, err := s.CountRequest(ctx, alice, window); err != nil || n != 1 {
+		t.Fatalf("next window: %d, %v", n, err)
+	}
+}

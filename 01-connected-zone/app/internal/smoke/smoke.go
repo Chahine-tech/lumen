@@ -1,6 +1,7 @@
 // Package smoke checks a deployed lumen-api through its public API: the
-// dependency report, then an item created with an Idempotency-Key, the
-// request replayed, the item read and deleted. Run by `lumen-api smoke`.
+// dependency report, optionally that a request without a token is refused,
+// then an item created with an Idempotency-Key, the request replayed, the
+// item read and deleted. Run by `lumen-api smoke`.
 package smoke
 
 import (
@@ -27,17 +28,31 @@ var replicaLagTimeout = 10 * time.Second
 // after 10s).
 var healthTimeout = 30 * time.Second
 
+// Options of Run.
+type Options struct {
+	// Token is sent as a bearer token with every request but the
+	// unauthenticated check (issue #18).
+	Token string
+	// ExpectAuth checks that GET /items without a token gets 401: the API
+	// enforces authentication (AUTH_MODE=enforce).
+	ExpectAuth bool
+}
+
 // Run runs the checks against baseURL (e.g. http://lumen-api:8080) and
 // returns the first failure. The item it creates is deleted even when a
 // later check fails.
-func Run(ctx context.Context, client *http.Client, baseURL string) error {
-	c := checker{client: client, base: strings.TrimRight(baseURL, "/")}
+func Run(ctx context.Context, client *http.Client, baseURL string, opts Options) error {
+	c := checker{client: client, base: strings.TrimRight(baseURL, "/"), token: opts.Token}
 
 	deadline := time.Now().Add(healthTimeout)
 	for {
 		status, _, body, err := c.do(ctx, http.MethodGet, "/health", nil, nil)
 		if err == nil && status == http.StatusOK {
 			break
+		}
+		// Not a pod that is starting: the token is missing or refused
+		if err == nil && (status == http.StatusUnauthorized || status == http.StatusForbidden) {
+			return fmt.Errorf("health: status %d: %s", status, body)
 		}
 		if time.Now().After(deadline) {
 			if err != nil {
@@ -52,6 +67,18 @@ func Run(ctx context.Context, client *http.Client, baseURL string) error {
 		}
 	}
 	slog.Info("Smoke: health ok")
+
+	if opts.ExpectAuth {
+		anonymous := checker{client: client, base: c.base}
+		status, _, body, err := anonymous.do(ctx, http.MethodGet, "/items", nil, nil)
+		if err != nil {
+			return fmt.Errorf("auth: %w", err)
+		}
+		if status != http.StatusUnauthorized {
+			return fmt.Errorf("auth: GET /items without a token: status %d, want 401: %s", status, body)
+		}
+		slog.Info("Smoke: request without a token refused")
+	}
 
 	key := "smoke-" + rand.Text()
 	payload, _ := json.Marshal(map[string]string{"name": key})
@@ -140,6 +167,7 @@ func Run(ctx context.Context, client *http.Client, baseURL string) error {
 type checker struct {
 	client *http.Client
 	base   string
+	token  string
 }
 
 func (c checker) do(ctx context.Context, method, path string, body []byte, hdr http.Header) (int, http.Header, []byte, error) {
@@ -149,6 +177,9 @@ func (c checker) do(ctx context.Context, method, path string, body []byte, hdr h
 	}
 	for k, v := range hdr {
 		req.Header[k] = v
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {

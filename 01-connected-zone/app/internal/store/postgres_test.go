@@ -81,7 +81,7 @@ func TestGetItemNotFound(t *testing.T) {
 
 func TestDeleteItemNotFound(t *testing.T) {
 	s, _ := newTestStore(t)
-	if err := s.DeleteItem(context.Background(), 12345); !errors.Is(err, ErrNotFound) {
+	if err := s.DeleteItem(context.Background(), 12345, "test:a"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)
 	}
 }
@@ -91,7 +91,7 @@ func TestDeleteItemNotFound(t *testing.T) {
 func TestGetItemFallsBackToPrimary(t *testing.T) {
 	s, _ := newTestStore(t)
 	ctx := context.Background()
-	created, err := s.CreateItem(ctx, "fresh")
+	created, err := s.CreateItem(ctx, "fresh", "test:a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,5 +144,36 @@ func TestGetItemsPagination(t *testing.T) {
 	}
 	if got := page(10, 2); got != "a" {
 		t.Fatalf("page before id 2 = %s, want a", got)
+	}
+}
+
+// Each event records the caller that performed the action.
+func TestEventsRecordActor(t *testing.T) {
+	s, _ := newTestStore(t)
+	ctx := context.Background()
+	item, err := s.CreateItem(ctx, "audited", "test:creator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteItem(ctx, item.ID, "test:deleter"); err != nil {
+		t.Fatal(err)
+	}
+	// GetEvents reads the replica, which never gets the writes here: read
+	// the primary directly
+	rows, err := s.rw.Query(ctx, `SELECT type, actor FROM events ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var typ, actor string
+		if err := rows.Scan(&typ, &actor); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, typ+"="+actor)
+	}
+	if want := "ItemCreated=test:creator,ItemDeleted=test:deleter"; strings.Join(got, ",") != want {
+		t.Fatalf("events %v, want %s", got, want)
 	}
 }

@@ -22,6 +22,8 @@ type fakeItemStore struct {
 	replicaErr error
 	// arguments of the last GetItems call
 	lastLimit, lastBefore int
+	// actor of the last CreateItem or DeleteItem call
+	lastActor string
 }
 
 func newFakeItemStore() *fakeItemStore {
@@ -32,7 +34,8 @@ func (f *fakeItemStore) Ping(context.Context) error { return f.err }
 
 func (f *fakeItemStore) PingReplica(context.Context) error { return f.replicaErr }
 
-func (f *fakeItemStore) CreateItem(_ context.Context, name string) (store.Item, error) {
+func (f *fakeItemStore) CreateItem(_ context.Context, name, actor string) (store.Item, error) {
+	f.lastActor = actor
 	if f.err != nil {
 		return store.Item{}, f.err
 	}
@@ -67,7 +70,8 @@ func (f *fakeItemStore) GetItem(_ context.Context, id int) (store.Item, error) {
 	return it, nil
 }
 
-func (f *fakeItemStore) DeleteItem(_ context.Context, id int) error {
+func (f *fakeItemStore) DeleteItem(_ context.Context, id int, actor string) error {
+	f.lastActor = actor
 	if f.err != nil {
 		return f.err
 	}

@@ -641,8 +641,11 @@ The API is the application workload that serves as the reason for all this infra
   │    └── Tracing   ← creates parent OTel span         │
   │          └── Logging   ← structured JSON (slog)     │
   │                └── Metrics  ← increments Prometheus  │
-  │                      └── Idempotency                │
-  │                            └── ServeMux             │
+  │                      └── Authenticate  ← bearer JWT │
+  │                            └── CallerRateLimit      │
+  │                                  └── Idempotency    │
+  │                                        └── ServeMux │
+  │                     (per route: Require(operation)) │
   │                                  │                  │
   └──────────────────────────────────┼──────────────────┘
                                      │
@@ -688,6 +691,7 @@ The API is the application workload that serves as the reason for all this infra
        │
        ▼
   fingerprint = sha256(method, path, query, body)
+  key scoped by caller: "<caller> <key>" (unscoped without a caller)
        │
   Redis GET idempotency:<key> ── error ──► 503 + Retry-After (not executed)
        │
@@ -723,18 +727,46 @@ limits:
 - **Record lost**: Redis evicts under `allkeys-lru`, and a Sentinel
   failover can lose the last writes (asynchronous replication, #8). A
   retry after that executes again.
-- **Key scope**: the record is per key, not per caller: the API has no
-  caller identity yet (#18). Two clients choosing the same key get a 422
-  or a 409, except when their requests are identical (same method, path
-  and body): the second then gets the first one's response.
+- **Key scope**: the record is per caller and key (#33): two callers
+  choosing the same key get separate records. A request served without a
+  caller (authentication in report mode) keeps the unscoped key, which is
+  what the versions before authentication wrote; such requests still share
+  their keys with each other.
 
 Exactly-once regardless of Redis needs the record in PostgreSQL, written in
 the same transaction as the item (unique constraint on the key). Not done.
 
+**Authentication** (#18, `internal/auth`, runbook
+`docs/runbooks/lumen-api-authentication.md`):
+
+- Every route except the kubelet probes (`/livez`, `/readyz`) needs
+  `Authorization: Bearer <JWT>`, `/health` included. The token is accepted when it is signed
+  by a key of a configured issuer (fetched from its JWKS URL, fetched
+  again for an unknown key id, at most every 30s), carries the audience
+  `lumen-api` and has not expired. A token without `exp` is refused.
+- Issuers (`app/07-api-auth.yaml`): the Kubernetes API server, for
+  projected ServiceAccount tokens in the cluster; Vault identity tokens
+  (AppRole `lumen-client`) outside it.
+- The caller is `<issuer name>:<claim>`, e.g.
+  `kubernetes:system:serviceaccount:lumen:lumen-smoke-test`. It goes to
+  the request log, the span (`lumen.caller`), the idempotency key and the
+  `actor` column of `events`.
+- Each API route checks the permission of its operation (`items:read`,
+  `items:create`, `items:delete`, `events:read`); `/hello` needs a caller
+  only. 401 without a valid token, 403 without the permission, 503 when
+  the issuer's keys cannot be fetched.
+- `AUTH_MODE=report` serves those requests anyway and counts them in
+  `lumen_auth_results_total`, for callers to move to tokens first.
+- Per-caller rate limit (`CALLER_RATE_LIMIT`, 50/s by default), counted in
+  Redis for all replicas (1s fixed window): 429 above it. A Redis error
+  lets the request through. Traefik's global limit stays.
+- The Traefik mTLS edge (`mtls` TLSOption) stays in front: a client
+  certificate alone no longer gives access, a token is needed too.
+
 **Probes and shutdown:**
 - `/livez` (liveness) and `/readyz` (readiness) do not check Redis or PostgreSQL. Both are shared by every replica: a probe that depends on them restarts or unreadies all pods at once. On a k3d test with Redis stopped for 130s, probes on `/health` gave 8 restarts and 0/2 pods ready; `/livez` + `/readyz` gave 0 restarts and 2/2 ready.
 - Probes in `03-lumen-api.yaml` since v1.7.0: `startupProbe` and `livenessProbe` on `/livez`, `readinessProbe` on `/readyz`. Up to v1.6.0, which has neither, the manifest used a TCP liveness and startup probe and readiness on `/health` (same k3d test: 0 restarts, pods unready during the outage and back within 30s).
-- `/health` reports the dependencies (Redis, PostgreSQL primary and replica, 2s timeout each) for humans and scripts.
+- `/health` reports the dependencies (Redis, PostgreSQL primary and replica, 2s timeout each) for humans and scripts, with a token (#18).
 - On SIGTERM, `/readyz` answers 503, the server keeps serving for `SHUTDOWN_DRAIN_DELAY` (default 5s) while the pod leaves the Service endpoints, then stops accepting connections and waits for in-flight requests (30s budget, `terminationGracePeriodSeconds: 45`).
 - At startup, Redis and PostgreSQL are retried every 2s for up to 30s, within the `startupProbe` budget (60s). A new pod has no DNS for its first seconds, until its NetworkPolicies are programmed. On k3d, every new pod (6 of 6) restarted once because its first lookup of `redis` timed out; with the retry, 0 of 6 restarted and each retried once. A dependency still missing after 30s makes the process exit, and Kubernetes restarts it with backoff.
 
