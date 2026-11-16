@@ -37,14 +37,16 @@ make mirror-verify               # every pulled image is in the registry, same d
   `artifacts/mirror.lock`. Charts and files are checked against their
   sha256; what is already there and matches is skipped. An image with
   `archive` (Garage) is saved as a docker archive for `docker load` instead.
-  The crane image is saved as `artifacts/tools/crane.tar`.
+  The crane image, pulled by its digest, is saved under its tag as
+  `artifacts/tools/crane.tar`: `docker load` drops a reference by digest
+  (measured with the classic image store on 16 November 2026).
 - **push** loads crane from `tools/crane.tar` when it is not there, pushes
   each layout to the registry (plain HTTP) and fails when the digest in the
   registry differs from `mirror.lock`.
 - **verify** compares the registry with `mirror.lock`, without pushing.
 
 crane and Helm run in containers (`CRANE_IMAGE`, `HELM_IMAGE` in
-`scripts/check/images.sh`), with the host network.
+`scripts/check/images.sh`, pinned by digest), with the host network.
 
 ## How it was tested
 

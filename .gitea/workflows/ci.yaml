@@ -40,7 +40,7 @@ jobs:
         run: |
           NAME="ci-pg-${{ github.run_id }}"
           docker run -d --rm --name "$NAME" -p 127.0.0.1::5432 \
-            -e POSTGRES_PASSWORD=test 192.168.2.2:5000/postgresql:16.6
+            -e POSTGRES_PASSWORD=test 192.168.2.2:5000/postgresql:16.6@sha256:e4ffd91bf920f45dea3e7c739d0a942aca2f212b812eef41fd3d861f92cd0370
           PORT=$(docker port "$NAME" 5432/tcp | head -1 | cut -d: -f2)
           for i in $(seq 60); do
             docker exec "$NAME" pg_isready -U postgres -h 127.0.0.1 >/dev/null 2>&1 && break
@@ -54,7 +54,7 @@ jobs:
         id: redis
         run: |
           NAME="ci-redis-${{ github.run_id }}"
-          docker run -d --rm --name "$NAME" -p 127.0.0.1::6379 192.168.2.2:5000/redis:7.4.12-alpine
+          docker run -d --rm --name "$NAME" -p 127.0.0.1::6379 192.168.2.2:5000/redis:7.4.12-alpine@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
           PORT=$(docker port "$NAME" 6379/tcp | head -1 | cut -d: -f2)
           for i in $(seq 30); do
             docker exec "$NAME" redis-cli ping 2>/dev/null | grep -q PONG && break
@@ -101,7 +101,7 @@ jobs:
       - name: Install cosign
         run: |
           # Extract cosign binary from the registry image (airgap-safe, no internet)
-          docker create --name cosign-extract ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5
+          docker create --name cosign-extract ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5@sha256:0e87036914ffd939dc6366f058049e7fe1308764aea064bdda5f314bc953392c
           docker cp cosign-extract:/ko-app/cosign /usr/local/bin/cosign
           docker rm cosign-extract
           chmod +x /usr/local/bin/cosign
@@ -112,7 +112,7 @@ jobs:
         id: image
         env:
           COSIGN_KEY: /tmp/cosign.key
-          TRIVY_IMAGE: ${{ env.REGISTRY }}/aquasec/trivy:0.59.1
+          TRIVY_IMAGE: ${{ env.REGISTRY }}/aquasec/trivy:0.59.1@sha256:778481f0857406cd287dcafa84282cb50e87ed1c9ba46ab58d762f5797a90530
           # The Dockerfile's builder (same Go version), from the registry:
           # the host Docker that builds has no internet
           GO_BUILDER: ${{ env.REGISTRY }}/golang:1.26.11-alpine@sha256:f00ba21309295da612e60611d28ad4c7b9424a74cb42b9fc7ecebaeb83c387a2
@@ -142,7 +142,7 @@ jobs:
 
       - name: Install cosign
         run: |
-          docker create --name cosign-extract ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5
+          docker create --name cosign-extract ${{ env.REGISTRY }}/projectsigstore/cosign:v3.0.5@sha256:0e87036914ffd939dc6366f058049e7fe1308764aea064bdda5f314bc953392c
           docker cp cosign-extract:/ko-app/cosign /usr/local/bin/cosign
           docker rm cosign-extract
           chmod +x /usr/local/bin/cosign
@@ -153,7 +153,7 @@ jobs:
         id: image
         env:
           COSIGN_KEY: /tmp/cosign.key
-          TRIVY_IMAGE: ${{ env.REGISTRY }}/aquasec/trivy:0.59.1
+          TRIVY_IMAGE: ${{ env.REGISTRY }}/aquasec/trivy:0.59.1@sha256:778481f0857406cd287dcafa84282cb50e87ed1c9ba46ab58d762f5797a90530
         run: |
           echo "${{ secrets.CI_COSIGN_KEY }}" | base64 -d > /tmp/cosign.key
           chmod 600 /tmp/cosign.key

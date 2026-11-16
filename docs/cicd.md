@@ -171,7 +171,9 @@ recording rule).
 tests against PostgreSQL and Redis, and the coverage floor. Not yet
 golangci-lint, `-race` (the job image has no cgo) or the other gates: their
 images have to be mirrored to `192.168.2.2:5000` first, then
-`CHECK_REGISTRY=192.168.2.2:5000/` points the scripts at them.
+`CHECK_REGISTRY=192.168.2.2:5000/` points the scripts at them. They are
+pinned by the digest of their index (they run on amd64 and arm64); the
+mirror keeps one platform, so that switch also needs the platform digests.
 
 ### Important: runner must be registered with NodePort URL
 

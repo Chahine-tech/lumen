@@ -52,6 +52,9 @@ def pinned(name):
 
 
 CRANE = pinned("CRANE_IMAGE")
+# docker load drops a reference by digest (classic image store): crane is
+# pulled by digest, then run and saved under its tag
+CRANE_TAG = CRANE.split("@")[0]
 HELM = pinned("HELM_IMAGE")
 
 
@@ -61,7 +64,7 @@ def run(cmd, **kw):
 
 def crane(art, *args):
     """crane in its container, artifacts directory at /a, host network."""
-    out = run(["docker", "run", "--rm", "--network", "host", "-v", f"{art}:/a", CRANE, *args],
+    out = run(["docker", "run", "--rm", "--network", "host", "-v", f"{art}:/a", CRANE_TAG, *args],
               capture_output=True)
     return out.stdout.strip()
 
@@ -97,6 +100,8 @@ def selected(entries, only, *keys):
 
 
 def pull(cfg, art, only):
+    run(["docker", "pull", "-q", CRANE], capture_output=True)
+    run(["docker", "tag", CRANE, CRANE_TAG])
     platform = cfg["platform"]
     lock_file = os.path.join(art, "mirror.lock")
     lock = {}
@@ -166,12 +171,11 @@ def pull(cfg, art, only):
 
     tools = os.path.join(art, "tools")
     os.makedirs(tools, exist_ok=True)
-    run(["docker", "pull", "-q", CRANE], capture_output=True)
-    run(["docker", "save", "-o", os.path.join(tools, "crane.tar"), CRANE])
+    run(["docker", "save", "-o", os.path.join(tools, "crane.tar"), CRANE_TAG])
 
 
 def ensure_crane(art):
-    if subprocess.run(["docker", "image", "inspect", CRANE], capture_output=True).returncode != 0:
+    if subprocess.run(["docker", "image", "inspect", CRANE_TAG], capture_output=True).returncode != 0:
         run(["docker", "load", "-i", os.path.join(art, "tools", "crane.tar")], capture_output=True)
 
 
