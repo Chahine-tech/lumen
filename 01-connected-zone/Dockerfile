@@ -2,8 +2,13 @@
 # binary and the CA bundle, nothing else: no shell, no package manager, no
 # base image to mirror into the airgap besides the Go builder.
 
+# The Go builder, by its index digest (every platform). The airgap CI
+# passes the image mirrored into the registry instead (GO_BUILDER in
+# .gitea/workflows/ci.yaml): keep both on the same Go version.
+ARG GO_BUILDER=golang:1.26.11-alpine@sha256:ecb67f987aa1a57794c91d19ade7ae0209f2f0f5496aaef9e6ae85ddf92d02ab
+
 # Stage 1: Build
-FROM golang:1.26-alpine AS builder
+FROM ${GO_BUILDER} AS builder
 
 WORKDIR /build
 

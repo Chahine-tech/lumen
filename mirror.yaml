@@ -180,6 +180,9 @@ images:
     digest: sha256:f62865289ccf45633f80a5a4e30fb86a704a2dd2ad84aa683faa45a32f74c2cf
 
   # Gitea CI jobs
+  - source: docker.io/library/golang:1.26.11-alpine
+    digest: sha256:f00ba21309295da612e60611d28ad4c7b9424a74cb42b9fc7ecebaeb83c387a2
+    used_by: .gitea/workflows/ci.yaml
   - source: gcr.io/projectsigstore/cosign:v3.0.5
     digest: sha256:0e87036914ffd939dc6366f058049e7fe1308764aea064bdda5f314bc953392c
     used_by: .gitea/workflows/ci.yaml

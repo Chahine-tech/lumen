@@ -19,9 +19,10 @@
 # people; the manifest gets the digest.
 #
 # Environment: REGISTRY, IMAGE_NAME, COSIGN_KEY (private key file, empty
-# password), TRIVY_IMAGE, TRIVY_CACHE (offline Trivy DB, default
-# /var/cache/trivy), COSIGN_FLAGS (default: HTTP registry, no transparency
-# log, legacy signature format, see below).
+# password), TRIVY_IMAGE, GO_BUILDER (build: the Go builder image passed to
+# the Dockerfile, default the one it names), TRIVY_CACHE (offline Trivy DB,
+# default /var/cache/trivy), COSIGN_FLAGS (default: HTTP registry, no
+# transparency log, legacy signature format, see below).
 set -eu
 
 CONTEXT=01-connected-zone
@@ -85,7 +86,8 @@ case "${1:-}" in
       echo "$REPO:$src exists but its signature does not verify: building again"
     fi
     sha=$(git rev-parse --short=7 HEAD)
-    docker build -t "$REPO:$src" -t "$REPO:$sha" -f "$CONTEXT/Dockerfile" "$CONTEXT"
+    docker build ${GO_BUILDER:+--build-arg "GO_BUILDER=$GO_BUILDER"} \
+      -t "$REPO:$src" -t "$REPO:$sha" -f "$CONTEXT/Dockerfile" "$CONTEXT"
     scan "$REPO:$src"
     docker push -q "$REPO:$src"
     docker push -q "$REPO:$sha"
