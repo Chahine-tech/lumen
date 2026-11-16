@@ -4,16 +4,18 @@
 (issue #31):
 
 - **images**: the images of the airgap registry (`192.168.2.2:5000`), for
-  `linux/arm64`. Those that no rendered manifest references name the file
-  that uses them (`used_by`): install scripts, CI jobs, Ansible.
+  `linux/arm64`, each with its digest for that platform. Those that no
+  rendered manifest references name the file that uses them (`used_by`):
+  install scripts, CI jobs, Ansible.
 - **charts**: the Helm charts that are not vendored in
   `03-airgap-zone/manifests` (Traefik, MetalLB), pinned by sha256.
 - **files**: release files, pinned by sha256 (the CloudNativePG operator
   manifests of each upgrade step, the Barman Cloud plugin manifest).
 
 `scripts/check/image-list.sh` (CI) fails when a rendered manifest references
-an image that is not in the list, when a listed image is used nowhere, or
-when a `used_by` file does not exist.
+an image that is not in the list, when a listed image is used nowhere, when
+a `used_by` file does not exist, or when a reference carries another digest
+than the list. References without a digest are listed, not enforced yet.
 
 ## Pull, push, verify
 
@@ -26,7 +28,9 @@ make mirror-push                 # REGISTRY=host:port to override 192.168.2.2:50
 make mirror-verify               # every pulled image is in the registry, same digest
 ```
 
-- **pull** saves each image as an OCI layout under `artifacts/images/`. The
+- **pull** fails when a tag no longer points to the digest of `mirror.yaml`
+  (the image was rebuilt upstream): check the new image, then update the
+  digest. It saves each image as an OCI layout under `artifacts/images/`. The
   layout keeps the upstream digest (a docker or crane tarball does not: the
   manifest is rebuilt, measured on 16 November 2026). The digests go to
   `artifacts/mirror.lock`. Charts and files are checked against their

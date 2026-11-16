@@ -6,9 +6,9 @@
   mirror.py push    transit: the images into the airgap registry
   mirror.py verify  the registry holds every image with the pulled digest
 
-pull saves each image for the platform of mirror.yaml as an OCI layout,
-which keeps its upstream digest, and records the digests in
-<artifacts>/mirror.lock. An image with `archive` is saved as a docker
+pull checks that each tag still points to the digest of mirror.yaml, saves
+the image for the platform of mirror.yaml as an OCI layout, which keeps
+that digest, and records the digests in <artifacts>/mirror.lock. An image with `archive` is saved as a docker
 archive instead (docker load, not the registry). Charts and files are
 checked against their sha256. What is already there, with the right
 digest or sha256, is skipped. The crane image is saved too
@@ -97,10 +97,10 @@ def pull(cfg, art, only):
     os.makedirs(os.path.join(art, "images"), exist_ok=True)
     for e in selected([e for e in cfg["images"] if "source" in e], only, "source"):
         src = e["source"]
-        if "digest" in e:
-            got = crane(art, "digest", src)
-            if got != e["digest"]:
-                sys.exit(f"{src}: digest {got}, mirror.yaml says {e['digest']}")
+        digest = crane(art, "digest", "--platform", platform, src)
+        if "digest" in e and digest != e["digest"]:
+            sys.exit(f"{src}: {digest} upstream, mirror.yaml says {e['digest']}: the tag moved, "
+                     "update the digest in mirror.yaml once the new image is checked")
         if "archive" in e:
             dest = os.path.join(art, e["archive"])
             if os.path.exists(dest):
@@ -111,7 +111,6 @@ def pull(cfg, art, only):
             print(f"+ {src} -> {e['archive']}")
             continue
         ref = mirror_ref(e)
-        digest = crane(art, "digest", "--platform", platform, src)
         path = layout_dir(ref)
         if layout_digest(os.path.join(art, path)) == digest:
             print(f"= {src}")

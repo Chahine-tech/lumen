@@ -14,8 +14,8 @@
 #             references (install scripts, CI, Ansible); must exist
 #   archive:  saved as a docker archive at this path instead of pushed to
 #             the registry (loaded with docker load where it runs)
-#   digest:   expected digest of `source` (its index for a multi-platform
-#             image); the pull fails on another one
+#   digest:   digest of `source` for `platform`, the image the registry
+#             holds; the pull fails when the tag points to another one
 #
 # A manifest may reference an image by its upstream name: K3s mirrors
 # docker.io, quay.io, ghcr.io, gcr.io and registry.k8s.io to the airgap
@@ -35,112 +35,164 @@ images:
 
   # ArgoCD (manifests/argocd)
   - source: quay.io/argoproj/argocd:v3.2.0
+    digest: sha256:a961a03caffe1a3c5b0da9b7ba21e8ed0269d24959b7d4865272160417889352
   - source: ghcr.io/dexidp/dex:v2.41.1
+    digest: sha256:4ef1c507feb9cdb4c0c06c19823562b2ab4631659710ce4219a9c5261750a2de
   - source: docker.io/library/redis:7.2.6-alpine
+    digest: sha256:369d69c938186361c017e72a3a343543dd3da806d74355c433a299e1e28797c3
 
   # Argo Rollouts
   - source: quay.io/argoproj/argo-rollouts:v1.8.0
+    digest: sha256:b61ca80d5e094fbfdfa088095cab1b49e8dbeca83b8111bc7d3a651c8c6f3a7d
 
   # cert-manager
   - source: quay.io/jetstack/cert-manager-controller:v1.17.1
+    digest: sha256:2c747c65148f1c9cee49b113ea5a8a51a33ad463f87127e4f097de6981f65d03
   - source: quay.io/jetstack/cert-manager-webhook:v1.17.1
+    digest: sha256:9f40b455e9fbcbfc20bb53efb5a677a282eb5e02b27400f1c86f510941e49210
   - source: quay.io/jetstack/cert-manager-cainjector:v1.17.1
+    digest: sha256:f9811ba87217ddede3bd122994dbcb312484ccd23d0676ef076fca43ced408cb
   - source: quay.io/jetstack/cert-manager-startupapicheck:v1.17.1
+    digest: sha256:4af297aaab36cecc79b14446ed7055cbd8113f18fda77de6979969baf3b2177b
 
   # Chaos Mesh
   - source: ghcr.io/chaos-mesh/chaos-mesh:v2.7.2
+    digest: sha256:9ba17fbe5e0994fcd6fb050c377042e0e508539829685881327225a5870666b4
   - source: ghcr.io/chaos-mesh/chaos-daemon:v2.7.2
+    digest: sha256:fbca68776538aee0f2b212c169118f51ef340ff1d5d9a90eadb0ca32d82b3bd7
   - source: ghcr.io/chaos-mesh/chaos-dashboard:v2.7.2
+    digest: sha256:7d7c71d18c38ced48e9b1509c44ea81fc9cdc7699712309ac481d1f245299c53
 
   # CloudNativePG: clusters (cnpg, cnpg/restore-drill), operator and the
   # Barman Cloud plugin (install scripts, from the release files below)
   - source: ghcr.io/cloudnative-pg/postgresql:16.6
+    digest: sha256:e4ffd91bf920f45dea3e7c739d0a942aca2f212b812eef41fd3d861f92cd0370
     mirror: postgresql:16.6
   - source: ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1
+    digest: sha256:9a10dd7d7466310d5d543f618478cb905093cfc7a5463b538f449da626660083
     mirror: cloudnative-pg:1.30.1
     used_by: 03-airgap-zone/scripts/install-cnpg.sh
   - source: ghcr.io/cloudnative-pg/cloudnative-pg:1.26.3
+    digest: sha256:12669d20165335c1a203728a66b96e4e679ee4fff8b8e3ebeb170121cb364d26
     mirror: cloudnative-pg:1.26.3
     used_by: 03-airgap-zone/scripts/upgrade-cnpg.sh
   - source: ghcr.io/cloudnative-pg/cloudnative-pg:1.27.4
+    digest: sha256:c36e12ac2ad4f133852721976d553ffe36d5ca068e8a9dd7413cd126d2529482
     mirror: cloudnative-pg:1.27.4
     used_by: 03-airgap-zone/scripts/upgrade-cnpg.sh
   - source: ghcr.io/cloudnative-pg/cloudnative-pg:1.28.4
+    digest: sha256:dacc9575911dfffdc3b549d97ae1c1b1f632ad8d8dd5d513810829cddec1a722
     mirror: cloudnative-pg:1.28.4
     used_by: 03-airgap-zone/scripts/upgrade-cnpg.sh
   - source: ghcr.io/cloudnative-pg/cloudnative-pg:1.29.3
+    digest: sha256:40fc69283cafff44bc190e2147acc60759467b3f6f6d5f3d856fbbcd43942a2e
     mirror: cloudnative-pg:1.29.3
     used_by: 03-airgap-zone/scripts/upgrade-cnpg.sh
   - source: ghcr.io/cloudnative-pg/plugin-barman-cloud:v0.16.0
+    digest: sha256:04c7ebbf3ce7a129919f5cb14aadaac5385e8ab22dcef9d3fab3db345f67a39f
     mirror: plugin-barman-cloud:v0.16.0
     used_by: 03-airgap-zone/manifests/cnpg-plugin/kustomization.yaml
   - source: ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0
+    digest: sha256:d29472e248679a00990c07a79e6f0aee38d8aebfb73c0d79a711dcf60281e831
     mirror: plugin-barman-cloud-sidecar:v0.16.0
     used_by: 03-airgap-zone/manifests/cnpg-plugin/deployment-patch.yaml
 
   # Falco
   - source: docker.io/falcosecurity/falco:0.43.0
+    digest: sha256:a9880e16f69f46dc2c1c390faf5584ed2c388e3a16714f224a871621e4706c8f
   - source: docker.io/falcosecurity/k8s-metacollector:0.1.1
+    digest: sha256:4f0219b4439ff45edcc8194fc39b6d635be767cae0ee48a33e9b68c1911ff059
 
   # Gitea and its runner
   - source: docker.io/gitea/gitea:1.21.5
+    digest: sha256:8ac60c3bed2737a9952b533c96ee07d50bdd3f5f34d9e8bc298e87fba5c12c0b
   - source: docker.io/gitea/act_runner:0.2.11
+    digest: sha256:7076b74f6d7c6c04ea0f57477023f56ad186242d7fd23bec76dede53053925e7
 
   # kube-prometheus-stack
   - source: quay.io/prometheus/prometheus:v3.1.0
+    digest: sha256:0ea5254abf85f87901e8cfbd18fd243c59162c338ce0acd86aa2b0153d83dce2
   - source: quay.io/prometheus/alertmanager:v0.28.0
+    digest: sha256:cc07615932f01351d66e6220545905362ed64002bce81365e590e68e69719847
   - source: quay.io/prometheus/node-exporter:v1.8.2
+    digest: sha256:1eabab826c9d9f0c534e4e8fa745445f743fef9aee276d561d12811edea74004
   - source: quay.io/prometheus-operator/prometheus-operator:v0.80.0
+    digest: sha256:5aac439dcaa0e9440f5ab85fc176b64ca8124f9c7b1f94cb30fb1161b0ba48c1
   - source: quay.io/prometheus-operator/prometheus-config-reloader:v0.80.0
+    digest: sha256:438ab8732f28240c892826c7cf8616aaf07977a3105bae7ea5e21231409afe0d
   - source: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.14.0
+    digest: sha256:2336fb0ec5b0841ce5871d777627943cda0a7fd875917a8abdb3fe27d78ac6fc
   - source: docker.io/grafana/grafana:11.4.1
+    digest: sha256:a55a0e07ae23534d1d5d40340e0f7496fc552cebec52f2c60b176c38059c32cd
   - source: quay.io/kiwigrid/k8s-sidecar:1.28.0
+    digest: sha256:c5a9060235c12454f661fa91b28d23641006b4bbbe499bee02882d9e5570eef2
 
   # Kyverno
   - source: ghcr.io/kyverno/kyverno:v1.18.1
+    digest: sha256:cbd7785b4532e4ca8af5b84c6a3875763bc540a37b28112eae62dfd4b03a4f8b
   - source: ghcr.io/kyverno/kyvernopre:v1.18.1
+    digest: sha256:aa198c1f2c75e77dc88c0fc77d779e89e5f300d4dc9bbd822220be968cb92cce
 
   # Loki, Alloy, Tempo
   - source: docker.io/grafana/loki:3.6.5
+    digest: sha256:f92deafba1587be4cbf5760444c336aca4ced066fbe3bb2211dac5be8d137561
   - source: docker.io/nginxinc/nginx-unprivileged:1.29.8-alpine
+    digest: sha256:e7726cdbcdc432fc8c0b94a227908085ac77f0f27141e790caaae496ceb104c0
   - source: docker.io/kiwigrid/k8s-sidecar:1.30.9
+    digest: sha256:2b958e416a804adbbf8fb71e9c811f06f9298e241db048f72343ed8ef6eb96aa
   - source: docker.io/grafana/alloy:v1.13.1
+    digest: sha256:b0f674ebf2c79a12baae80ad5b6f57dca210e2e7e84d72eb5d540b58a1fd11bf
   - source: quay.io/prometheus-operator/prometheus-config-reloader:v0.81.0
+    digest: sha256:5a03054915eaa4f324537c98967550add4eb75660c932ce426dd7e906129f98b
   - source: docker.io/grafana/tempo:2.10.0
+    digest: sha256:80f53f8e809617f305df97cac1cdc05291f9b4985fa01cbb2df41c34fbaa72c1
 
   # lumen (app/02-redis.yaml)
   - source: docker.io/library/redis:7.4.12-alpine
+    digest: sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
 
   # MetalLB (install-metallb.sh, Helm chart below)
   - source: quay.io/metallb/controller:v0.15.3
+    digest: sha256:45f53870d5b21cbe44ce99366d440a84cf7bca12340687e4b70f908685ed1ba9
     used_by: 03-airgap-zone/scripts/install-metallb.sh
   - source: quay.io/metallb/speaker:v0.15.3
+    digest: sha256:2a9381af67baf249ba6e546c35b8b9a3434991e52f7795c81bb95f4e4bfde211
     used_by: 03-airgap-zone/scripts/install-metallb.sh
   - source: quay.io/frrouting/frr:9.1.0
+    digest: sha256:b3b67aaee35bea1c1cb0e6bb9f1cc4c75fad5bc6d1fcf9e0516bc3187e5faad5
     used_by: 03-airgap-zone/scripts/install-metallb.sh
 
   # Traefik (Helm chart below) and its certificate Job
   - source: docker.io/library/traefik:v3.6.8
+    digest: sha256:daf5df7f7b96cd34a1a499a275cb93c8dbc4ce58d49f98911e0583ba41cc4351
     used_by: 03-airgap-zone/manifests/traefik-helm/values.yaml
   - source: docker.io/bitnami/kubectl:latest
+    digest: sha256:5dfadca7688cf2372f78cd4121297a9896eebb4ed2f6eb339350a2ac9ebee941
 
   # Vault and the Vault Secrets Operator
   - source: docker.io/hashicorp/vault:1.19.0
+    digest: sha256:c53c28cbb630af36f5e56812691fd4e6d5a3ccdf3bccf9aa4cce3f1c4ec26be2
   - source: docker.io/hashicorp/vault-k8s:1.6.2
+    digest: sha256:ba8755fa2e6f26c14464a3852cf31485ddd8acea7d06f3c47eccfe38c71c0248
   - source: docker.io/hashicorp/vault-secrets-operator:1.3.0
+    digest: sha256:3fbc8e3c0482462e716d5343e034dd02a1c2b791ce79a90410860d11dbd4ec15
   - source: quay.io/brancz/kube-rbac-proxy:v0.18.1
+    digest: sha256:f62865289ccf45633f80a5a4e30fb86a704a2dd2ad84aa683faa45a32f74c2cf
 
   # Gitea CI jobs
   - source: gcr.io/projectsigstore/cosign:v3.0.5
+    digest: sha256:0e87036914ffd939dc6366f058049e7fe1308764aea064bdda5f314bc953392c
     used_by: .gitea/workflows/ci.yaml
   - source: docker.io/aquasec/trivy:0.59.1
+    digest: sha256:778481f0857406cd287dcafa84282cb50e87ed1c9ba46ab58d762f5797a90530
     used_by: .gitea/workflows/ci.yaml
   - source: ghcr.io/gitleaks/gitleaks:v8.30.1
+    digest: sha256:6b2d52241f9d176fc59e6e3b026ea52c98f390070587d9475d6ee2bc64941815
     used_by: .gitea/workflows/secret-scan.yaml
 
   # Garage on backup-1 (Ansible role garage, docker load)
   - source: docker.io/dxflrs/garage:v2.5.0
-    digest: sha256:677e5b758e4425a325b811c425c026bf35a4bf42f7ddbaa773de3f4fd779a5a5
+    digest: sha256:32b5de84cf9e3ae9c0b4d0f02566c442029e62203a4ed1bca9cdf2327fc19388
     archive: garage/images/garage-v2.5.0.tar
     used_by: 04-ansible/roles/garage/tasks/main.yml
 
