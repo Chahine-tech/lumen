@@ -4,6 +4,12 @@ This document covers Phase 19: deploying HashiCorp Vault HA (3-replica Raft clus
 
 **Date**: February 23, 2026
 
+> **Since issue #5 (November 2026), Vault serves TLS** on its listener and
+> Raft joins, with a certificate from the infrastructure CA, not from Vault.
+> Clients use `https://` and the root of that CA. Bootstrap, migration and
+> renewal: [runbooks/vault-tls.md](runbooks/vault-tls.md). The commands
+> below run `vault` in the pods, where `VAULT_CACERT` is set.
+
 ---
 
 ## 📋 Table of Contents
@@ -171,7 +177,7 @@ Two files: `values.yaml` (original chart defaults, required for Helm rendering) 
 Key overrides in `values-airgap-override.yaml`:
 ```yaml
 global:
-  tlsDisable: true  # TLS terminated at Traefik
+  tlsDisable: false  # TLS on the listener since issue #5 (docs/runbooks/vault-tls.md)
 
 server:
   image:
@@ -191,7 +197,8 @@ server:
         listener "tcp" {
           address         = "[::]:8200"
           cluster_address = "[::]:8201"
-          tls_disable     = true
+          tls_cert_file   = "/vault/userconfig/vault-server-tls/tls.crt"
+    tls_key_file    = "/vault/userconfig/vault-server-tls/tls.key"
         }
         service_registration "kubernetes" {}
 
@@ -279,14 +286,14 @@ export VAULT_TOKEN=$(jq -r '.root_token' vault-keys.json)  # only valid if init 
 
 # ── KV v2 ──────────────────────────────────────────────────────────────
 kubectl exec -n vault vault-0 -- sh -c "
-VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN
+VAULT_ADDR=https://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN
 vault secrets enable -path=lumen kv-v2
 "
 
 # ── PKI Engine ─────────────────────────────────────────────────────────
 # Generate CA inside Vault (preferred — no need to import private key)
 kubectl exec -n vault vault-0 -- sh -c "
-VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN
+VAULT_ADDR=https://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN
 vault secrets enable pki
 vault secrets tune -max-lease-ttl=87600h pki   # MUST tune BEFORE generating CA
 vault write pki/root/generate/internal \
@@ -300,20 +307,20 @@ vault write pki/roles/airgap-role \
   allow_wildcard_certificates=true \
   max_ttl=8760h
 vault write pki/config/urls \
-  issuing_certificates='http://vault.vault.svc.cluster.local:8200/v1/pki/ca' \
-  crl_distribution_points='http://vault.vault.svc.cluster.local:8200/v1/pki/crl'
+  issuing_certificates='https://vault.vault.svc.cluster.local:8200/v1/pki/ca' \
+  crl_distribution_points='https://vault.vault.svc.cluster.local:8200/v1/pki/crl'
 "
 
 # Export CA cert and import into macOS
 kubectl exec -n vault vault-0 -- sh -c \
-  'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN vault read -field=certificate pki/cert/ca' \
+  'VAULT_ADDR=https://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN vault read -field=certificate pki/cert/ca' \
   > 03-airgap-zone/airgap-ca.crt
 sudo security add-trusted-cert -d -r trustRoot \
   -k /Library/Keychains/System.keychain 03-airgap-zone/airgap-ca.crt
 
 # ── Policies ───────────────────────────────────────────────────────────
 kubectl exec -n vault vault-0 -- sh -c "
-VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN
+VAULT_ADDR=https://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN
 vault policy write lumen-api-policy - <<EOF
 path \"lumen/data/*\" { capabilities = [\"read\"] }
 path \"pki/sign/airgap-role\" { capabilities = [\"create\", \"update\"] }
@@ -326,7 +333,7 @@ EOF
 
 # ── Kubernetes Auth ────────────────────────────────────────────────────
 kubectl exec -n vault vault-0 -- sh -c "
-VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN
+VAULT_ADDR=https://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN
 vault auth enable kubernetes
 vault write auth/kubernetes/config \
   kubernetes_host=https://kubernetes.default.svc \
@@ -351,7 +358,7 @@ vault write auth/kubernetes/role/cert-manager \
 PG_USER=$(kubectl get secret lumen-db-app -n lumen -o jsonpath='{.data.username}' | base64 -d)
 PG_PASS=$(kubectl get secret lumen-db-app -n lumen -o jsonpath='{.data.password}' | base64 -d)
 kubectl exec -n vault vault-0 -- sh -c "
-VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN
+VAULT_ADDR=https://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN
 vault kv put lumen/db username='$PG_USER' password='$PG_PASS' dbname=app
 "
 ```
@@ -755,7 +762,8 @@ config: |
   listener "tcp" {
     address         = "[::]:8200"
     cluster_address = "[::]:8201"
-    tls_disable     = true
+    tls_cert_file   = "/vault/userconfig/vault-server-tls/tls.crt"
+    tls_key_file    = "/vault/userconfig/vault-server-tls/tls.key"
   }
   service_registration "kubernetes" {}
   ui = true
@@ -813,17 +821,17 @@ export VAULT_TOKEN=$(python3 -c "import json; print(json.load(open('vault-keys.j
 
 # 1. Enable PKI mount
 kubectl exec -n vault vault-0 -- sh -c "
-VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
+VAULT_ADDR=https://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
 vault secrets enable pki"
 
 # 2. Tune max-lease-ttl BEFORE generating CA (critical! default=30d cap)
 kubectl exec -n vault vault-0 -- sh -c "
-VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
+VAULT_ADDR=https://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
 vault secrets tune -max-lease-ttl=87600h pki"
 
 # 3. Generate root CA (10 years)
 kubectl exec -n vault vault-0 -- sh -c "
-VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
+VAULT_ADDR=https://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
 vault write pki/root/generate/internal \
   common_name='Airgap Local CA' \
   ttl=87600h \
@@ -832,7 +840,7 @@ vault write pki/root/generate/internal \
 
 # 4. Export new CA cert
 kubectl exec -n vault vault-0 -- sh -c "
-VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
+VAULT_ADDR=https://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
 vault read -field=certificate pki/cert/ca" > /tmp/new-airgap-ca.crt
 
 # 5. Replace project CA file
@@ -907,7 +915,7 @@ kubectl exec -n vault vault-0 -- vault status
 ```bash
 VAULT_TOKEN="<root-token>"
 kubectl exec -n vault vault-0 -- sh -c \
-  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN vault operator raft list-peers"
+  "VAULT_ADDR=https://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN vault operator raft list-peers"
 # → shows vault-0 (leader), vault-1, vault-2 (followers)
 ```
 
@@ -915,7 +923,7 @@ kubectl exec -n vault vault-0 -- sh -c \
 
 ```bash
 kubectl exec -n vault vault-0 -- sh -c \
-  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN vault secrets list"
+  "VAULT_ADDR=https://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN vault secrets list"
 # → lumen/   kv       (PostgreSQL creds)
 # → pki/     pki      (Airgap CA)
 ```
@@ -924,7 +932,7 @@ kubectl exec -n vault vault-0 -- sh -c \
 
 ```bash
 kubectl exec -n vault vault-0 -- sh -c \
-  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
+  "VAULT_ADDR=https://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN \
    vault read -format=json pki/cert/ca" \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['certificate'])" \
   | openssl x509 -noout -dates
@@ -960,7 +968,7 @@ TOKEN=$(kubectl get secret cert-manager-vault-token -n cert-manager \
   -o jsonpath='{.data.token}' | base64 -d)
 
 kubectl exec -n vault vault-0 -- sh -c "
-VAULT_ADDR=http://127.0.0.1:8200 vault write auth/kubernetes/login \
+VAULT_ADDR=https://127.0.0.1:8200 vault write auth/kubernetes/login \
   role=cert-manager jwt='$TOKEN'
 "
 # → token: hvs.xxx  (success)

@@ -38,7 +38,12 @@ metadata:
   name: vault-issuer
 spec:
   vault:
-    server: http://vault.vault.svc.cluster.local:8200
+    server: https://vault.vault.svc.cluster.local:8200
+    # Root of the infrastructure CA, in the cert-manager namespace
+    # (vault/06-vault-tls.yaml)
+    caBundleSecretRef:
+      name: vault-ca
+      key: ca.crt
     path: pki/sign/airgap-role
     auth:
       kubernetes:

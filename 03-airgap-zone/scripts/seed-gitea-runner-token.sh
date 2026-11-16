@@ -44,7 +44,7 @@ if [ -z "$TOKEN" ]; then
 fi
 WANT=$(printf '%s' "$TOKEN" | shasum -a 256 | cut -d' ' -f1)
 printf '%s\n%s' "$VAULT_TOKEN" "$TOKEN" | $KUBECTL exec -i -n vault vault-0 -- sh -c \
-  'read -r VAULT_TOKEN; export VAULT_TOKEN VAULT_ADDR=http://127.0.0.1:8200
+  'read -r VAULT_TOKEN; export VAULT_TOKEN VAULT_ADDR=https://127.0.0.1:8200
    V=$(cat); [ -n "$V" ] || { echo "empty token, nothing written" >&2; exit 1; }
    printf "%s" "$V" | vault kv put '"$VAULT_PATH"' token=- > /dev/null'
 unset TOKEN

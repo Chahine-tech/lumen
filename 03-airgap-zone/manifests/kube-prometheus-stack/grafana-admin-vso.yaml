@@ -12,8 +12,10 @@ metadata:
   name: vault-connection
   namespace: monitoring
 spec:
-  address: http://vault.vault.svc.cluster.local:8200
+  address: https://vault.vault.svc.cluster.local:8200
   skipTLSVerify: false
+  # Root of the infrastructure CA, kept by cert-manager (vault/06-vault-tls.yaml)
+  caCertSecretRef: vault-ca
 
 ---
 apiVersion: secrets.hashicorp.com/v1beta1

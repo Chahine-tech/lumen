@@ -4,8 +4,10 @@ metadata:
   name: cert-manager
   namespace: argocd
   annotations:
-    # Wave 8: after Vault (7) — cert-manager needs Vault to be initialized and unsealed
-    argocd.argoproj.io/sync-wave: "8"
+    # Wave 7: before Vault (8), which mounts a certificate from cert-manager
+    # (vault/06-vault-tls.yaml, issue #5). The ClusterIssuer that needs Vault
+    # (vault/03-vault-issuer.yaml) is applied once Vault is unsealed
+    argocd.argoproj.io/sync-wave: "7"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:

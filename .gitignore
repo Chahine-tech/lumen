@@ -62,3 +62,6 @@ cosign.key
 
 # Output of the checks (make check): rendered manifests, schemas, rules
 .cache/
+
+# Python bytecode (scripts/mirror.py imports 03-airgap-zone/tests/manifests/image_list.py)
+__pycache__/

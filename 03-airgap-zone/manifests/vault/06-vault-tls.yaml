@@ -1,0 +1,154 @@
+# Vault's listener certificate (issue #5), signed by the infrastructure CA
+# (05-infra-ca.yaml), so it does not depend on Vault being up. Mounted by
+# the Vault pods (vault-helm/values-airgap-override.yaml) at
+# /vault/userconfig/vault-server-tls. ca.crt is the root.
+#
+# Vault reads its certificate at startup and on SIGHUP: after a renewal,
+# reload each pod (docs/runbooks/vault-tls.md).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-server-tls
+  namespace: vault
+spec:
+  secretName: vault-server-tls
+  issuerRef:
+    name: infra-ca
+    kind: ClusterIssuer
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  duration: 8760h    # 1 year
+  renewBefore: 720h  # 30 days
+  usages: [server auth, client auth, digital signature]
+  commonName: vault.vault.svc.cluster.local
+  dnsNames:
+    - "vault"
+    - "vault.vault"
+    - "vault.vault.svc"
+    - "vault.vault.svc.cluster.local"
+    - "vault-active"
+    - "vault-active.vault"
+    - "vault-active.vault.svc"
+    - "vault-active.vault.svc.cluster.local"
+    - "vault-standby"
+    - "vault-standby.vault"
+    - "vault-standby.vault.svc"
+    - "vault-standby.vault.svc.cluster.local"
+    - "vault-ui"
+    - "vault-ui.vault"
+    - "vault-ui.vault.svc"
+    - "vault-ui.vault.svc.cluster.local"
+    - "vault-internal"
+    - "vault-internal.vault"
+    - "vault-internal.vault.svc"
+    - "vault-internal.vault.svc.cluster.local"
+    - "*.vault-internal"
+    - "*.vault-internal.vault"
+    - "*.vault-internal.vault.svc"
+    - "*.vault-internal.vault.svc.cluster.local"
+    - "localhost"
+  ipAddresses:
+    - 127.0.0.1
+
+# The root certificate for Vault's clients in other namespaces: the ca.crt
+# of a certificate from the same issuer, kept up to date by cert-manager,
+# read by VSO (caCertSecretRef) and cert-manager (caBundleSecretRef). The
+# certificate itself is never used: its only extended key usage is email
+# protection, which TLS clients and servers refuse.
+---
+# For VSO (vso/01-vault-connection.yaml)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-ca
+  namespace: lumen
+spec:
+  secretName: vault-ca
+  issuerRef:
+    name: infra-ca
+    kind: ClusterIssuer
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  duration: 8760h
+  renewBefore: 720h
+  usages: [email protection]
+  commonName: vault-ca-bundle
+---
+# For VSO (vso/06-gitea-runner-secret.yaml)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-ca
+  namespace: gitea
+spec:
+  secretName: vault-ca
+  issuerRef:
+    name: infra-ca
+    kind: ClusterIssuer
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  duration: 8760h
+  renewBefore: 720h
+  usages: [email protection]
+  commonName: vault-ca-bundle
+---
+# For VSO (kube-prometheus-stack/grafana-admin-vso.yaml)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-ca
+  namespace: monitoring
+spec:
+  secretName: vault-ca
+  issuerRef:
+    name: infra-ca
+    kind: ClusterIssuer
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  duration: 8760h
+  renewBefore: 720h
+  usages: [email protection]
+  commonName: vault-ca-bundle
+---
+# For VSO (traefik/20-dashboard-auth-vso.yaml)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-ca
+  namespace: traefik
+spec:
+  secretName: vault-ca
+  issuerRef:
+    name: infra-ca
+    kind: ClusterIssuer
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  duration: 8760h
+  renewBefore: 720h
+  usages: [email protection]
+  commonName: vault-ca-bundle
+---
+# For the ClusterIssuer vault-issuer (03-vault-issuer.yaml)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-ca
+  namespace: cert-manager
+spec:
+  secretName: vault-ca
+  issuerRef:
+    name: infra-ca
+    kind: ClusterIssuer
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  duration: 8760h
+  renewBefore: 720h
+  usages: [email protection]
+  commonName: vault-ca-bundle
