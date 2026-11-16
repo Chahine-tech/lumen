@@ -1,0 +1,147 @@
+// Renovate (issue #31), run by the Renovate GitHub App on the GitHub
+// repository. Nothing opens a pull request until it is ticked in the
+// dependency dashboard issue.
+//
+// Images are referenced as tag@digest. The airgap ones carry the
+// linux/arm64 digest (the registry holds that platform only): Renovate
+// reads the architecture of the current digest and keeps it. The others
+// (checks, GitHub workflows, Dockerfile, transit compose) carry the index
+// digest.
+//
+// Images that a chart or a vendored manifest sets (ArgoCD, the operators,
+// the monitoring stack...) are left alone: they move with that chart or
+// manifest. mirror.yaml marks the others with `renovate: true`.
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: ['config:recommended'],
+  dependencyDashboardApproval: true,
+  prConcurrentLimit: 5,
+  enabledManagers: ['gomod', 'github-actions', 'dockerfile', 'docker-compose', 'custom.regex'],
+  gomod: {
+    postUpdateOptions: ['gomodTidy'],
+  },
+  customManagers: [
+    {
+      description: 'mirror.yaml entries marked renovate: true',
+      customType: 'regex',
+      managerFilePatterns: ['/^mirror\\.yaml$/'],
+      matchStrings: [
+        '- source: (?<depName>[^:\\s]+):(?<currentValue>\\S+)\\n    digest: (?<currentDigest>sha256:[0-9a-f]{64})\\n    renovate: true\\n',
+      ],
+      datasourceTemplate: 'docker',
+    },
+    {
+      description: 'References to the airgap registry, in the files of the images mirror.yaml marks',
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^03-airgap-zone/manifests/app/02-redis\\.yaml$/',
+        '/^03-airgap-zone/manifests/gitea/02-deployment\\.yaml$/',
+        '/^03-airgap-zone/manifests/gitea-runner/01-runner\\.yaml$/',
+        '/^03-airgap-zone/manifests/falco-helm/templates/k8s-metacollector\\.yaml$/',
+        '/^\\.gitea/workflows/[^/]+\\.ya?ml$/',
+      ],
+      matchStrings: [
+        '(?:192\\.168\\.2\\.2:5000|\\$\\{\\{ env\\.REGISTRY \\}\\})/(?<depName>[a-z0-9._/-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})',
+      ],
+      depNameTemplate: '192.168.2.2:5000/{{{depName}}}',
+      datasourceTemplate: 'docker',
+    },
+    {
+      description: 'Images of the checks (scripts/check/images.sh)',
+      customType: 'regex',
+      managerFilePatterns: ['/^scripts/check/images\\.sh$/'],
+      matchStrings: [
+        '_IMAGE="\\$\\{R\\}(?<depName>[^:"@]+):(?<currentValue>[^@"]+)@(?<currentDigest>sha256:[0-9a-f]{64})"',
+      ],
+      datasourceTemplate: 'docker',
+    },
+    {
+      description: 'docker run in the GitHub workflows and the Makefile',
+      customType: 'regex',
+      managerFilePatterns: ['/^Makefile$/', '/^\\.github/workflows/[^/]+\\.ya?ml$/'],
+      matchStrings: [
+        '(?<depName>[a-z0-9.-]+\\.[a-z]+/[a-z0-9._/-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})',
+      ],
+      datasourceTemplate: 'docker',
+    },
+  ],
+  packageRules: [
+    {
+      description: 'One branch per image and major, whatever the file and the digest',
+      matchDatasources: ['docker'],
+      branchTopic: "{{{replace '[^a-z0-9]+' '-' (replace '^docker\\.io/(library/)?' '' packageName)}}}-{{{newMajor}}}",
+    },
+    {
+      description: 'Where the airgap runner gets its actions from is not established yet: actions/checkout@v4 stays',
+      matchManagers: ['github-actions'],
+      matchFileNames: ['.gitea/**'],
+      enabled: false,
+    },
+    {
+      description: 'Vendored chart sources (Loki helm-test Dockerfile)',
+      matchFileNames: ['03-airgap-zone/manifests/**'],
+      matchManagers: ['dockerfile'],
+      enabled: false,
+    },
+    {
+      description: 'PostgreSQL moves with the CNPG cluster, not on its own',
+      matchPackageNames: ['postgres', 'ghcr.io/cloudnative-pg/postgresql', '192.168.2.2:5000/postgresql'],
+      enabled: false,
+    },
+    {
+      description: 'kyverno-cli is the version deployed (kyverno-helm): it moves with the chart',
+      matchPackageNames: ['ghcr.io/kyverno/kyverno-cli'],
+      enabled: false,
+    },
+    {
+      description: 'ArgoCD embeds Helm 3: the render check stays on it',
+      matchPackageNames: ['alpine/helm'],
+      allowedVersions: '<4',
+    },
+    {
+      description: 'Airgap registry references: off unless mapped to their source below',
+      matchDepNames: ['192.168.2.2:5000/**'],
+      enabled: false,
+    },
+    {
+      matchDepNames: ['192.168.2.2:5000/redis'],
+      overridePackageName: 'docker.io/library/redis',
+      enabled: true,
+    },
+    {
+      matchDepNames: ['192.168.2.2:5000/gitea/gitea'],
+      overridePackageName: 'docker.io/gitea/gitea',
+      enabled: true,
+    },
+    {
+      matchDepNames: ['192.168.2.2:5000/gitea/act_runner'],
+      overridePackageName: 'docker.io/gitea/act_runner',
+      enabled: true,
+    },
+    {
+      matchDepNames: ['192.168.2.2:5000/falcosecurity/k8s-metacollector'],
+      overridePackageName: 'docker.io/falcosecurity/k8s-metacollector',
+      enabled: true,
+    },
+    {
+      matchDepNames: ['192.168.2.2:5000/golang'],
+      overridePackageName: 'docker.io/library/golang',
+      enabled: true,
+    },
+    {
+      matchDepNames: ['192.168.2.2:5000/projectsigstore/cosign'],
+      overridePackageName: 'gcr.io/projectsigstore/cosign',
+      enabled: true,
+    },
+    {
+      matchDepNames: ['192.168.2.2:5000/aquasec/trivy'],
+      overridePackageName: 'docker.io/aquasec/trivy',
+      enabled: true,
+    },
+    {
+      matchDepNames: ['192.168.2.2:5000/gitleaks/gitleaks'],
+      overridePackageName: 'ghcr.io/gitleaks/gitleaks',
+      enabled: true,
+    },
+  ],
+}

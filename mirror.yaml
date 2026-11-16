@@ -16,6 +16,9 @@
 #             the registry (loaded with docker load where it runs)
 #   digest:   digest of `source` for `platform`, the image the registry
 #             holds; the pull fails when the tag points to another one
+#   renovate: true when Renovate updates it (renovate.json5), with the
+#             files that reference it; keep it right after `digest`. The
+#             others follow the chart or vendored manifest that uses them
 #
 # A manifest may reference an image by its upstream name: K3s mirrors
 # docker.io, quay.io, ghcr.io, gcr.io and registry.k8s.io to the airgap
@@ -102,12 +105,15 @@ images:
     digest: sha256:a9880e16f69f46dc2c1c390faf5584ed2c388e3a16714f224a871621e4706c8f
   - source: docker.io/falcosecurity/k8s-metacollector:0.1.1
     digest: sha256:4f0219b4439ff45edcc8194fc39b6d635be767cae0ee48a33e9b68c1911ff059
+    renovate: true
 
   # Gitea and its runner
   - source: docker.io/gitea/gitea:1.21.5
     digest: sha256:8ac60c3bed2737a9952b533c96ee07d50bdd3f5f34d9e8bc298e87fba5c12c0b
+    renovate: true
   - source: docker.io/gitea/act_runner:0.2.11
     digest: sha256:7076b74f6d7c6c04ea0f57477023f56ad186242d7fd23bec76dede53053925e7
+    renovate: true
 
   # kube-prometheus-stack
   - source: quay.io/prometheus/prometheus:v3.1.0
@@ -150,6 +156,7 @@ images:
   # lumen (app/02-redis.yaml)
   - source: docker.io/library/redis:7.4.12-alpine
     digest: sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
+    renovate: true
 
   # MetalLB (install-metallb.sh, Helm chart below)
   - source: quay.io/metallb/controller:v0.15.3
@@ -182,15 +189,19 @@ images:
   # Gitea CI jobs
   - source: docker.io/library/golang:1.26.11-alpine
     digest: sha256:f00ba21309295da612e60611d28ad4c7b9424a74cb42b9fc7ecebaeb83c387a2
+    renovate: true
     used_by: .gitea/workflows/ci.yaml
   - source: gcr.io/projectsigstore/cosign:v3.0.5
     digest: sha256:0e87036914ffd939dc6366f058049e7fe1308764aea064bdda5f314bc953392c
+    renovate: true
     used_by: .gitea/workflows/ci.yaml
   - source: docker.io/aquasec/trivy:0.59.1
     digest: sha256:778481f0857406cd287dcafa84282cb50e87ed1c9ba46ab58d762f5797a90530
+    renovate: true
     used_by: .gitea/workflows/ci.yaml
   - source: ghcr.io/gitleaks/gitleaks:v8.30.1
     digest: sha256:6b2d52241f9d176fc59e6e3b026ea52c98f390070587d9475d6ee2bc64941815
+    renovate: true
     used_by: .gitea/workflows/secret-scan.yaml
 
   # Garage on backup-1 (Ansible role garage, docker load)

@@ -17,8 +17,9 @@ jobs:
     name: Go (lint, vet, race, coverage)
     runs-on: ubuntu-latest
     steps:
-      # actions/checkout v7.0.1, pinned by commit (issue #14)
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      # actions/checkout pinned by commit (issue #14), its version in the
+      # trailing comment (Renovate reads it)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: ./scripts/check/go.sh
@@ -27,7 +28,7 @@ jobs:
     name: Manifests, rules, policies, misconfigurations and images
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: PyYAML
@@ -42,7 +43,7 @@ jobs:
     name: shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: ./scripts/check/shell.sh
@@ -51,7 +52,7 @@ jobs:
     name: Terraform
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: ./scripts/check/terraform.sh
@@ -60,7 +61,7 @@ jobs:
     name: ansible-lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: ./scripts/check/ansible.sh

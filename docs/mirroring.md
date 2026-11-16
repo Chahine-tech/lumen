@@ -48,6 +48,41 @@ make mirror-verify               # every pulled image is in the registry, same d
 crane and Helm run in containers (`CRANE_IMAGE`, `HELM_IMAGE` in
 `scripts/check/images.sh`, pinned by digest), with the host network.
 
+## Updates (Renovate)
+
+`renovate.json5`, run by the Renovate GitHub App on the GitHub repository.
+Nothing opens a pull request until it is ticked in the dependency
+dashboard issue.
+
+- Covered: Go modules, the GitHub Actions, the Dockerfile builder, the
+  compose files, `scripts/check/images.sh`, the `docker run` lines of the
+  GitHub workflows and the Makefile, and the images marked
+  `renovate: true` in `mirror.yaml` with their references in the airgap
+  manifests and `.gitea/workflows`.
+- One branch per image and major version, whatever the file: a Redis
+  update changes `mirror.yaml`, the manifests, the Gitea CI and the check
+  image together. Each reference keeps its kind of digest: Renovate reads
+  the architecture of the current digest, so the airgap ones stay
+  linux/arm64 and the others stay the index.
+- Left out: images set by a chart or a vendored manifest (they move with
+  it), PostgreSQL (moves with the CNPG cluster), kyverno-cli (the deployed
+  version), Helm 4 (ArgoCD embeds Helm 3), the actions of
+  `.gitea/workflows`.
+- A reference to the airgap registry is looked up at its source through
+  `overridePackageName`; one without a rule there is not updated.
+
+The image list check runs on every Renovate pull request: a branch that
+changes `mirror.yaml` without the manifests, or the reverse, fails it.
+After merging, `mirror.py pull` and `push` carry the new image to the
+registry before ArgoCD deploys it.
+
+Measured with Renovate 44.244.2 in lookup mode on 16 November 2026: which
+files and references it finds, the branch each update goes to, and that
+the proposed digests are the linux/arm64 one (airgap) or the index
+(others), checked against crane for golang 1.27.4 and redis 8.10.3. Not
+measured: the edits it makes in a real pull request (local mode does not
+write), and the GitHub Actions lookups (they need a token).
+
 ## How it was tested
 
 On 16 November 2026, against a local `registry:2` (`localhost:5001`), with a
