@@ -17,11 +17,10 @@ The project simulates a real-world constraint: **no internet access from the clu
 │  ┌─────────────────────────────────────────────────────────────────────────┐    │
 │  │  git push-all ──────────────────────────────────────────────┐           │    │
 │  │                                                             │           │    │
-│  │  01-connected-zone/scripts/                                 │           │    │
-│  │  ├── 07-pull-traefik.sh          ← docker pull + helm pull  │           │    │
-│  │  ├── 08-pull-kube-prometheus.sh                             │           │    │
-│  │  ├── ...                                                    │           │    │
-│  │  └── 19-pull-chaos-mesh.sh       → artifacts/chaos-mesh/   │           │    │
+│  │  scripts/mirror.py pull         ← mirror.yaml               │           │    │
+│  │    images (OCI layouts), charts, files                      │           │    │
+│  │    → 01-connected-zone/artifacts/                           │           │    │
+│  │  scripts/mirror.py push         → registry, digest checked  │           │    │
 │  └─────────────────────────────────────────────────────────────────────────┘    │
 └──────────────────────────────────┬───────────────────────────────┬──────────────┘
                                    │ USB / scp                     │ SSH (GitHub)

@@ -19,7 +19,8 @@ failure. The registry is plain HTTP.
 
 Options: --artifacts DIR (default 01-connected-zone/artifacts),
 --registry HOST:PORT (default: registry of mirror.yaml), --only TEXT
-(entries whose source, chart name or url contains TEXT), --config FILE
+(pull: entries whose source, chart name or url contains TEXT; push and
+verify: registry paths that contain it), --config FILE
 (default mirror.yaml).
 Images: CRANE_IMAGE and HELM_IMAGE of scripts/check/images.sh.
 """

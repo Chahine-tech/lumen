@@ -1,7 +1,7 @@
 # Barman Cloud plugin for CloudNativePG, adapted for the airgap
 #
 # Rendered by 03-airgap-zone/scripts/install-cnpg-plugin.sh, which copies the
-# upstream release manifest (downloaded by 12-pull-cnpg.sh) next to this file
+# upstream release manifest (downloaded by scripts/mirror.py pull) next to this file
 # as plugin-barman-cloud.yaml before running `kubectl kustomize`. The upstream
 # manifest is not committed, same as the operator manifest.
 #

@@ -4,8 +4,8 @@
 # Prerequisites:
 #   - CloudNativePG operator 1.30 or later (upgrade-cnpg.sh)
 #   - cert-manager running (the plugin issues its own mTLS certificates)
-#   - Plugin manifest downloaded by 01-connected-zone/scripts/12-pull-cnpg.sh
-#   - Plugin + sidecar images in the airgap registry (02-transit-zone/push-cnpg.sh)
+#   - Plugin manifest downloaded by scripts/mirror.py pull (mirror.yaml)
+#   - Plugin + sidecar images in the airgap registry (scripts/mirror.py push)
 #
 # The upstream manifest is rendered locally with kubectl kustomize and the
 # overlay in manifests/cnpg-plugin/ (airgap images, SIDECAR_IMAGE, resources).
@@ -39,7 +39,7 @@ if ! $KUBECTL get crd certificates.cert-manager.io > /dev/null 2>&1; then
 fi
 echo "  ✅ cert-manager CRDs present"
 if [ ! -f "$MANIFEST" ]; then
-  echo "  ❌ Missing ${MANIFEST}: run 01-connected-zone/scripts/12-pull-cnpg.sh"
+  echo "  ❌ Missing ${MANIFEST}: run scripts/mirror.py pull"
   exit 1
 fi
 

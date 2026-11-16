@@ -54,7 +54,7 @@ if [ ! -f "$HELM_CHART_DIR/Chart.yaml" ]; then
 
     if [ ! -f "$TARBALL" ]; then
         echo_error "Helm chart tarball not found at: $TARBALL"
-        echo "Run: cd 01-connected-zone && ./scripts/08-pull-kube-prometheus-stack.sh"
+        echo "The chart is vendored in git: restore $HELM_CHART_DIR"
         exit 1
     fi
 

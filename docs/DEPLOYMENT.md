@@ -1343,6 +1343,9 @@ Saving images to tar archives...
 
 ### Step 2: Push to Internal Registry (Transit Zone)
 
+> The per-component pull and push scripts this section used were replaced by
+> `scripts/mirror.py` and `mirror.yaml` ([mirroring.md](mirroring.md)).
+
 ```bash
 cd 02-transit-zone
 ./push-argocd.sh
@@ -1906,6 +1909,9 @@ https://argocd.airgap.local
 
 #### 1. Connected Zone - Download Traefik
 
+> The per-component pull and push scripts this section used were replaced by
+> `scripts/mirror.py` and `mirror.yaml` ([mirroring.md](mirroring.md)).
+
 ```bash
 cd 01-connected-zone
 chmod +x scripts/07-pull-traefik-images.sh
@@ -2180,6 +2186,9 @@ traefik-65f8c9d4bf-qx2lp   10m          72Mi
 - Memory request: 256Mi, limit: 512Mi
 
 ### Files Created
+
+> The per-component pull and push scripts this section used were replaced by
+> `scripts/mirror.py` and `mirror.yaml` ([mirroring.md](mirroring.md)).
 
 **Connected Zone:**
 - `scripts/07-pull-traefik-images.sh`

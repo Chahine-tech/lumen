@@ -1,8 +1,7 @@
 #!/bin/bash
 # Regenerate schemas/ from the CRDs of the downloaded artifacts, for the kinds
 # this repository uses and whose CRDs are not in git. Run after changing one
-# of these versions (01-connected-zone/scripts/12-pull-cnpg.sh,
-# 07-pull-traefik-images.sh).
+# of these versions in mirror.yaml, after scripts/mirror.py pull.
 set -euo pipefail
 cd "$(dirname "$0")"
 A=../../../01-connected-zone/artifacts

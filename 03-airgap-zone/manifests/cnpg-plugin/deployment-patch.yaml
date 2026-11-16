@@ -13,7 +13,7 @@ spec:
             # Upstream reads the sidecar image from a generated Secret that
             # points to ghcr.io. The plugin docs say to set SIDECAR_IMAGE to the
             # mirrored image in air-gapped environments. Keep the tag equal to
-            # the plugin version (BARMAN_PLUGIN_VERSION in 12-pull-cnpg.sh).
+            # the plugin version (mirror.yaml).
             - name: SIDECAR_IMAGE
               value: 192.168.2.2:5000/plugin-barman-cloud-sidecar:v0.16.0
               valueFrom: null

@@ -8,7 +8,8 @@
 # Prerequisites:
 # - K3s installed with --disable=servicelb flag (no built-in LB)
 # - Docker registry running on node-1 at 192.168.2.2:5000
-# - MetalLB images already pushed to local registry
+# - MetalLB images pushed to the registry and its chart downloaded
+#   (scripts/mirror.py pull and push, mirror.yaml)
 #
 # Images needed in registry:
 #   192.168.2.2:5000/metallb/controller:v0.15.3
@@ -20,12 +21,15 @@ set -e
 METALLB_VERSION="0.15.3"
 REGISTRY="192.168.2.2:5000"
 NAMESPACE="metallb-system"
+CHART="$(cd "$(dirname "$0")/../.." && pwd)/01-connected-zone/artifacts/metallb/helm/metallb-${METALLB_VERSION}.tgz"
+
+[ -f "${CHART}" ] || { echo "Missing ${CHART}: run scripts/mirror.py pull"; exit 1; }
 
 echo "[1/3] Installing MetalLB via Helm (airgap)..."
-multipass exec node-1 -- helm install metallb metallb/metallb \
+multipass transfer "${CHART}" node-1:/tmp/metallb.tgz
+multipass exec node-1 -- helm install metallb /tmp/metallb.tgz \
   --namespace "${NAMESPACE}" \
   --create-namespace \
-  --version "${METALLB_VERSION}" \
   --set controller.image.repository="${REGISTRY}/metallb/controller" \
   --set controller.image.tag="v${METALLB_VERSION}" \
   --set speaker.image.repository="${REGISTRY}/metallb/speaker" \

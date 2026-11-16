@@ -113,8 +113,7 @@ remove them.
 
 - `make scan-secrets`: gitleaks over the full history, as in CI.
 - CI: `.gitea/workflows/secret-scan.yaml` (Gitea; mirror the image first with
-  `01-connected-zone/scripts/22-pull-gitleaks.sh` and
-  `02-transit-zone/push-gitleaks.sh`) and `.github/workflows/secret-scan.yml`
+  `mirror.yaml`, pulled and pushed by `scripts/mirror.py`) and `.github/workflows/secret-scan.yml`
   (public mirror).
 - Before each commit: `brew install pre-commit && pre-commit install`
   (gitleaks is already installed locally).

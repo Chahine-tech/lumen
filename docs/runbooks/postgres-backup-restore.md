@@ -53,11 +53,11 @@ CNPG are already running.
 
 ```bash
 # From the repository root
-(cd 01-connected-zone && ./scripts/12-pull-cnpg.sh)  # operator 1.26.3 to 1.30.1, plugin, images → 01-connected-zone/artifacts/cnpg
-./01-connected-zone/scripts/21-pull-garage.sh         # Garage v2.5.0, pinned digest → artifacts/garage
+./scripts/mirror.py pull --only cloudnative-pg   # operator 1.26.3 to 1.30.1, plugin, images, manifests → 01-connected-zone/artifacts
+./scripts/mirror.py pull --only garage           # Garage v2.5.0, pinned digest → 01-connected-zone/artifacts/garage
 ```
 
-Then push the CNPG images to the airgap registry: `02-transit-zone/push-cnpg.sh`.
+Then push the CNPG images to the airgap registry: `./scripts/mirror.py push`.
 
 ### 2. Create backup-1
 

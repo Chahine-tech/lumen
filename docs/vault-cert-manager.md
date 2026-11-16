@@ -1050,7 +1050,4 @@ Located at project root. Contains unseal keys + root token. Needed after every p
 | [03-airgap-zone/manifests/argocd/13-application-vault.yaml](../03-airgap-zone/manifests/argocd/13-application-vault.yaml) | ArgoCD Application — Vault (wave 7) |
 | [03-airgap-zone/manifests/argocd/14-application-cert-manager.yaml](../03-airgap-zone/manifests/argocd/14-application-cert-manager.yaml) | ArgoCD Application — cert-manager (wave 8) |
 | [03-airgap-zone/manifests/traefik/18-vault-ingressroute.yaml](../03-airgap-zone/manifests/traefik/18-vault-ingressroute.yaml) | IngressRoute vault.airgap.local → vault-ui:8200 |
-| [01-connected-zone/scripts/13-pull-vault.sh](../01-connected-zone/scripts/13-pull-vault.sh) | Pull Vault images + Helm chart (connected zone) |
-| [01-connected-zone/scripts/14-pull-cert-manager.sh](../01-connected-zone/scripts/14-pull-cert-manager.sh) | Pull cert-manager images + Helm chart (connected zone) |
-| [02-transit-zone/push-vault.sh](../02-transit-zone/push-vault.sh) | Push Vault images to airgap registry |
-| [02-transit-zone/push-cert-manager.sh](../02-transit-zone/push-cert-manager.sh) | Push cert-manager images to airgap registry |
+| [mirror.yaml](../mirror.yaml), [scripts/mirror.py](../scripts/mirror.py) | Vault and cert-manager images, pulled and pushed to the airgap registry ([mirroring.md](mirroring.md)); the charts are vendored in git |

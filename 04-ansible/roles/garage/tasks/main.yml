@@ -3,7 +3,7 @@
 #
 # Prerequisites:
 #   - backup-1 created by Terraform (05-terraform, cloud-init installs Docker)
-#   - Image tar from 01-connected-zone/scripts/21-pull-garage.sh in artifacts/garage/
+#   - Image tar from scripts/mirror.py pull in 01-connected-zone/artifacts/garage/
 #
 # Result: Garage listening on {{ backup_ip }}:3900 with bucket
 # {{ garage_bucket }} and access key {{ garage_key_name }} (read + write).
@@ -25,7 +25,7 @@
 - name: Transfer the Garage image tar to backup-1
   ansible.builtin.command: >
     multipass transfer
-    {{ project_root }}/artifacts/garage/images/garage-{{ garage_version }}.tar
+    {{ project_root }}/01-connected-zone/artifacts/garage/images/garage-{{ garage_version }}.tar
     {{ backup_vm_name }}:/tmp/garage.tar
   when: garage_image_check.rc != 0
   changed_when: true

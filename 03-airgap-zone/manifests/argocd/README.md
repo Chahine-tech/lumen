@@ -43,8 +43,7 @@ This downloads:
 ### 2. Transit Zone - Push to Registry
 
 ```bash
-cd 02-transit-zone
-./push-argocd.sh
+make mirror-push   # from the repository root (mirror.yaml, docs/mirroring.md)
 ```
 
 This:

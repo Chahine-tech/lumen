@@ -18,13 +18,7 @@ all: build-connected setup-transit setup-airgap deploy test ## Run complete setu
 	@echo "$(GREEN)✓ Complete setup finished!$(NC)"
 
 # Connected Zone
-build-connected: ## Pull and push images to transit registry (see 01-connected-zone/scripts/)
-	@echo "$(YELLOW)[Connected Zone]$(NC) Run scripts in 01-connected-zone/scripts/ to pull and push images"
-	@echo "  ./scripts/06-pull-gitea-images.sh"
-	@echo "  ./scripts/07-pull-traefik-images.sh"
-	@echo "  ./scripts/08-pull-kube-prometheus-stack.sh"
-	@echo "  ./scripts/09-pull-argocd.sh"
-	@echo "  ./scripts/11-pull-observability-stack.sh"
+build-connected: mirror-pull ## Pull everything mirror.yaml lists (same as mirror-pull)
 
 test-api-local: ## Test API locally with docker-compose
 	@echo "$(YELLOW)[Connected Zone]$(NC) Testing API locally..."

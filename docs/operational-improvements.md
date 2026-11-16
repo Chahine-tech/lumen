@@ -654,6 +654,9 @@ Applications deployed (lumen, monitoring, network-policies)
 
 #### 1. Connected Zone - Download Gitea Image
 
+> The per-component pull and push scripts this section used were replaced by
+> `scripts/mirror.py` and `mirror.yaml` ([mirroring.md](mirroring.md)).
+
 **File:** `01-connected-zone/scripts/06-pull-gitea-images.sh`
 
 ```bash

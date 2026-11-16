@@ -13,8 +13,8 @@
 # its connections for the duration of the primary restart and reconnects.
 #
 # Prerequisites:
-#   - Manifests downloaded by 01-connected-zone/scripts/12-pull-cnpg.sh
-#   - Operator images in the airgap registry (02-transit-zone/push-cnpg.sh)
+#   - Manifests downloaded by scripts/mirror.py pull (mirror.yaml)
+#   - Operator images in the airgap registry (scripts/mirror.py push)
 #   - Kubernetes recent enough for each step: the script stops at the first
 #     step the cluster does not support (ranges in lib/cnpg-compat.sh)
 #
@@ -83,7 +83,7 @@ for version in $CNPG_UPGRADE_PATH; do
 
   manifest="${MANIFESTS_DIR}/cnpg-${version}.yaml"
   if [ ! -f "$manifest" ]; then
-    echo "  ❌ Missing ${manifest}: run 01-connected-zone/scripts/12-pull-cnpg.sh"
+    echo "  ❌ Missing ${manifest}: run scripts/mirror.py pull"
     exit 1
   fi
 

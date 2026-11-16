@@ -49,6 +49,9 @@ The Lumen project uses **kube-prometheus-stack** Helm chart for production-grade
 
 ### Step 1: Download Images and Helm Chart (Connected Zone)
 
+> The per-component pull and push scripts this section used were replaced by
+> `scripts/mirror.py` and `mirror.yaml` ([mirroring.md](mirroring.md)).
+
 Script: `01-connected-zone/scripts/08-pull-kube-prometheus-stack.sh`
 
 ```bash
@@ -288,6 +291,9 @@ spec:
 
 ### Step 1: Update Download Script
 
+> The per-component pull and push scripts this section used were replaced by
+> `scripts/mirror.py` and `mirror.yaml` ([mirroring.md](mirroring.md)).
+
 Updated `01-connected-zone/scripts/08-pull-kube-prometheus-stack.sh`:
 
 ```bash
@@ -378,6 +384,9 @@ kubectl get pods -n monitoring -o jsonpath='{range .items[*]}{.metadata.name}{"\
 | **Redis** | 7.0.15-alpine | 7.2.6-alpine |
 
 ### Step 1: Download ArgoCD v3.2.0
+
+> The per-component pull and push scripts this section used were replaced by
+> `scripts/mirror.py` and `mirror.yaml` ([mirroring.md](mirroring.md)).
 
 Script: `01-connected-zone/scripts/09-pull-argocd.sh`
 
@@ -600,16 +609,12 @@ kubectl apply -f 03-airgap-zone/manifests/argocd/08-application-kube-prometheus.
 ### End-to-End Deployment
 
 ```bash
-# 1. Connected Zone - Download all artifacts
-cd 01-connected-zone
-./scripts/08-pull-kube-prometheus-stack.sh
-./scripts/09-pull-argocd.sh
+# 1. Connected Zone - Download all artifacts (mirror.yaml)
+make mirror-pull
 
 # 2. Transit Zone - Push to registry
-cd ../02-transit-zone
+make mirror-push
 ./setup.sh  # Ensure registry running
-./push-kube-prometheus-stack.sh
-./push-argocd.sh
 
 # 3. Airgap Zone - Deploy monitoring
 cd ../03-airgap-zone
@@ -905,13 +910,9 @@ kubectl -n argocd get secret argocd-initial-admin-secret \
 
 ## Files Summary
 
-### Connected Zone
-- `scripts/08-pull-kube-prometheus-stack.sh` - Download monitoring images + Helm chart
-- `scripts/09-pull-argocd.sh` - Download ArgoCD v3.2.0 images
-
-### Transit Zone
-- `push-kube-prometheus-stack.sh` - Push monitoring images to registry
-- `push-argocd.sh` - Push ArgoCD images to registry
+### Connected and Transit Zones
+- `mirror.yaml` - Images to mirror (the kube-prometheus-stack chart is vendored in git)
+- `scripts/mirror.py` - Pull, push and verify ([mirroring.md](mirroring.md))
 
 ### Airgap Zone - Helm Chart
 - `manifests/kube-prometheus-stack-helm/values-airgap-override.yaml` - Airgap configuration

@@ -7,7 +7,7 @@
 # Prerequisites:
 # - K3s running with node-1 and node-2, Kubernetes 1.34 to 1.36 (CNPG 1.30)
 # - cert-manager running (Barman Cloud plugin certificates)
-# - Artifacts from 01-connected-zone/scripts/12-pull-cnpg.sh
+# - Artifacts from scripts/mirror.py pull, images pushed by scripts/mirror.py push
 # - Docker registry running on node-1 at 192.168.2.2:5000
 #
 # What this installs:
@@ -23,6 +23,7 @@ CNPG_VERSION="1.30.1"
 AIRGAP_REGISTRY="192.168.2.2:5000"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ARTIFACTS_DIR="${SCRIPT_DIR}/../../01-connected-zone/artifacts/cnpg"
+PG_VERSION="16.6"
 MANIFESTS_DIR="${SCRIPT_DIR}/../manifests/cnpg"
 # shellcheck disable=SC2034  # read by require_k8s_for_cnpg (lib/cnpg-compat.sh)
 KUBECTL="multipass exec node-1 -- kubectl"
@@ -39,33 +40,20 @@ echo ""
 echo "[1/7] Checking Kubernetes version..."
 require_k8s_for_cnpg "$CNPG_VERSION"
 
-# ── Step 2: Copy images from tars → airgap registry ────────────────────────
-# Docker Desktop on Mac cannot push to HTTP registries directly.
-# We transfer the tar files to node-1 (which has 192.168.2.2:5000 as insecure registry)
-# and push from there.
+# ── Step 2: Images in the airgap registry ──────────────────────────────────
+# Pushed by scripts/mirror.py push (mirror.yaml). Checked from node-1, which
+# reaches the registry. The registry answers 404 without an Accept header.
 echo ""
-echo "[2/7] Copying images to airgap registry (via node-1)..."
-
-while IFS= read -r src_image || [ -n "$src_image" ]; do
-    [ -z "$src_image" ] && continue
-    short=$(echo "$src_image" | sed 's|ghcr.io/cloudnative-pg/||')
-    tarfile="$(echo "$short" | tr ':' '-').tar"
-    dst_image="${AIRGAP_REGISTRY}/${short}"
-
-    echo "  Transferring ${tarfile} to node-1 (this may take a while)..."
-    multipass transfer "${ARTIFACTS_DIR}/images/${tarfile}" "node-1:/tmp/${tarfile}"
-
-    echo "  Loading and pushing ${dst_image}..."
-    multipass exec node-1 -- sh -c "
-        docker load -i /tmp/${tarfile} > /dev/null
-        docker tag ${src_image} ${dst_image}
-        docker push ${dst_image}
-        rm /tmp/${tarfile}
-    "
-    echo "  ✅ ${dst_image}"
-done < "${ARTIFACTS_DIR}/images.txt"
-
-echo "  ✅ Images in airgap registry"
+echo "[2/7] Checking the images in the airgap registry (from node-1)..."
+ACCEPT="application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json"
+for image in "cloudnative-pg:${CNPG_VERSION}" "postgresql:${PG_VERSION}"; do
+    if ! multipass exec node-1 -- curl -sf -o /dev/null -H "Accept: ${ACCEPT}" \
+        "http://${AIRGAP_REGISTRY}/v2/${image%%:*}/manifests/${image#*:}"; then
+        echo "  ❌ ${AIRGAP_REGISTRY}/${image} missing: run scripts/mirror.py push"
+        exit 1
+    fi
+    echo "  ✅ ${AIRGAP_REGISTRY}/${image}"
+done
 
 # ── Step 3: Patch operator manifest to use airgap registry ─────────────────
 echo ""
