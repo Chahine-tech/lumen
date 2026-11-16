@@ -1,9 +1,12 @@
 version: '3.8'
 
+# Images by index digest (issue #31): the tag each one pointed to on
+# 16 November 2026 (registry:2, joxit/docker-registry-ui:latest,
+# nginx:alpine).
 services:
   # Simple Docker Registry
   registry:
-    image: registry:2
+    image: registry:2.8.3@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
     container_name: transit-registry
     ports:
       - "5000:5000"
@@ -18,7 +21,7 @@ services:
     restart: unless-stopped
 
   registry-ui:
-    image: joxit/docker-registry-ui:latest
+    image: joxit/docker-registry-ui:2.6.0@sha256:bb5956a6b378706f1c3a92c947d0a0c606e280460cd9e37c0198caf46399c839
     container_name: transit-registry-ui
     ports:
       - "8081:80"
@@ -36,7 +39,7 @@ services:
 
   # Nginx
   fileserver:
-    image: nginx:alpine
+    image: nginx:1.31.8-alpine@sha256:fed7e14be83cbd2661a75cdc5b872d936cf155d46c327084d30b8df19ae88d72
     container_name: transit-fileserver
     ports:
       - "8082:80"
