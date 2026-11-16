@@ -1,4 +1,4 @@
-.PHONY: help all build-connected setup-transit setup-airgap deploy test clean slo-generate test-alert-rules test-policies scan-secrets check check-go check-manifests check-rules check-policies check-misconfig check-image-list check-shell check-terraform check-ansible
+.PHONY: help all build-connected setup-transit setup-airgap deploy test clean slo-generate test-alert-rules test-policies scan-secrets check check-go check-manifests check-rules check-policies check-misconfig check-image-list check-shell check-terraform check-ansible mirror-pull mirror-push mirror-verify
 
 # Colors for output
 GREEN  := \033[0;32m
@@ -35,6 +35,9 @@ test-api-local: ## Test API locally with docker-compose
 	@curl -s http://localhost:8080/hello | jq .
 	@echo "Metrics available at: http://localhost:9090/metrics"
 
+mirror-pull: ## Connected zone: pull the images, charts and files of mirror.yaml into 01-connected-zone/artifacts
+	./scripts/mirror.py pull
+
 stop-local: ## Stop local docker-compose
 	cd 01-connected-zone && docker-compose down
 
@@ -49,6 +52,12 @@ transit-status: ## Check transit zone status
 	@echo ""
 	@echo "Registry catalog:"
 	@curl -s http://localhost:5000/v2/_catalog | jq .
+
+mirror-push: ## Push the pulled images to the airgap registry (REGISTRY=host:port to override)
+	./scripts/mirror.py push $(if $(REGISTRY),--registry $(REGISTRY))
+
+mirror-verify: ## Check that the airgap registry holds every pulled image, same digest
+	./scripts/mirror.py verify $(if $(REGISTRY),--registry $(REGISTRY))
 
 stop-transit: ## Stop transit zone
 	cd 02-transit-zone && docker-compose down
@@ -186,7 +195,7 @@ check-policies: ## kyverno test on the lumen-* policies, offline (03-airgap-zone
 check-misconfig: check-manifests ## trivy config: HIGH/CRITICAL fail on this repository's sources, reported on Helm charts
 	./scripts/check/misconfig.sh
 
-check-image-list: check-manifests ## Every image of the rendered manifests is in images.yaml, every entry is used
+check-image-list: check-manifests ## Every image of the rendered manifests is in mirror.yaml, every entry is used
 	./scripts/check/image-list.sh
 
 check-shell: ## shellcheck on every tracked shell script

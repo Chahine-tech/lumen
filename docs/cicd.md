@@ -132,7 +132,7 @@ the paths. Images are pinned in `scripts/check/images.sh`.
 | Prometheus rules | `scripts/check/rules.sh` | `promtool check rules` error, `promtool test rules` failure, SLO rules that differ from `make slo-generate` |
 | Kyverno policies | `scripts/check/policies.sh` | `kyverno test` (CLI v1.18.1, offline) on the four `lumen-*` ValidatingPolicies: a case of `03-airgap-zone/tests/kyverno/cli/kyverno-test.yaml` with another verdict, or a listed resource that does not exist |
 | Misconfigurations | `scripts/check/misconfig.sh` | `trivy config` (0.59.1, built-in checks, no network) HIGH or CRITICAL finding on the sources of this repository (plain directories, applied by ArgoCD or by scripts) that is not in `03-airgap-zone/tests/manifests/trivy-ignore.yaml`. On the Helm charts the findings are listed, not enforced |
-| Image list | `scripts/check/image-list.sh` | an image referenced by a rendered manifest that is not in `images.yaml`, or an entry of `images.yaml` that no manifest references. Floating tags are listed, not enforced |
+| Image list | `scripts/check/image-list.sh` | an image referenced by a rendered manifest that is not in `mirror.yaml`, an image of `mirror.yaml` that no manifest references and that names no `used_by` file, or a `used_by` file that does not exist. Floating tags are listed, not enforced |
 | Shell | `scripts/check/shell.sh` | a shellcheck warning or error (notes are not enforced) |
 | Terraform | `scripts/check/terraform.sh` | `terraform fmt -check` diff, `terraform validate` error |
 | Ansible | `scripts/check/ansible.sh` | ansible-lint, `production` profile (`04-ansible/.ansible-lint` lists the two skipped rules and why) |
@@ -160,7 +160,7 @@ and container args that hand an image to an operator
 CRDs and the Helm test hooks (ArgoCD does not create them). A manifest may
 name an image upstream (`quay.io/...`): K3s pulls it from the airgap
 registry under the same path (`03-airgap-zone/config/registries.yaml`).
-`images.yaml` does not drive the pull and push scripts yet (issue #31).
+`mirror.yaml` is also what `scripts/mirror.py` pulls and pushes ([mirroring.md](mirroring.md)).
 
 **Not enforced**: promtool lint warnings. The kube-prometheus-stack chart
 has one upstream (`kube-apiserver-availability.rules`: a duplicate

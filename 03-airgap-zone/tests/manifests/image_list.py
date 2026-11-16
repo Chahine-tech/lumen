@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Compare the images of the rendered manifests with images.yaml.
+"""Compare the images of the rendered manifests with mirror.yaml.
 
-Fails when a manifest references an image absent from the list, or when a
-list entry is referenced by no manifest. Floating tags (`latest`, no tag,
-or an entry marked `floating: true`) are reported without failing.
+Fails when a manifest references an image absent from the list, when a
+list entry is referenced by no manifest and names no `used_by` file, or
+when a `used_by` file does not exist. Floating tags (`latest`, no tag, or
+an entry marked `floating: true`) are reported without failing.
 
 Read: the `image` and `imageName` fields, and container args that pass an
 image to an operator (--name=<registry>/...). Skipped: CRDs, and Helm test
 hooks, which ArgoCD does not create.
 
-Usage: image_list.py <images.yaml> <rendered dir>
+Usage: image_list.py <mirror.yaml> <rendered dir>
 """
 import glob
 import os
@@ -43,10 +44,17 @@ def mirror_path(ref):
 
 
 def load_list(path):
+    """The registry, the images by (path, tag), the build images by path
+    (any tag), and the used_by files that do not exist."""
     data = yaml.safe_load(open(path))
     registry = data["registry"]
-    exact, any_tag = {}, {}
+    exact, any_tag, no_file = {}, {}, []
+    for e in data["images"] + data.get("charts", []) + data.get("files", []):
+        if e.get("used_by") and not os.path.exists(e["used_by"]):
+            no_file.append(e["used_by"])
     for e in data["images"]:
+        if "archive" in e:  # not in the registry
+            continue
         mirror = e.get("mirror") or e["source"]
         if mirror.startswith(registry + "/"):
             mirror = mirror[len(registry) + 1:]
@@ -54,7 +62,7 @@ def load_list(path):
             any_tag[mirror] = e
         else:
             exact[mirror_path(mirror)] = e
-    return registry, exact, any_tag
+    return registry, exact, any_tag, no_file
 
 
 def refs(obj, key=None):
@@ -74,7 +82,7 @@ def refs(obj, key=None):
 
 
 def main(list_file, rendered):
-    registry, exact, any_tag = load_list(list_file)
+    registry, exact, any_tag, no_file = load_list(list_file)
     used, missing, floating = set(), [], []
     for f in sorted(glob.glob(os.path.join(rendered, "*.yaml"))):
         for doc in yaml.load_all(open(f), Loader=yaml.BaseLoader):
@@ -98,17 +106,19 @@ def main(list_file, rendered):
                         floating.append(f"{ref}  ({where})")
                 else:
                     missing.append(f"{ref}  ({where})")
-    unused = [":".join(k) for k in exact if k not in used] + [k for k in any_tag if k not in used]
+    unused = [":".join(k) for k, e in exact.items() if k not in used and "used_by" not in e]
+    unused += [k for k, e in any_tag.items() if k not in used and "used_by" not in e]
 
     for title, items in (("floating tags (not enforced yet)", floating),
                          ("referenced by a manifest, absent from " + list_file, missing),
-                         ("listed in " + list_file + ", referenced by no manifest", unused)):
+                         ("listed in " + list_file + ", referenced by no manifest, no used_by", unused),
+                         ("used_by files that do not exist", no_file)):
         if items:
             print(f"{title}:")
             for i in sorted(set(items)):
                 print(f"  {i}")
     print(f"{len(used)} listed images in use, {len(missing)} missing, {len(unused)} unused")
-    return 1 if missing or unused else 0
+    return 1 if missing or unused or no_file else 0
 
 
 if __name__ == "__main__":

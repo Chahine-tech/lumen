@@ -18,3 +18,4 @@ TRIVY_IMAGE="${R}aquasec/trivy:0.59.1"                   # as in .gitea/workflow
 PYTHON_IMAGE="${R}python:3.12-slim"
 ANSIBLE_LINT_VERSION="26.10.1"   # installed with pip from PyPI at each run
 ANSIBLE_CORE_VERSION="2.21.6"
+CRANE_IMAGE="${R}gcr.io/go-containerregistry/crane:v0.22.1"  # scripts/mirror.py
