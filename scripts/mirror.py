@@ -26,6 +26,7 @@ Images: CRANE_IMAGE and HELM_IMAGE of scripts/check/images.sh.
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import shutil
@@ -36,8 +37,12 @@ import tempfile
 import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "03-airgap-zone/tests/manifests"))
-from image_list import mirror_path  # noqa: E402
+# mirror_path, shared with the image list check (not a package)
+_spec = importlib.util.spec_from_file_location(
+    "image_list", os.path.join(ROOT, "03-airgap-zone/tests/manifests/image_list.py"))
+_image_list = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_image_list)
+mirror_path = _image_list.mirror_path
 
 
 def pinned(name):
@@ -81,7 +86,8 @@ def layout_dir(ref):
 def layout_digest(path):
     """The digest of the single image of an OCI layout, or None."""
     try:
-        return json.load(open(os.path.join(path, "index.json")))["manifests"][0]["digest"]
+        with open(os.path.join(path, "index.json")) as f:
+            return json.load(f)["manifests"][0]["digest"]
     except (OSError, KeyError, IndexError, ValueError):
         return None
 
@@ -93,7 +99,10 @@ def selected(entries, only, *keys):
 def pull(cfg, art, only):
     platform = cfg["platform"]
     lock_file = os.path.join(art, "mirror.lock")
-    lock = dict(line.split() for line in open(lock_file)) if os.path.exists(lock_file) else {}
+    lock = {}
+    if os.path.exists(lock_file):
+        with open(lock_file) as f:
+            lock = dict(line.split() for line in f)
     os.makedirs(os.path.join(art, "images"), exist_ok=True)
     for e in selected([e for e in cfg["images"] if "source" in e], only, "source"):
         src = e["source"]
@@ -170,7 +179,8 @@ def read_lock(art, only):
     lock_file = os.path.join(art, "mirror.lock")
     if not os.path.exists(lock_file):
         sys.exit(f"no {lock_file}: run mirror.py pull first")
-    return [line.split() for line in open(lock_file) if not only or only in line]
+    with open(lock_file) as f:
+        return [line.split() for line in f if not only or only in line]
 
 
 def push(art, registry, only):
@@ -206,7 +216,8 @@ def main():
     p.add_argument("--only")
     p.add_argument("--config", default=os.path.join(ROOT, "mirror.yaml"))
     a = p.parse_args()
-    cfg = yaml.safe_load(open(a.config))
+    with open(a.config) as f:
+        cfg = yaml.safe_load(f)
     art = os.path.abspath(a.artifacts)
     os.makedirs(art, exist_ok=True)
     registry = a.registry or cfg["registry"]

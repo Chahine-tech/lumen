@@ -48,7 +48,8 @@ def mirror_path(ref):
 def load_list(path):
     """The registry, the images by (path, tag), the build images by path
     (any tag), and the used_by files that do not exist."""
-    data = yaml.safe_load(open(path))
+    with open(path) as f:
+        data = yaml.safe_load(f)
     registry = data["registry"]
     exact, any_tag, no_file = {}, {}, []
     for e in data["images"] + data.get("charts", []) + data.get("files", []):
@@ -87,7 +88,9 @@ def main(list_file, rendered):
     registry, exact, any_tag, no_file = load_list(list_file)
     used, missing, floating, no_digest, bad_digest = set(), [], [], [], []
     for f in sorted(glob.glob(os.path.join(rendered, "*.yaml"))):
-        for doc in yaml.load_all(open(f), Loader=yaml.BaseLoader):
+        with open(f) as fh:
+            docs = list(yaml.load_all(fh, Loader=yaml.BaseLoader))
+        for doc in docs:
             if not isinstance(doc, dict) or doc.get("kind") == "CustomResourceDefinition":
                 continue
             meta = doc.get("metadata") or {}
