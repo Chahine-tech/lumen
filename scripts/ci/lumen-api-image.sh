@@ -44,15 +44,16 @@ digest_ref() {
   docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$1" | grep "^$REPO@sha256:" | head -1
 }
 
-# Fixable CRITICAL vulnerabilities fail; unfixable ones are reported only
-# (no action possible in airgap). Waivers go in .trivyignore.
+# Fixable HIGH and CRITICAL vulnerabilities fail; unfixable ones are
+# reported only (no action possible in airgap). There is no waiver file:
+# Trivy runs in its own container, which does not see the checkout.
 scan() {
   docker run --rm -v "$TRIVY_CACHE:/root/.cache/trivy" -v /var/run/docker.sock:/var/run/docker.sock \
     "$TRIVY_IMAGE" image --skip-db-update --skip-java-db-update --exit-code 0 \
     --severity HIGH,CRITICAL --format table "$1"
   docker run --rm -v "$TRIVY_CACHE:/root/.cache/trivy" -v /var/run/docker.sock:/var/run/docker.sock \
     "$TRIVY_IMAGE" image --skip-db-update --skip-java-db-update --exit-code 1 \
-    --severity CRITICAL --ignore-unfixed "$1"
+    --severity HIGH,CRITICAL --ignore-unfixed "$1"
 }
 
 # verify <ref@digest>: signed with the CI key

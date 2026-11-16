@@ -23,7 +23,7 @@ This document covers the full CI/CD pipeline: automated build/push via Gitea Act
 Developer
   ├── git push gitea main
   │     └── build-push: docker build → :src-<hash> + :<sha>
-  │                     trivy gate (CRITICAL fixable, offline DB)
+  │                     trivy gate (HIGH/CRITICAL fixable, offline DB)
   │                     docker push, cosign sign <image>@sha256:<digest>
   └── git tag v1.x.x && git push gitea v1.x.x
         │
@@ -91,7 +91,7 @@ pushed.
 1. If `:src-<hash>` exists and its signature verifies, reuse it.
 2. Otherwise `docker build` → `:src-<hash>` and `:<short sha>`.
 3. Trivy (offline DB in `/var/cache/trivy`): HIGH and CRITICAL reported;
-   a fixable CRITICAL fails the job before the push.
+   a fixable HIGH or CRITICAL fails the job before the push.
 4. `docker push`, then `cosign sign` of `<image>@sha256:<digest>` (legacy
    `.sig` format, which Kyverno reads).
 
