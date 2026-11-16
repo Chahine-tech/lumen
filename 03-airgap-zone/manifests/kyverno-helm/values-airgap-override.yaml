@@ -37,3 +37,11 @@ crds:
 
 admissionController:
   replicas: 1
+  # Images pinned to their digest (mirror.yaml): the chart has no digest
+  # field, the tag carries it (it is not reused in labels)
+  initContainer:
+    image:
+      tag: "v1.18.1@sha256:aa198c1f2c75e77dc88c0fc77d779e89e5f300d4dc9bbd822220be968cb92cce"
+  container:
+    image:
+      tag: "v1.18.1@sha256:cbd7785b4532e4ca8af5b84c6a3875763bc540a37b28112eae62dfd4b03a4f8b"

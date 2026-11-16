@@ -6,7 +6,7 @@
 tempo:
   registry: 192.168.2.2:5000
   repository: grafana/tempo
-  tag: "2.10.0"
+  tag: "2.10.0@sha256:80f53f8e809617f305df97cac1cdc05291f9b4985fa01cbb2df41c34fbaa72c1"
   pullPolicy: IfNotPresent
 
   # --- Tracing storage config ---

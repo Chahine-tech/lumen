@@ -64,7 +64,7 @@ spec:
             type: Directory
       containers:
         - name: runner
-          image: 192.168.2.2:5000/gitea/act_runner:0.2.11
+          image: 192.168.2.2:5000/gitea/act_runner:0.2.11@sha256:7076b74f6d7c6c04ea0f57477023f56ad186242d7fd23bec76dede53053925e7
           command:
             - sh
             - -c

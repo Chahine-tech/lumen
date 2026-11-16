@@ -3,7 +3,7 @@ argo-rollouts:
     image:
       registry: 192.168.2.2:5000
       repository: argoproj/argo-rollouts
-      tag: v1.8.0
+      tag: "v1.8.0@sha256:b61ca80d5e094fbfdfa088095cab1b49e8dbeca83b8111bc7d3a651c8c6f3a7d"
     resources:
       requests:
         cpu: 100m
@@ -17,7 +17,7 @@ argo-rollouts:
     image:
       registry: 192.168.2.2:5000
       repository: argoproj/argo-rollouts
-      tag: v1.8.0
+      tag: "v1.8.0@sha256:b61ca80d5e094fbfdfa088095cab1b49e8dbeca83b8111bc7d3a651c8c6f3a7d"
     resources:
       requests:
         cpu: 50m

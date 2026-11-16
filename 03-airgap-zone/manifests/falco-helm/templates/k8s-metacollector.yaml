@@ -59,7 +59,7 @@ spec:
       serviceAccountName: k8s-metacollector
       containers:
         - name: k8s-metacollector
-          image: 192.168.2.2:5000/falcosecurity/k8s-metacollector:0.1.1
+          image: 192.168.2.2:5000/falcosecurity/k8s-metacollector:0.1.1@sha256:4f0219b4439ff45edcc8194fc39b6d635be767cae0ee48a33e9b68c1911ff059
           imagePullPolicy: IfNotPresent
           args: ["run"]
           ports:

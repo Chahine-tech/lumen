@@ -4,7 +4,7 @@ chaos-mesh:
     image:
       registry: 192.168.2.2:5000
       repository: chaos-mesh/chaos-mesh
-      tag: v2.7.2
+      tag: "v2.7.2@sha256:9ba17fbe5e0994fcd6fb050c377042e0e508539829685881327225a5870666b4"
     resources:
       requests:
         cpu: 100m
@@ -17,7 +17,7 @@ chaos-mesh:
     image:
       registry: 192.168.2.2:5000
       repository: chaos-mesh/chaos-daemon
-      tag: v2.7.2
+      tag: "v2.7.2@sha256:fbca68776538aee0f2b212c169118f51ef340ff1d5d9a90eadb0ca32d82b3bd7"
     # K3s uses containerd at this path (not /run/containerd/containerd.sock)
     runtime: containerd
     socketPath: /run/k3s/containerd/containerd.sock
@@ -34,7 +34,7 @@ chaos-mesh:
     image:
       registry: 192.168.2.2:5000
       repository: chaos-mesh/chaos-dashboard
-      tag: v2.7.2
+      tag: "v2.7.2@sha256:7d7c71d18c38ced48e9b1509c44ea81fc9cdc7699712309ac481d1f245299c53"
     securityMode: false  # No auth — access controlled via NetworkPolicy (Traefik only)
     service:
       type: ClusterIP

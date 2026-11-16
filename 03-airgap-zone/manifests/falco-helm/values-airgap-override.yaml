@@ -7,7 +7,7 @@ falco:
   image:
     registry: 192.168.2.2:5000
     repository: falcosecurity/falco
-    tag: "0.43.0"
+    tag: "0.43.0@sha256:a9880e16f69f46dc2c1c390faf5584ed2c388e3a16714f224a871621e4706c8f"
     pullPolicy: IfNotPresent
 
   # modern_ebpf: self-contained eBPF probe, no kernel module download

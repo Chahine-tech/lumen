@@ -12,6 +12,7 @@ alertmanager:
       registry: 192.168.2.2:5000
       repository: prometheus/alertmanager
       tag: v0.28.0
+      sha: "cc07615932f01351d66e6220545905362ed64002bce81365e590e68e69719847"
 
 # Grafana
 grafana:
@@ -19,6 +20,7 @@ grafana:
     registry: 192.168.2.2:5000
     repository: grafana/grafana
     tag: "11.4.1"
+    sha: "a55a0e07ae23534d1d5d40340e0f7496fc552cebec52f2c60b176c38059c32cd"
   # Admin credentials come from Vault (KV lumen/grafana) via VSO — never in git.
   # See manifests/kube-prometheus-stack/grafana-admin-vso.yaml
   admin:
@@ -32,24 +34,27 @@ grafana:
       registry: 192.168.2.2:5000
       repository: kiwigrid/k8s-sidecar
       tag: "1.28.0"
+      sha: "c5a9060235c12454f661fa91b28d23641006b4bbbe499bee02882d9e5570eef2"
     dashboards:
       enabled: true
     datasources:
       enabled: true
 
 # kube-state-metrics
-kubeStateMetrics:
+kube-state-metrics:
   image:
     registry: 192.168.2.2:5000
     repository: kube-state-metrics/kube-state-metrics
     tag: v2.14.0
+    sha: "sha256:2336fb0ec5b0841ce5871d777627943cda0a7fd875917a8abdb3fe27d78ac6fc"
 
 # Node Exporter
-nodeExporter:
+prometheus-node-exporter:
   image:
     registry: 192.168.2.2:5000
     repository: prometheus/node-exporter
     tag: v1.8.2
+    digest: "sha256:1eabab826c9d9f0c534e4e8fa745445f743fef9aee276d561d12811edea74004"
 
 # Prometheus
 prometheus:
@@ -58,6 +63,7 @@ prometheus:
       registry: 192.168.2.2:5000
       repository: prometheus/prometheus
       tag: v3.1.0
+      sha: "0ea5254abf85f87901e8cfbd18fd243c59162c338ce0acd86aa2b0153d83dce2"
 
     # Match ALL ServiceMonitors
     serviceMonitorSelector: {}
@@ -69,12 +75,14 @@ prometheusOperator:
     registry: 192.168.2.2:5000
     repository: prometheus-operator/prometheus-operator
     tag: v0.80.0
+    sha: "5aac439dcaa0e9440f5ab85fc176b64ca8124f9c7b1f94cb30fb1161b0ba48c1"
 
   prometheusConfigReloader:
     image:
       registry: 192.168.2.2:5000
       repository: prometheus-operator/prometheus-config-reloader
       tag: v0.80.0
+      sha: "438ab8732f28240c892826c7cf8616aaf07977a3105bae7ea5e21231409afe0d"
 
   admissionWebhooks:
     enabled: false

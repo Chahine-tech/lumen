@@ -14,8 +14,9 @@
 
 `scripts/check/image-list.sh` (CI) fails when a rendered manifest references
 an image that is not in the list, when a listed image is used nowhere, when
-a `used_by` file does not exist, or when a reference carries another digest
-than the list. References without a digest are listed, not enforced yet.
+a `used_by` file does not exist, or when a reference to a pulled image does
+not carry the digest of the list (`tag@sha256:...`, or `image@sha256:...`
+where a chart drops the tag). Images built here (`build`) are exempt.
 
 ## Pull, push, verify
 

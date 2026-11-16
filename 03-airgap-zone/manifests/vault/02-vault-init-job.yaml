@@ -465,7 +465,7 @@ spec:
       restartPolicy: OnFailure
       containers:
         - name: vault-init
-          image: 192.168.2.2:5000/hashicorp/vault:1.19.0
+          image: 192.168.2.2:5000/hashicorp/vault:1.19.0@sha256:c53c28cbb630af36f5e56812691fd4e6d5a3ccdf3bccf9aa4cce3f1c4ec26be2
           command: ["/bin/sh", "/scripts/init.sh"]
           env:
             - name: VAULT_ADDR

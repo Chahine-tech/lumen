@@ -16,7 +16,7 @@ crds:
 # ─────────────────────────────────────────────
 image:
   repository: 192.168.2.2:5000/jetstack/cert-manager-controller
-  tag: v1.17.1
+  tag: "v1.17.1@sha256:2c747c65148f1c9cee49b113ea5a8a51a33ad463f87127e4f097de6981f65d03"
   pullPolicy: IfNotPresent
 
 resources:
@@ -38,7 +38,7 @@ webhook:
 
   image:
     repository: 192.168.2.2:5000/jetstack/cert-manager-webhook
-    tag: v1.17.1
+    tag: "v1.17.1@sha256:9f40b455e9fbcbfc20bb53efb5a677a282eb5e02b27400f1c86f510941e49210"
     pullPolicy: IfNotPresent
 
   resources:
@@ -55,7 +55,7 @@ webhook:
 cainjector:
   image:
     repository: 192.168.2.2:5000/jetstack/cert-manager-cainjector
-    tag: v1.17.1
+    tag: "v1.17.1@sha256:f9811ba87217ddede3bd122994dbcb312484ccd23d0676ef076fca43ced408cb"
     pullPolicy: IfNotPresent
 
   resources:
@@ -72,7 +72,7 @@ cainjector:
 startupapicheck:
   image:
     repository: 192.168.2.2:5000/jetstack/cert-manager-startupapicheck
-    tag: v1.17.1
+    tag: "v1.17.1@sha256:4af297aaab36cecc79b14446ed7055cbd8113f18fda77de6979969baf3b2177b"
     pullPolicy: IfNotPresent
 
   resources:

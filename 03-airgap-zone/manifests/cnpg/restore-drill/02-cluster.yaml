@@ -10,7 +10,7 @@ metadata:
   namespace: lumen
 spec:
   instances: 1
-  imageName: 192.168.2.2:5000/postgresql:16.6
+  imageName: 192.168.2.2:5000/postgresql:16.6@sha256:e4ffd91bf920f45dea3e7c739d0a942aca2f212b812eef41fd3d861f92cd0370
 
   storage:
     size: 1Gi

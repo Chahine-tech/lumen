@@ -3,10 +3,10 @@
 
 Fails when a manifest references an image absent from the list, when a
 list entry is referenced by no manifest and names no `used_by` file, or
-when a `used_by` file does not exist, or when a reference carries another
-digest than the one of mirror.yaml. Floating tags (`latest`, no tag, or an
-entry marked `floating: true`) and references without a digest are
-reported without failing.
+when a `used_by` file does not exist, or when a reference to a pulled image
+carries no digest or another digest than the one of mirror.yaml (images
+built here have no digest in the list). Floating tags (`latest`, no tag,
+or an entry marked `floating: true`) are reported without failing.
 
 Read: the `image` and `imageName` fields, and container args that pass an
 image to an operator (--name=<registry>/...). Skipped: CRDs, and Helm test
@@ -98,6 +98,10 @@ def main(list_file, rendered):
             for ref in refs(doc):
                 r = ref[len(registry) + 1:] if ref.startswith(registry + "/") else ref
                 name, tag = mirror_path(r)
+                if "@" in r and ":" not in r.split("@")[0].rsplit("/", 1)[-1]:
+                    # image@digest without a tag: the entry with that digest
+                    tag = next((t for (n, t), e in exact.items()
+                                if n == name and e.get("digest") == r.split("@")[1]), tag)
                 if name in NOT_RUN:
                     continue
                 if name in any_tag:
@@ -108,7 +112,9 @@ def main(list_file, rendered):
                     if tag == "latest" or e.get("floating"):
                         floating.append(f"{ref}  ({where})")
                     _, at, digest = ref.partition("@")
-                    if not at:
+                    if "build" in e:
+                        pass
+                    elif not at:
                         no_digest.append(f"{ref}  ({where})")
                     elif digest != e.get("digest"):
                         bad_digest.append(f"{ref}  ({where}), mirror.yaml: {e.get('digest')}")
@@ -118,7 +124,7 @@ def main(list_file, rendered):
     unused += [k for k, e in any_tag.items() if k not in used and "used_by" not in e]
 
     for title, items in (("floating tags (not enforced yet)", floating),
-                         ("without a digest (not enforced yet)", no_digest),
+                         ("without a digest", no_digest),
                          ("digest differs from " + list_file, bad_digest),
                          ("referenced by a manifest, absent from " + list_file, missing),
                          ("listed in " + list_file + ", referenced by no manifest, no used_by", unused),
@@ -129,7 +135,7 @@ def main(list_file, rendered):
                 print(f"  {i}")
     print(f"{len(used)} listed images in use, {len(missing)} missing, {len(unused)} unused, "
           f"{len(set(no_digest))} references without a digest")
-    return 1 if missing or unused or no_file or bad_digest else 0
+    return 1 if missing or unused or no_file or bad_digest or no_digest else 0
 
 
 if __name__ == "__main__":

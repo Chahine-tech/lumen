@@ -22,12 +22,12 @@ injector:
 
   image:
     repository: 192.168.2.2:5000/hashicorp/vault-k8s
-    tag: "1.6.2"
+    tag: "1.6.2@sha256:ba8755fa2e6f26c14464a3852cf31485ddd8acea7d06f3c47eccfe38c71c0248"
     pullPolicy: IfNotPresent
 
   agentImage:
     repository: 192.168.2.2:5000/hashicorp/vault
-    tag: "1.19.0"
+    tag: "1.19.0@sha256:c53c28cbb630af36f5e56812691fd4e6d5a3ccdf3bccf9aa4cce3f1c4ec26be2"
 
   resources:
     requests:
@@ -46,7 +46,7 @@ injector:
 server:
   image:
     repository: 192.168.2.2:5000/hashicorp/vault
-    tag: "1.19.0"
+    tag: "1.19.0@sha256:c53c28cbb630af36f5e56812691fd4e6d5a3ccdf3bccf9aa4cce3f1c4ec26be2"
     pullPolicy: IfNotPresent
 
   resources:

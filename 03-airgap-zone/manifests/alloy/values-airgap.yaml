@@ -12,6 +12,7 @@ image:
   registry: "192.168.2.2:5000"
   repository: grafana/alloy
   tag: "v1.13.1"
+  digest: "sha256:b0f674ebf2c79a12baae80ad5b6f57dca210e2e7e84d72eb5d540b58a1fd11bf"
   pullPolicy: IfNotPresent
 
 # --- Config reloader ---
@@ -21,6 +22,7 @@ configReloader:
     registry: "192.168.2.2:5000"
     repository: prometheus-operator/prometheus-config-reloader
     tag: "v0.81.0"
+    digest: "sha256:5a03054915eaa4f324537c98967550add4eb75660c932ce426dd7e906129f98b"
 
 # --- Deploy as DaemonSet (one pod per node) ---
 controller:

@@ -182,7 +182,7 @@ spec:
       # becomes a replica and must authenticate against the new master.
       initContainers:
         - name: init-redis-config
-          image: 192.168.2.2:5000/redis:7.4.12-alpine
+          image: 192.168.2.2:5000/redis:7.4.12-alpine@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
           command:
             - sh
             - -c
@@ -209,7 +209,7 @@ spec:
               mountPath: /config
       containers:
         - name: redis
-          image: 192.168.2.2:5000/redis:7.4.12-alpine
+          image: 192.168.2.2:5000/redis:7.4.12-alpine@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
           imagePullPolicy: IfNotPresent
           command: ["redis-server", "/config/redis.conf"]
           env:
@@ -301,7 +301,7 @@ spec:
         fsGroup: 999
       initContainers:
         - name: init-redis-config
-          image: 192.168.2.2:5000/redis:7.4.12-alpine
+          image: 192.168.2.2:5000/redis:7.4.12-alpine@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
           command:
             - sh
             - -c
@@ -328,7 +328,7 @@ spec:
               mountPath: /config
       containers:
         - name: redis
-          image: 192.168.2.2:5000/redis:7.4.12-alpine
+          image: 192.168.2.2:5000/redis:7.4.12-alpine@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
           imagePullPolicy: IfNotPresent
           command: ["redis-server", "/config/redis.conf"]
           env:
@@ -423,7 +423,7 @@ spec:
         fsGroup: 999
       initContainers:
         - name: init-sentinel-config
-          image: 192.168.2.2:5000/redis:7.4.12-alpine
+          image: 192.168.2.2:5000/redis:7.4.12-alpine@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
           command:
             - sh
             - -c
@@ -450,7 +450,7 @@ spec:
               mountPath: /config
       containers:
         - name: sentinel
-          image: 192.168.2.2:5000/redis:7.4.12-alpine
+          image: 192.168.2.2:5000/redis:7.4.12-alpine@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
           imagePullPolicy: IfNotPresent
           command: ["redis-sentinel", "/config/sentinel.conf"]
           ports:

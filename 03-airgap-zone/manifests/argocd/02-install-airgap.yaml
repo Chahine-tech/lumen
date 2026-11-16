@@ -21730,7 +21730,7 @@ spec:
               key: applicationsetcontroller.enable.scm.providers
               name: argocd-cmd-params-cm
               optional: true
-        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0
+        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0@sha256:a961a03caffe1a3c5b0da9b7ba21e8ed0269d24959b7d4865272160417889352
         imagePullPolicy: Always
         name: argocd-applicationset-controller
         ports:
@@ -21824,7 +21824,7 @@ spec:
               key: dexserver.disable.tls
               name: argocd-cmd-params-cm
               optional: true
-        image: 192.168.2.2:5000/dexidp/dex:v2.41.1
+        image: 192.168.2.2:5000/dexidp/dex:v2.41.1@sha256:4ef1c507feb9cdb4c0c06c19823562b2ab4631659710ce4219a9c5261750a2de
         imagePullPolicy: Always
         name: dex
         ports:
@@ -21853,7 +21853,7 @@ spec:
         - -n
         - /usr/local/bin/argocd
         - /shared/argocd-dex
-        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0
+        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0@sha256:a961a03caffe1a3c5b0da9b7ba21e8ed0269d24959b7d4865272160417889352
         imagePullPolicy: Always
         name: copyutil
         securityContext:
@@ -21935,7 +21935,7 @@ spec:
               key: notificationscontroller.selfservice.enabled
               name: argocd-cmd-params-cm
               optional: true
-        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0
+        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0@sha256:a961a03caffe1a3c5b0da9b7ba21e8ed0269d24959b7d4865272160417889352
         imagePullPolicy: Always
         livenessProbe:
           tcpSocket:
@@ -22019,7 +22019,7 @@ spec:
             secretKeyRef:
               key: auth
               name: argocd-redis
-        image: 192.168.2.2:5000/redis:7.2.6-alpine
+        image: 192.168.2.2:5000/redis:7.2.6-alpine@sha256:369d69c938186361c017e72a3a343543dd3da806d74355c433a299e1e28797c3
         imagePullPolicy: Always
         name: redis
         ports:
@@ -22035,7 +22035,7 @@ spec:
         - argocd
         - admin
         - redis-initial-password
-        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0
+        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0@sha256:a961a03caffe1a3c5b0da9b7ba21e8ed0269d24959b7d4865272160417889352
         imagePullPolicy: IfNotPresent
         name: secret-init
         securityContext:
@@ -22288,7 +22288,7 @@ spec:
           value: /helm-working-dir
         - name: HELM_DATA_HOME
           value: /helm-working-dir
-        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0
+        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0@sha256:a961a03caffe1a3c5b0da9b7ba21e8ed0269d24959b7d4865272160417889352
         imagePullPolicy: Always
         livenessProbe:
           failureThreshold: 3
@@ -22340,7 +22340,7 @@ spec:
         - -n
         - /usr/local/bin/argocd
         - /var/run/argocd/argocd-cmp-server
-        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0
+        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0@sha256:a961a03caffe1a3c5b0da9b7ba21e8ed0269d24959b7d4865272160417889352
         name: copyutil
         securityContext:
           allowPrivilegeEscalation: false
@@ -22663,7 +22663,7 @@ spec:
               key: server.api.content.types
               name: argocd-cmd-params-cm
               optional: true
-        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0
+        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0@sha256:a961a03caffe1a3c5b0da9b7ba21e8ed0269d24959b7d4865272160417889352
         imagePullPolicy: Always
         livenessProbe:
           httpGet:
@@ -22965,7 +22965,7 @@ spec:
               key: controller.ignore.normalizer.jq.timeout
               name: argocd-cmd-params-cm
               optional: true
-        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0
+        image: 192.168.2.2:5000/argoproj/argocd:v3.2.0@sha256:a961a03caffe1a3c5b0da9b7ba21e8ed0269d24959b7d4865272160417889352
         imagePullPolicy: Always
         name: argocd-application-controller
         ports:

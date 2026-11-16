@@ -5,7 +5,11 @@ controller:
   manager:
     image:
       repository: 192.168.2.2:5000/hashicorp/vault-secrets-operator
-      tag: "1.3.0"
+      tag: "1.3.0@sha256:3fbc8e3c0482462e716d5343e034dd02a1c2b791ce79a90410860d11dbd4ec15"
+  kubeRbacProxy:
+    image:
+      repository: 192.168.2.2:5000/brancz/kube-rbac-proxy
+      tag: "v0.18.1@sha256:f62865289ccf45633f80a5a4e30fb86a704a2dd2ad84aa683faa45a32f74c2cf"
 
   # Default VaultConnection for all VaultAuth resources in the cluster
   defaultVaultConnection:

@@ -13,6 +13,12 @@ deploymentMode: SingleBinary
 loki:
   auth_enabled: false
 
+  # The chart drops the tag when a digest is set (image@digest); the tag
+  # still names the version label
+  image:
+    tag: 3.6.5
+    digest: "sha256:f92deafba1587be4cbf5760444c336aca4ced066fbe3bb2211dac5be8d137561"
+
   commonConfig:
     replication_factor: 1
 
@@ -85,6 +91,8 @@ gateway:
     registry: 192.168.2.2:5000
     repository: nginxinc/nginx-unprivileged
     tag: 1.29.8-alpine
+    # The chart drops the tag when a digest is set (image@digest)
+    digest: "sha256:e7726cdbcdc432fc8c0b94a227908085ac77f0f27141e790caaae496ceb104c0"
     pullPolicy: IfNotPresent
 
 # --- Disable memcached (not needed for single-node) ---
@@ -104,3 +112,8 @@ minio:
 # --- Disable helm test ---
 test:
   enabled: false
+
+# --- Config sidecar, pinned to its digest (image@sha256:...) ---
+sidecar:
+  image:
+    sha: "2b958e416a804adbbf8fb71e9c811f06f9298e241db048f72343ed8ef6eb96aa"
