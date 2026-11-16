@@ -110,6 +110,7 @@ def pull(cfg, art, only):
     if os.path.exists(lock_file):
         with open(lock_file) as f:
             lock = dict(line.split() for line in f)
+    prev = dict(lock)
     os.makedirs(os.path.join(art, "images"), exist_ok=True)
     for e in selected([e for e in cfg["images"] if "source" in e], only, "source"):
         src = e["source"]
@@ -138,18 +139,17 @@ def pull(cfg, art, only):
                 sys.exit(f"{src}: pulled {got}, upstream {digest}")
             print(f"+ {src} {digest}")
         lock[ref] = digest
+    # Built at each pull: the tag does not change with the Dockerfile, and
+    # with the build cache an unchanged Dockerfile gives the same digest
     for e in selected([e for e in cfg["images"] if "dockerfile" in e], only, "mirror"):
         ref = mirror_ref(e)
         tar = layout_dir(ref) + ".tar"
-        if not os.path.exists(os.path.join(art, tar)):
-            df = os.path.join(ROOT, e["dockerfile"])
-            run(["docker", "build", "-q", "--platform", platform, "-t", ref, "-f", df, os.path.dirname(df)],
-                capture_output=True)
-            run(["docker", "save", "-o", os.path.join(art, tar), ref])
-            print(f"+ {ref} built from {e['dockerfile']}")
-        else:
-            print(f"= {ref} (archive there)")
+        df = os.path.join(ROOT, e["dockerfile"])
+        run(["docker", "build", "-q", "--platform", platform, "-t", ref, "-f", df, os.path.dirname(df)],
+            capture_output=True)
+        run(["docker", "save", "-o", os.path.join(art, tar), ref])
         lock[ref] = crane(art, "digest", "--tarball", "/a/" + tar)
+        print(f"{'=' if lock.get(ref) == prev.get(ref) else '+'} {ref} built from {e['dockerfile']}")
     with open(lock_file, "w") as f:
         for ref in sorted(lock):
             f.write(f"{ref} {lock[ref]}\n")

@@ -9,8 +9,8 @@
 #   mirror:   its path and tag in the registry, when it is not the source
 #             without its registry host (and without library/ for docker.io)
 #   build:    built here instead of pulled; no tag on `mirror` means any tag
-#   dockerfile: built by mirror.py pull for `platform` from this file, and
-#             pushed like the pulled images
+#   dockerfile: built by mirror.py pull for `platform` from this file, at
+#             each pull, and pushed like the pulled images
 #   floating: true for a tag that moves upstream (7-alpine); reported
 #   used_by:  the file that uses it, for an image no rendered manifest
 #             references (install scripts, CI, Ansible); must exist

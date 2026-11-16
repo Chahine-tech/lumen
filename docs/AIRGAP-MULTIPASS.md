@@ -241,7 +241,7 @@ Automated pipeline triggered on push to `main` (paths: `01-connected-zone/app/**
 ### Key design decisions
 
 - Runner registers with `--instance http://192.168.2.2:30300`: this address is stored in `.runner` and becomes `GITHUB_SERVER_URL` injected into every job container. Must be reachable from `network: host` containers (node-1's network stack), not a K8s-internal DNS name.
-- `actions/checkout@v4` steps use `with: github-server-url: http://192.168.2.2:30300` as an explicit override (defense in depth — works even if runner re-registers with a wrong address).
+- No `actions/checkout`: an airgap runner cannot fetch actions from github.com. The checkout is a git step that fetches the commit from `http://192.168.2.2:30300` with the job token (`.gitea/workflows`).
 - Trivy runs inside a Docker container and needs `-v /var/run/docker.sock:/var/run/docker.sock` to inspect the locally built image (image exists in Docker daemon, not yet in the registry at scan time).
 
 ### Trigger a manual run

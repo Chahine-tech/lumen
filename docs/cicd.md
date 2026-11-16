@@ -177,7 +177,7 @@ mirror keeps one platform, so that switch also needs the platform digests.
 
 ### Important: runner must be registered with NodePort URL
 
-The runner was registered with `--instance http://192.168.2.2:30300` (Gitea NodePort), not the K8s internal DNS. This URL becomes `GITHUB_SERVER_URL` in job containers. Checkout steps use `with: github-server-url: http://192.168.2.2:30300` as explicit override.
+The runner was registered with `--instance http://192.168.2.2:30300` (Gitea NodePort), not the K8s internal DNS. This URL becomes `GITHUB_SERVER_URL` in job containers. The checkout steps do not use it: they are git steps that fetch the commit from `http://192.168.2.2:30300` with the job token, since an airgap runner cannot fetch `actions/checkout` from github.com.
 
 ---
 

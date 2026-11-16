@@ -38,9 +38,11 @@ make mirror-verify               # every pulled image is in the registry, same d
   sha256; what is already there and matches is skipped. An image with
   `archive` (Garage) is saved as a docker archive for `docker load` instead.
   An image with `dockerfile` (the Gitea CI job image) is built for the
-  platform and saved as a docker archive, which push sends to the
-  registry; its digest in the lock is the one the registry gets (measured
-  with `crane digest --tarball` against a local registry).
+  platform at each pull and saved as a docker archive, which push sends to
+  the registry; its digest in the lock is the one the registry gets
+  (measured with `crane digest --tarball` against a local registry). With
+  the build cache, an unchanged Dockerfile gives the same digest (measured;
+  without the cache it differs).
   The crane image, pulled by its digest, is saved under its tag as
   `artifacts/tools/crane.tar`: `docker load` drops a reference by digest
   (measured with the classic image store on 16 November 2026).
@@ -70,8 +72,8 @@ dashboard issue.
   linux/arm64 and the others stay the index.
 - Left out: images set by a chart or a vendored manifest (they move with
   it), PostgreSQL (moves with the CNPG cluster), kyverno-cli (the deployed
-  version), Helm 4 (ArgoCD embeds Helm 3), the actions of
-  `.gitea/workflows`.
+  version), Helm 4 (ArgoCD embeds Helm 3). `.gitea/workflows` uses no
+  action: the checkout is a git step.
 - A reference to the airgap registry is looked up at its source through
   `overridePackageName`; one without a rule there is not updated.
 

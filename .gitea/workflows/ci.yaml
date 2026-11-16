@@ -26,10 +26,19 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
+      # Not actions/checkout: an airgap runner cannot fetch it from github.com
+      # (issue #31). The same fetch, with the job token, which is not kept in
+      # .git/config
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          github-server-url: http://192.168.2.2:30300
+        env:
+          SERVER: http://192.168.2.2:30300
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q .
+          git remote add origin "${SERVER}/${GITHUB_REPOSITORY}.git"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')"
+          git -c http.extraHeader="$auth" fetch -q --no-tags --depth=1 origin "+${GITHUB_SHA}:refs/remotes/origin/${GITHUB_REF_NAME}"
+          git checkout -q --detach "$GITHUB_SHA"
 
       # The migration and store tests need a real PostgreSQL: the image the
       # CNPG cluster runs, already in the registry. Started on the host
@@ -93,10 +102,19 @@ jobs:
     outputs:
       image: ${{ steps.image.outputs.image }}
     steps:
+      # Not actions/checkout: an airgap runner cannot fetch it from github.com
+      # (issue #31). The same fetch, with the job token, which is not kept in
+      # .git/config
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          github-server-url: http://192.168.2.2:30300
+        env:
+          SERVER: http://192.168.2.2:30300
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q .
+          git remote add origin "${SERVER}/${GITHUB_REPOSITORY}.git"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')"
+          git -c http.extraHeader="$auth" fetch -q --no-tags --depth=1 origin "+${GITHUB_SHA}:refs/remotes/origin/${GITHUB_REF_NAME}"
+          git checkout -q --detach "$GITHUB_SHA"
 
       - name: Install cosign
         run: |
@@ -135,10 +153,19 @@ jobs:
     needs: test
     if: github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
     steps:
+      # Not actions/checkout: an airgap runner cannot fetch it from github.com
+      # (issue #31). The same fetch, with the job token, which is not kept in
+      # .git/config
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          github-server-url: http://192.168.2.2:30300
+        env:
+          SERVER: http://192.168.2.2:30300
+          TOKEN: ${{ github.token }}
+        run: |
+          git init -q .
+          git remote add origin "${SERVER}/${GITHUB_REPOSITORY}.git"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$TOKEN" | base64 | tr -d '\n')"
+          git -c http.extraHeader="$auth" fetch -q --no-tags --depth=1 origin "+${GITHUB_SHA}:refs/remotes/origin/${GITHUB_REF_NAME}"
+          git checkout -q --detach "$GITHUB_SHA"
 
       - name: Install cosign
         run: |

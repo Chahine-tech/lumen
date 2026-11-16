@@ -80,12 +80,6 @@
       branchTopic: "{{{replace '[^a-z0-9]+' '-' (replace '^docker\\.io/(library/)?' '' packageName)}}}-{{{newMajor}}}",
     },
     {
-      description: 'Where the airgap runner gets its actions from is not established yet: actions/checkout@v4 stays',
-      matchManagers: ['github-actions'],
-      matchFileNames: ['.gitea/**'],
-      enabled: false,
-    },
-    {
       description: 'Vendored chart sources (Loki helm-test Dockerfile)',
       matchFileNames: ['03-airgap-zone/manifests/**'],
       matchManagers: ['dockerfile'],
