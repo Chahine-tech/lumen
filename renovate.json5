@@ -47,6 +47,14 @@
       datasourceTemplate: 'docker',
     },
     {
+      description: 'The Gitea CI job image, tagged with the Go version of its builder (01-connected-zone/ci/Dockerfile)',
+      customType: 'regex',
+      managerFilePatterns: ['/^mirror\\.yaml$/', '/^03-airgap-zone/manifests/gitea-runner/01-runner\\.yaml$/'],
+      matchStrings: ['lumen-api:builder-go(?<currentValue>[0-9]+\\.[0-9]+\\.[0-9]+)'],
+      depNameTemplate: 'docker.io/library/golang',
+      datasourceTemplate: 'docker',
+    },
+    {
       description: 'Images of the checks (scripts/check/images.sh)',
       customType: 'regex',
       managerFilePatterns: ['/^scripts/check/images\\.sh$/'],

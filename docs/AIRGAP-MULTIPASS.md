@@ -234,7 +234,7 @@ Automated pipeline triggered on push to `main` (paths: `01-connected-zone/app/**
 ### Components
 
 - **act_runner v0.2.11** — K8s Deployment in `gitea` namespace, pinned to node-1
-- **lumen-api:builder** — job container image (`golang:1.26-alpine` + `docker-cli` + `git` + `nodejs`)
+- **lumen-api:builder-go1.26.11**: job container image, `01-connected-zone/ci/Dockerfile` (Go builder + `docker-cli`, `git`, `nodejs`)
 - **Gitea NodePort 30300** — exposes Gitea on `192.168.2.2:30300` (reachable from node-1 host network)
 - **Trivy DB** — pre-cached at `/var/cache/trivy` on node-1 (hostPath), no internet required
 

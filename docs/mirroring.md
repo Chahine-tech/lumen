@@ -37,6 +37,10 @@ make mirror-verify               # every pulled image is in the registry, same d
   `artifacts/mirror.lock`. Charts and files are checked against their
   sha256; what is already there and matches is skipped. An image with
   `archive` (Garage) is saved as a docker archive for `docker load` instead.
+  An image with `dockerfile` (the Gitea CI job image) is built for the
+  platform and saved as a docker archive, which push sends to the
+  registry; its digest in the lock is the one the registry gets (measured
+  with `crane digest --tarball` against a local registry).
   The crane image, pulled by its digest, is saved under its tag as
   `artifacts/tools/crane.tar`: `docker load` drops a reference by digest
   (measured with the classic image store on 16 November 2026).

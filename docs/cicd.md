@@ -111,7 +111,7 @@ pushed.
 | Component | Details |
 |-----------|---------|
 | Runner | `act_runner v0.2.11`, K8s Deployment in `gitea` namespace, pinned to node-1 |
-| Job container | Custom image `192.168.2.2:5000/lumen-api:builder` (golang:1.26-alpine + docker-cli + git) |
+| Job container | `192.168.2.2:5000/lumen-api:builder-go1.26.11`, from `01-connected-zone/ci/Dockerfile` (the Go builder of the app + docker-cli, git, nodejs), built by `mirror.py pull` and pushed with the other images; the tag follows the Go version |
 | Docker socket | `/var/run/docker.sock` mounted (builds directly on node-1) |
 | Go builder | `01-connected-zone/Dockerfile` names `golang:1.26.11-alpine` by its index digest; the CI passes the copy in the registry (`GO_BUILDER`, listed in `mirror.yaml`): the host Docker has no internet |
 | Trivy DB | Offline at `/var/cache/trivy` (pre-populated in connected zone) |

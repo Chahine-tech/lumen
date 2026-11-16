@@ -9,7 +9,9 @@
 pull checks that each tag still points to the digest of mirror.yaml, saves
 the image for the platform of mirror.yaml as an OCI layout, which keeps
 that digest, and records the digests in <artifacts>/mirror.lock. An image with `archive` is saved as a docker
-archive instead (docker load, not the registry). Charts and files are
+archive instead (docker load, not the registry). An image with
+`dockerfile` is built for that platform and saved as a docker archive,
+which push sends to the registry. Charts and files are
 checked against their sha256. What is already there, with the right
 digest or sha256, is skipped. The crane image is saved too
 (tools/crane.tar), for push and verify on a host without internet.
@@ -136,6 +138,18 @@ def pull(cfg, art, only):
                 sys.exit(f"{src}: pulled {got}, upstream {digest}")
             print(f"+ {src} {digest}")
         lock[ref] = digest
+    for e in selected([e for e in cfg["images"] if "dockerfile" in e], only, "mirror"):
+        ref = mirror_ref(e)
+        tar = layout_dir(ref) + ".tar"
+        if not os.path.exists(os.path.join(art, tar)):
+            df = os.path.join(ROOT, e["dockerfile"])
+            run(["docker", "build", "-q", "--platform", platform, "-t", ref, "-f", df, os.path.dirname(df)],
+                capture_output=True)
+            run(["docker", "save", "-o", os.path.join(art, tar), ref])
+            print(f"+ {ref} built from {e['dockerfile']}")
+        else:
+            print(f"= {ref} (archive there)")
+        lock[ref] = crane(art, "digest", "--tarball", "/a/" + tar)
     with open(lock_file, "w") as f:
         for ref in sorted(lock):
             f.write(f"{ref} {lock[ref]}\n")
@@ -190,7 +204,10 @@ def read_lock(art, only):
 def push(art, registry, only):
     ensure_crane(art)
     for ref, digest in read_lock(art, only):
-        crane(art, "push", "--insecure", "/a/" + layout_dir(ref), f"{registry}/{ref}")
+        path = layout_dir(ref)
+        if os.path.exists(os.path.join(art, path + ".tar")):  # built here (dockerfile)
+            path += ".tar"
+        crane(art, "push", "--insecure", "/a/" + path, f"{registry}/{ref}")
         got = crane(art, "digest", "--insecure", f"{registry}/{ref}")
         if got != digest:
             sys.exit(f"{registry}/{ref}: {got} after the push, {digest} pulled")

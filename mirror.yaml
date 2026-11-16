@@ -9,6 +9,8 @@
 #   mirror:   its path and tag in the registry, when it is not the source
 #             without its registry host (and without library/ for docker.io)
 #   build:    built here instead of pulled; no tag on `mirror` means any tag
+#   dockerfile: built by mirror.py pull for `platform` from this file, and
+#             pushed like the pulled images
 #   floating: true for a tag that moves upstream (7-alpine); reported
 #   used_by:  the file that uses it, for an image no rendered manifest
 #             references (install scripts, CI, Ansible); must exist
@@ -33,6 +35,11 @@ images:
   # Built in this repository
   - mirror: lumen-api
     build: 01-connected-zone/Dockerfile, by .gitea/workflows/ci.yaml
+  # Tagged with its Go version: keep it with the GO_BUILDER of the Dockerfile
+  - mirror: lumen-api:builder-go1.26.11
+    build: the Gitea CI job image
+    dockerfile: 01-connected-zone/ci/Dockerfile
+    used_by: 03-airgap-zone/manifests/gitea-runner/01-runner.yaml
   - mirror: falcosecurity/k8smeta-plugin:0.4.1
     build: docs/security.md, "Custom image for airgap"
 

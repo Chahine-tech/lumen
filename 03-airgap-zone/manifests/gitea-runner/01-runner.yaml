@@ -74,7 +74,7 @@ spec:
                 --instance http://192.168.2.2:30300 \
                 --token $(RUNNER_TOKEN) \
                 --name k8s-runner \
-                --labels ubuntu-latest:docker://192.168.2.2:5000/lumen-api:builder \
+                --labels ubuntu-latest:docker://192.168.2.2:5000/lumen-api:builder-go1.26.11 \
               && act_runner daemon --config /config/config.yaml
           env:
             - name: RUNNER_TOKEN
