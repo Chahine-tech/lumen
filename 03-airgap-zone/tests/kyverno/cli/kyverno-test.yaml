@@ -17,6 +17,7 @@ policies:
   - ../../../manifests/kyverno-policies/03-block-latest-tag.yaml
   - ../../../manifests/kyverno-policies/04-require-app-labels.yaml
   - ../../../manifests/kyverno-policies/05-require-resources.yaml
+  - ../../../manifests/kyverno-policies/06-restrict-vault-serviceaccounts.yaml
 resources:
   - resources.yaml
 results:
@@ -95,3 +96,21 @@ results:
     kind: Deployment
     resources: [kube-public/w-any, default/d-internal]
     result: skip
+
+  # Vault-only ServiceAccounts: every namespace
+  - policy: lumen-restrict-vault-serviceaccounts
+    kind: Pod
+    resources: [lumen/p-sa-vso, monitoring/p-sa-vso, cert-manager/p-sa-cm-vault]
+    result: fail
+  - policy: lumen-restrict-vault-serviceaccounts
+    kind: Pod
+    resources: [lumen/p-sa-default, lumen/p-sa-other, lumen/p-internal]
+    result: pass
+  - policy: lumen-restrict-vault-serviceaccounts
+    kind: Deployment
+    resources: [lumen/d-sa-vso]
+    result: fail
+  - policy: lumen-restrict-vault-serviceaccounts
+    kind: CronJob
+    resources: [vault/c-sa-vso]
+    result: fail

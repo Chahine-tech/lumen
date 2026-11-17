@@ -8,10 +8,20 @@
 #
 # Vault side (created by 03-airgap-zone/scripts/vault-configure.sh):
 #   - policy traefik-dashboard-policy: read lumen/data/traefik-dashboard
-#   - k8s auth role traefik-dashboard: bound to SA default in namespace traefik
+#   - k8s auth role traefik-dashboard: bound to SA traefik-dashboard-vso in
+#     namespace traefik (issue #6), defined below
 #
 # VSO then renders the Secret dashboard-auth-secret that the dashboard-auth
 # Middleware references (08-middlewares.yaml).
+
+---
+# VSO requests its tokens (audience vault); no pod runs as it
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: traefik-dashboard-vso
+  namespace: traefik
+automountServiceAccountToken: false
 
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
@@ -37,7 +47,7 @@ spec:
   mount: kubernetes
   kubernetes:
     role: traefik-dashboard
-    serviceAccount: default
+    serviceAccount: traefik-dashboard-vso
     audiences:
       - vault
 
