@@ -1163,11 +1163,10 @@ lumen-db-3  → witness (data in PVC lumen-db-3)
 #### Redis HA
 
 ```
-redis-master-0   → StatefulSet with 1 replica
-redis-replica-0  → StatefulSet with 1 replica
+redis-0, redis-1, redis-2  → one StatefulSet, Redis + Sentinel in each pod
 ```
 
-The `-0` suffix indicates it's a StatefulSet. Redis Sentinel uses stable names to track who is the master.
+The `-0` suffix indicates it's a StatefulSet. Redis and Sentinel announce the stable names (`redis-N.redis-headless...`), so the topology survives the pods' IP changes, and any of the three can be the master.
 
 #### Vault HA
 

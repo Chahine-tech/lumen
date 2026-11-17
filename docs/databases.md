@@ -10,14 +10,16 @@ This document covers the two stateful data stores deployed in the lumen airgap c
 
 ```
 lumen namespace
-  ├── redis-master-0      (node-1, PVC 1Gi)   ← writes
-  ├── redis-replica-0     (node-2)             ← reads
-  └── redis-sentinel-{0,1,2}                  ← leader election (quorum=2)
+  └── StatefulSet redis: redis-0, redis-1, redis-2
+        each: Redis server + Sentinel, PVC 1Gi (data, AOF, Sentinel config)
+        any of them can be the master (quorum = 2)
 ```
 
-- **1 master + 1 replica + 3 sentinels** — tolerates 1 node failure
-- Sentinels use quorum=2 to elect a new master if the current one is unreachable
-- lumen-api connects via `go-redis/v9` `NewFailoverClient` — discovers master automatically via sentinels
+- **3 pods, each a data node and a Sentinel**: any pod can be the master,
+  and a pod that starts asks the Sentinels which one it is (issue #8)
+- lumen-api connects via `go-redis/v9` `NewFailoverClient`, with the
+  password for the Sentinels too
+- Details, tests and limits (3 pods on 2 nodes): [runbooks/redis.md](runbooks/redis.md)
 
 ### Connection (lumen-api)
 
@@ -35,7 +37,7 @@ master pod dies
   → quorum reached (2/3 sentinels agree)
   → replica promoted to master
   → lumen-api reconnects automatically via sentinel
-  → downtime < 10 seconds
+  → measured on k3d: new master in 7 to 9s, lumen-api /health 503 for 3s
 ```
 
 ### Manifests

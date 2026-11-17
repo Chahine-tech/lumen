@@ -444,10 +444,10 @@ Two databases with different high-availability strategies.
   ┌─────────────────────────────────────────────────────┐
   │  namespace: lumen                                   │
   │                                                     │
-  │  ┌──────────────┐    replication    ┌─────────────┐ │
-  │  │  redis-master│ ────────────────► │ redis-slave │ │
-  │  │  :6379       │                   │ :6379       │ │
-  │  └──────┬───────┘                   └─────────────┘ │
+  │  StatefulSet redis: redis-0, redis-1, redis-2       │
+  │  each a Redis server (:6379) and a Sentinel         │
+  │  one master, two replicas, any pod can be master    │
+  │         │                                           │
   │         │                                           │
   │         │ monitored by                              │
   │  ┌──────▼──────────────────────────────────┐       │
@@ -456,8 +456,8 @@ Two databases with different high-availability strategies.
   │  │  If master down → election → failover   │       │
   │  └─────────────────────────────────────────┘       │
   │                                                     │
-  │  lumen-api → redis-headless:26379 (Sentinel)        │
-  │           → redis-master:6379 (auto-discovery)     │
+  │  lumen-api → redis-sentinel:26379 (Sentinel)        │
+  │           → the master's :6379 (auto-discovery)     │
   └─────────────────────────────────────────────────────┘
 
   CloudNativePG (PostgreSQL)
@@ -535,7 +535,7 @@ Each component in its own namespace with strict NetworkPolicies.
   K3s Cluster
   ├── namespace: lumen
   │   ├── lumen-api (Rollout — 2 replicas)
-  │   ├── redis-master + redis-slave + sentinel x3
+  │   ├── redis-0..2 (Redis + Sentinel each)
   │   └── NetworkPolicies: default-deny + explicit allows
   │
   ├── namespace: cnpg-system
