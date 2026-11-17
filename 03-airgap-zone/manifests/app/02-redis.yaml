@@ -1,7 +1,24 @@
+# Redis with Sentinel (issue #8): one StatefulSet of 3 pods, each with a
+# Redis server and a Sentinel. Any pod can be the master: Sentinel elects
+# it, and a pod that starts asks the Sentinels which one it is.
+# docs/runbooks/redis.md
+#
+#   redis-N.redis-headless.lumen.svc.cluster.local   stable names, announced
+#                                                     by Redis and Sentinel
+#   redis-sentinel:26379                              lumen-api (go-redis
+#                                                     FailoverClient)
+#
+# Each pod keeps on its volume the data (RDB + AOF) and its Sentinel's
+# configuration, which Sentinel rewrites as the topology changes: a
+# restarted Sentinel starts from the last master it knew.
+#
+# The password (Secret lumen-redis-vault, VSO from Vault lumen/redis) guards
+# the data nodes and the Sentinels.
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: redis-master-config
+  name: redis-config
   namespace: lumen
 data:
   redis.conf: |
@@ -11,121 +28,124 @@ data:
     daemonize no
     loglevel notice
     logfile ""
-    databases 16
+    dir /data
+    # RDB snapshots, plus the append-only file: at most one second of
+    # writes lost on a crash
     save 900 1
     save 300 10
     save 60 10000
     stop-writes-on-bgsave-error yes
-    rdbcompression yes
-    rdbchecksum yes
-    dbfilename dump.rdb
-    dir /data
-    maxmemory 256mb
-    maxmemory-policy allkeys-lru
+    appendonly yes
+    appendfsync everysec
+    aof-use-rdb-preamble yes
+    auto-aof-rewrite-percentage 100
+    auto-aof-rewrite-min-size 32mb
+    # Half the container limit (256Mi): a background save or AOF rewrite
+    # forks, and the copy-on-write pages count against the same limit
+    maxmemory 128mb
+    # Idempotency records, locks and rate limit counters: evicting them
+    # silently would let a retried request run twice. Full: writes fail
+    # (lumen-api answers 503), nothing is dropped
+    maxmemory-policy noeviction
+    # Bounded replication buffers
+    repl-backlog-size 16mb
+    client-output-buffer-limit replica 64mb 32mb 60
     replica-lazy-flush yes
 
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: redis-replica-config
-  namespace: lumen
-data:
-  redis.conf: |
-    bind 0.0.0.0
-    port 6379
-    protected-mode no
-    daemonize no
-    loglevel notice
-    logfile ""
-    databases 16
-    dir /data
-    maxmemory 256mb
-    maxmemory-policy allkeys-lru
-    replicaof redis-master-0.redis-master.lumen.svc.cluster.local 6379
-
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: redis-sentinel-config
-  namespace: lumen
-data:
   sentinel.conf: |
     port 26379
+    dir /data/sentinel
     sentinel resolve-hostnames yes
     sentinel announce-hostnames yes
-    sentinel monitor mymaster redis-master-0.redis-master.lumen.svc.cluster.local 6379 2
     sentinel down-after-milliseconds mymaster 5000
     sentinel failover-timeout mymaster 60000
     sentinel parallel-syncs mymaster 1
 
----
-# Headless service for redis-master StatefulSet DNS
-# Enables: redis-master-0.redis-master.lumen.svc.cluster.local
-apiVersion: v1
-kind: Service
-metadata:
-  name: redis-master
-  namespace: lumen
-  labels:
-    app: redis
-    role: master
-spec:
-  clusterIP: None
-  selector:
-    app: redis
-    role: master
-  ports:
-    - name: redis
-      port: 6379
-      targetPort: 6379
-      protocol: TCP
+  # Renders /config/redis.conf and, once, /data/sentinel/sentinel.conf.
+  # The master is, in this order:
+  #   1. what a Sentinel of another pod answers (a running cluster);
+  #   2. the master this pod's Sentinel last recorded (a full restart);
+  #   3. redis-0 (first start).
+  init.sh: |
+    set -eu
+    DOMAIN=redis-headless.lumen.svc.cluster.local
+    SELF="$(hostname).$DOMAIN"
+    cli() { timeout 3 redis-cli --no-auth-warning -a "$REDIS_PASSWORD" "$@" 2>/dev/null; }
+
+    master=""
+    for i in 0 1 2; do
+      peer="redis-$i.$DOMAIN"
+      [ "$peer" = "$SELF" ] && continue
+      master=$(cli -h "$peer" -p 26379 sentinel get-master-addr-by-name mymaster | head -1) || true
+      # An error ("NOAUTH ...", "LOADING ...") is not a master
+      case "$master" in redis-[0-9]*."$DOMAIN") ;; *) master="" ;; esac
+      if [ -n "$master" ]; then
+        echo "master from the Sentinel of $peer: $master"
+        break
+      fi
+    done
+    mkdir -p /data/sentinel
+    if [ -z "$master" ] && [ -f /data/sentinel/sentinel.conf ]; then
+      master=$(sed -n 's/^sentinel monitor mymaster \([^ ]*\) .*/\1/p' /data/sentinel/sentinel.conf)
+      [ -n "$master" ] && echo "master from this pod's Sentinel: $master"
+    fi
+    if [ -z "$master" ]; then
+      master="redis-0.$DOMAIN"
+      echo "no Sentinel knows a master: first start, $master"
+    fi
+
+    cp /config-readonly/redis.conf /config/redis.conf
+    {
+      echo "requirepass $REDIS_PASSWORD"
+      echo "masterauth $REDIS_PASSWORD"
+      echo "replica-announce-ip $SELF"
+    } >> /config/redis.conf
+    if [ "$master" != "$SELF" ]; then
+      echo "replicaof $master 6379" >> /config/redis.conf
+    fi
+
+    # Sentinel rewrites its file: create it once, then only refresh the
+    # passwords (rotated in Vault) and the announced name
+    conf=/data/sentinel/sentinel.conf
+    if [ -f "$conf" ]; then
+      grep -v -e '^requirepass ' -e '^sentinel auth-pass ' -e '^sentinel sentinel-pass ' \
+        -e '^sentinel announce-ip ' "$conf" > "$conf.new" || true
+    else
+      cp /config-readonly/sentinel.conf "$conf.new"
+      echo "sentinel monitor mymaster $master 6379 2" >> "$conf.new"
+    fi
+    {
+      echo "sentinel announce-ip $SELF"
+      echo "requirepass $REDIS_PASSWORD"
+      echo "sentinel sentinel-pass $REDIS_PASSWORD"
+      echo "sentinel auth-pass mymaster $REDIS_PASSWORD"
+    } >> "$conf.new"
+    mv "$conf.new" "$conf"
 
 ---
-# ClusterIP service — preserves redis:6379 DNS for lumen-api standalone fallback
+# Stable names for the pods, published before they are ready: the first
+# Sentinels must resolve redis-0 while it starts
 apiVersion: v1
 kind: Service
 metadata:
-  name: redis
+  name: redis-headless
   namespace: lumen
   labels:
     app: redis
     tier: cache
 spec:
-  type: ClusterIP
-  selector:
-    app: redis
-    role: master
-  ports:
-    - name: redis
-      port: 6379
-      targetPort: 6379
-      protocol: TCP
-
----
-# Headless service for redis-replica StatefulSet DNS
-apiVersion: v1
-kind: Service
-metadata:
-  name: redis-replica
-  namespace: lumen
-  labels:
-    app: redis
-    role: replica
-spec:
   clusterIP: None
+  publishNotReadyAddresses: true
   selector:
     app: redis
-    role: replica
   ports:
     - name: redis
       port: 6379
-      targetPort: 6379
-      protocol: TCP
+    - name: sentinel
+      port: 26379
 
 ---
-# ClusterIP service for sentinel — lumen-api connects here
+# The Sentinels, for lumen-api: they tell it which pod is the master
 apiVersion: v1
 kind: Service
 metadata:
@@ -133,12 +153,11 @@ metadata:
   namespace: lumen
   labels:
     app: redis
-    role: sentinel
+    tier: cache
 spec:
   type: ClusterIP
   selector:
     app: redis
-    role: sentinel
   ports:
     - name: sentinel
       port: 26379
@@ -146,67 +165,82 @@ spec:
       protocol: TCP
 
 ---
-apiVersion: apps/v1
-kind: StatefulSet
+apiVersion: policy/v1
+kind: PodDisruptionBudget
 metadata:
-  name: redis-master
+  name: redis-pdb
   namespace: lumen
-  labels:
-    app: redis
-    role: master
-    tier: cache
 spec:
-  serviceName: redis-master
-  replicas: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app: redis
-      role: master
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: lumen
+  labels:
+    app: redis
+    tier: cache
+spec:
+  serviceName: redis-headless
+  replicas: 3
+  # All at once: the init container does not need the other pods ready
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: redis
   template:
     metadata:
       labels:
         app: redis
-        role: master
         tier: cache
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: node-1
       securityContext:
         runAsNonRoot: true
         runAsUser: 999
+        runAsGroup: 999
         fsGroup: 999
-      # The password lives in Secret lumen-redis-vault (synced by VSO from
-      # Vault KV lumen/redis) — never in the ConfigMap. The init container
-      # renders the final redis.conf with requirepass/masterauth appended.
-      # masterauth is needed even on the master: after a Sentinel failover it
-      # becomes a replica and must authenticate against the new master.
+        seccompProfile:
+          type: RuntimeDefault
+      # Spread over the nodes; 3 pods on 2 nodes put two on one of them
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: redis
       initContainers:
-        - name: init-redis-config
+        - name: init-config
           image: 192.168.2.2:5000/redis:7.4.12-alpine@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
-          command:
-            - sh
-            - -c
-            - |
-              cp /config-readonly/redis.conf /config/redis.conf
-              printf 'requirepass %s\nmasterauth %s\n' "$REDIS_PASSWORD" "$REDIS_PASSWORD" >> /config/redis.conf
+          command: ["sh", "/config-readonly/init.sh"]
           env:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: lumen-redis-vault
                   key: password
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 32Mi}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
-            seccompProfile:
-              type: RuntimeDefault
           volumeMounts:
             - name: config-readonly
               mountPath: /config-readonly
-            - name: config-writable
+            - name: config
               mountPath: /config
+            - name: data
+              mountPath: /data
       containers:
         - name: redis
           image: 192.168.2.2:5000/redis:7.4.12-alpine@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
@@ -246,213 +280,21 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
-            seccompProfile:
-              type: RuntimeDefault
           volumeMounts:
-            - name: redis-data
+            - name: data
               mountPath: /data
-            - name: config-writable
+            - name: config
               mountPath: /config
-      volumes:
-        - name: config-readonly
-          configMap:
-            name: redis-master-config
-        - name: config-writable
-          emptyDir: {}
-  volumeClaimTemplates:
-    - metadata:
-        name: redis-data
-      spec:
-        accessModes: [ReadWriteOnce]
-        storageClassName: local-path
-        resources:
-          requests:
-            storage: 1Gi
-
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: redis-replica
-  namespace: lumen
-  labels:
-    app: redis
-    role: replica
-    tier: cache
-spec:
-  serviceName: redis-replica
-  replicas: 1
-  selector:
-    matchLabels:
-      app: redis
-      role: replica
-  template:
-    metadata:
-      labels:
-        app: redis
-        role: replica
-        tier: cache
-    spec:
-      nodeSelector:
-        kubernetes.io/hostname: node-2
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 999
-        fsGroup: 999
-      initContainers:
-        - name: init-redis-config
-          image: 192.168.2.2:5000/redis:7.4.12-alpine@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
-          command:
-            - sh
-            - -c
-            - |
-              cp /config-readonly/redis.conf /config/redis.conf
-              printf 'requirepass %s\nmasterauth %s\n' "$REDIS_PASSWORD" "$REDIS_PASSWORD" >> /config/redis.conf
-          env:
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: lumen-redis-vault
-                  key: password
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ALL]
-            seccompProfile:
-              type: RuntimeDefault
-          volumeMounts:
-            - name: config-readonly
-              mountPath: /config-readonly
-            - name: config-writable
-              mountPath: /config
-      containers:
-        - name: redis
-          image: 192.168.2.2:5000/redis:7.4.12-alpine@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
-          imagePullPolicy: IfNotPresent
-          command: ["redis-server", "/config/redis.conf"]
-          env:
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: lumen-redis-vault
-                  key: password
-          ports:
-            - name: redis
-              containerPort: 6379
-              protocol: TCP
-          resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 150m
-              memory: 128Mi
-          livenessProbe:
-            tcpSocket:
-              port: 6379
-            initialDelaySeconds: 15
-            periodSeconds: 10
-          readinessProbe:
-            exec:
-              command: ["sh", "-c", "redis-cli --no-auth-warning -a \"$REDIS_PASSWORD\" ping | grep -q PONG"]
-            initialDelaySeconds: 5
-            periodSeconds: 5
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ALL]
-            seccompProfile:
-              type: RuntimeDefault
-          volumeMounts:
-            - name: redis-data
-              mountPath: /data
-            - name: config-writable
-              mountPath: /config
-      volumes:
-        - name: redis-data
-          emptyDir: {}
-        - name: config-readonly
-          configMap:
-            name: redis-replica-config
-        - name: config-writable
-          emptyDir: {}
-
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: redis-sentinel-pdb
-  namespace: lumen
-spec:
-  minAvailable: 2
-  selector:
-    matchLabels:
-      app: redis
-      role: sentinel
-
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: redis-sentinel
-  namespace: lumen
-  labels:
-    app: redis
-    role: sentinel
-    tier: cache
-spec:
-  serviceName: redis-sentinel
-  replicas: 3
-  selector:
-    matchLabels:
-      app: redis
-      role: sentinel
-  template:
-    metadata:
-      labels:
-        app: redis
-        role: sentinel
-        tier: cache
-    spec:
-      # No nodeSelector — K8s distributes across node-1 and node-2
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 999
-        fsGroup: 999
-      initContainers:
-        - name: init-sentinel-config
-          image: 192.168.2.2:5000/redis:7.4.12-alpine@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
-          command:
-            - sh
-            - -c
-            - |
-              cp /config-readonly/sentinel.conf /config/sentinel.conf
-              printf 'sentinel auth-pass mymaster %s\n' "$REDIS_PASSWORD" >> /config/sentinel.conf
-          env:
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: lumen-redis-vault
-                  key: password
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ALL]
-            seccompProfile:
-              type: RuntimeDefault
-          volumeMounts:
-            - name: config-readonly
-              mountPath: /config-readonly
-            - name: config-writable
-              mountPath: /config
-      containers:
         - name: sentinel
           image: 192.168.2.2:5000/redis:7.4.12-alpine@sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
           imagePullPolicy: IfNotPresent
-          command: ["redis-sentinel", "/config/sentinel.conf"]
+          command: ["redis-sentinel", "/data/sentinel/sentinel.conf"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-redis-vault
+                  key: password
           ports:
             - name: sentinel
               containerPort: 26379
@@ -474,7 +316,7 @@ spec:
               command:
                 - sh
                 - -c
-                - redis-cli -p 26379 sentinel masters | grep -q mymaster
+                - redis-cli --no-auth-warning -a "$REDIS_PASSWORD" -p 26379 sentinel get-master-addr-by-name mymaster | grep -q '^redis-[0-9]' 
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
@@ -483,14 +325,21 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
-            seccompProfile:
-              type: RuntimeDefault
           volumeMounts:
-            - name: config-writable
-              mountPath: /config
+            - name: data
+              mountPath: /data
       volumes:
         - name: config-readonly
           configMap:
-            name: redis-sentinel-config
-        - name: config-writable
+            name: redis-config
+        - name: config
           emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 1Gi

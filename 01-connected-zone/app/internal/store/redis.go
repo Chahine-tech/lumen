@@ -21,14 +21,15 @@ func NewRedisStore(addr, mode, sentinelAddrs, masterName, password string) (*Red
 		client = redis.NewFailoverClient(&redis.FailoverOptions{
 			MasterName:    masterName,
 			SentinelAddrs: addrs,
-			// Password authenticates against the data nodes (requirepass);
-			// sentinels themselves are unauthenticated (NetworkPolicy only).
-			Password:     password,
-			DB:           0,
-			DialTimeout:  5 * time.Second,
-			ReadTimeout:  3 * time.Second,
-			WriteTimeout: 3 * time.Second,
-			PoolSize:     10,
+			// The same password guards the data nodes and the Sentinels
+			// (requirepass on both, manifests/app/02-redis.yaml)
+			Password:         password,
+			SentinelPassword: password,
+			DB:               0,
+			DialTimeout:      5 * time.Second,
+			ReadTimeout:      3 * time.Second,
+			WriteTimeout:     3 * time.Second,
+			PoolSize:         10,
 		})
 	} else {
 		client = redis.NewClient(&redis.Options{
