@@ -143,6 +143,14 @@ spec:
         - name: auth
           configMap:
             name: lumen-api-auth
+        # Root of the infrastructure CA, which signs Vault's certificate
+        # (vault/06-vault-tls.yaml): verifies Vault's token keys
+        - name: vault-ca
+          secret:
+            secretName: vault-ca
+            items:
+              - key: ca.crt
+                path: ca.crt
       containers:
         - name: lumen-api
           image: 192.168.2.2:5000/lumen-api:v1.6.0
@@ -230,6 +238,9 @@ spec:
               readOnly: true
             - name: auth
               mountPath: /etc/lumen-api/auth
+              readOnly: true
+            - name: vault-ca
+              mountPath: /var/run/secrets/lumen-api/vault-ca
               readOnly: true
           resources:
             requests:

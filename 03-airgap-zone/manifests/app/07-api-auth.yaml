@@ -6,7 +6,7 @@
 #   - in the cluster, a projected ServiceAccount token with the audience
 #     lumen-api: kubernetes:system:serviceaccount:<namespace>:<name>
 #   - outside, a Vault identity token of the role lumen-client (AppRole
-#     login, vault/02-vault-init-job.yaml): vault:<entity name>
+#     login, 03-airgap-zone/scripts/vault-configure.sh): vault:<entity name>
 # "*" allows any authenticated caller. lumen-api reads this file at
 # startup: restart it after a change (kubectl argo rollouts restart).
 apiVersion: v1
@@ -29,7 +29,8 @@ data:
         {
           "name": "vault",
           "issuer": "https://vault.airgap.local/v1/identity/oidc",
-          "jwks_url": "http://vault.vault.svc.cluster.local:8200/v1/identity/oidc/.well-known/keys",
+          "jwks_url": "https://vault.vault.svc.cluster.local:8200/v1/identity/oidc/.well-known/keys",
+          "ca_file": "/var/run/secrets/lumen-api/vault-ca/ca.crt",
           "caller_claim": "entity_name"
         }
       ],

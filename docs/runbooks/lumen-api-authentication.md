@@ -10,7 +10,7 @@ JWT and checks the permission of the operation. How it works:
 | Issuers and permissions | `03-airgap-zone/manifests/app/07-api-auth.yaml` (ConfigMap `lumen-api-auth`) |
 | Mode, rate limit | `AUTH_MODE`, `CALLER_RATE_LIMIT` in the Rollout (`app/03-lumen-api.yaml`) |
 | Network | `network-policies/07-allow-api-token-keys.yaml` |
-| Vault | `vault/02-vault-init-job.yaml`: AppRole and identity tokens `lumen-client` |
+| Vault | `03-airgap-zone/scripts/vault-configure.sh`: AppRole and identity tokens `lumen-client` |
 
 Without a token, every route but the kubelet probes (`/livez`, `/readyz`)
 gets 401 in enforce mode, `/health` included. With a token but without the
@@ -104,9 +104,9 @@ curl --cacert 03-airgap-zone/airgap-ca.crt --cert client.crt --key client.key \
 ```
 
 Another external caller gets its own entity and AppRole, then
-`vault:<entity name>` in `07-api-auth.yaml`. The init Job's block "Identity
-tokens for lumen-api callers" is the model: entity, AppRole, entity alias
-with the role ID.
+`vault:<entity name>` in `07-api-auth.yaml`. The block "Identity tokens
+for lumen-api callers" of `vault-configure.sh` is the model: entity,
+AppRole, entity alias with the role ID.
 
 ### For a test, from an administrator's workstation
 
@@ -127,17 +127,14 @@ as for v1.7.0: the `main` pipeline builds the image, then the tag.
 
 ### Before: Vault on the existing cluster
 
-On a new cluster the `vault-init` Job configures it. On a running cluster
-it does not run again: run the block "Identity tokens for lumen-api
-callers" of `vault/02-vault-init-job.yaml` by hand, with an admin token
-(the bootstrap root token is revoked: `vault operator generate-root`,
-`docs/vault-cert-manager.md`).
+`vault-configure.sh` holds the block "Identity tokens for lumen-api
+callers": `vault-bootstrap.sh init` runs it on a new cluster, and
+`vault-bootstrap.sh configure` on a running one, with an admin token
+(`vault operator generate-root`, docs/runbooks/vault-auto-unseal.md).
 
 ```bash
-kubectl exec -it -n vault vault-0 -- sh
-export VAULT_TOKEN=<admin token>
-# paste the block, from "vault write identity/oidc/config" to the alias
-vault read -format=json identity/oidc/role/lumen-client | grep -E '"client_id"|"key"'
+03-airgap-zone/scripts/vault-bootstrap.sh configure
+kubectl exec -n vault vault-0 -- sh -c 'VAULT_TOKEN=<admin token> vault read -format=json identity/oidc/role/lumen-client' | grep -E '"client_id"|"key"'
 # "client_id": "lumen-api", "key": "lumen-api"
 ```
 
@@ -210,8 +207,9 @@ another audience, or the JWKS fetched without a token, refused.
 k3d (K3s v1.33.6), with the repository's NetworkPolicies for `lumen`
 (default deny included), `07-api-auth.yaml`, the pod template of the
 Rollout and of the smoke test, PostgreSQL and Redis containers, and Vault
-in dev mode configured by the init Job's block (that block, run twice on
-another dev Vault: no error, one entity alias):
+in dev mode configured by the identity block, then in the init Job, now in
+`vault-configure.sh` (that block, run twice on another dev Vault: no error,
+one entity alias):
 
 | Case | Result |
 |---|---|
@@ -238,11 +236,9 @@ NetworkPolicies, the client flow through Traefik and the mTLS edge.
 
 ## Limits
 
-- **Vault's keys over HTTP.** lumen-api fetches them from
-  `http://vault.vault.svc...:8200` (Vault has no TLS inside the cluster,
-  #5): whoever can alter that traffic can substitute keys and forge Vault
-  tokens. The Kubernetes keys are fetched over TLS, checked against the
-  cluster CA.
+- Vault's keys are fetched over TLS since #5, checked against the root of
+  the infrastructure CA (Secret `vault-ca` of `lumen`). That setup was not
+  run with lumen-api: the tests above used Vault in dev mode over HTTP.
 - **Dedicated client CA** (proposed in #18): not done. A certificate from
   the cluster CA still passes the mTLS edge, but no longer gives access
   without a token.
