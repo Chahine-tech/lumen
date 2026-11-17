@@ -47,6 +47,8 @@ git push ─▶ ArgoCD sync of lumen-app
 
 ## Status: two steps
 
+Step 2 ships with v1.7.0, applied once that release is deployed: [release v1.7.0](release-v1.7.0.md).
+
 The deployed image (v1.6.0) creates the schema itself at startup, as the
 owner, and has no `migrate` command. It cannot run as `lumen_runtime`
 (measured: `permission denied for schema public` on its `CREATE TABLE IF NOT

@@ -1,0 +1,64 @@
+# Authentication of lumen-api callers (issue #18): the token issuers
+# lumen-api trusts and the callers allowed to run each operation.
+# docs/runbooks/lumen-api-authentication.md
+#
+# A caller is "<issuer name>:<caller claim>":
+#   - in the cluster, a projected ServiceAccount token with the audience
+#     lumen-api: kubernetes:system:serviceaccount:<namespace>:<name>
+#   - outside, a Vault identity token of the role lumen-client (AppRole
+#     login, 03-airgap-zone/scripts/vault-configure.sh): vault:<entity name>
+# "*" allows any authenticated caller. lumen-api reads this file at
+# startup: restart it after a change (kubectl argo rollouts restart).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lumen-api-auth
+  namespace: lumen
+data:
+  auth.json: |
+    {
+      "audience": "lumen-api",
+      "issuers": [
+        {
+          "name": "kubernetes",
+          "issuer": "https://kubernetes.default.svc.cluster.local",
+          "jwks_url": "https://kubernetes.default.svc.cluster.local/openid/v1/jwks",
+          "ca_file": "/var/run/secrets/lumen-api/kube-api/ca.crt",
+          "token_file": "/var/run/secrets/lumen-api/kube-api/token"
+        },
+        {
+          "name": "vault",
+          "issuer": "https://vault.airgap.local/v1/identity/oidc",
+          "jwks_url": "https://vault.vault.svc.cluster.local:8200/v1/identity/oidc/.well-known/keys",
+          "ca_file": "/var/run/secrets/lumen-api/vault-ca/ca.crt",
+          "caller_claim": "entity_name"
+        }
+      ],
+      "permissions": {
+        "items:read": ["*"],
+        "items:create": ["kubernetes:system:serviceaccount:lumen:lumen-smoke-test", "vault:lumen-client"],
+        "items:delete": ["kubernetes:system:serviceaccount:lumen:lumen-smoke-test", "vault:lumen-client"],
+        "events:read": ["vault:lumen-client"]
+      }
+    }
+
+---
+# lumen-api: its token is only used to fetch the API server's signing keys
+# (/openid/v1/jwks, readable by every ServiceAccount). Mounted explicitly in
+# 03-lumen-api.yaml, with no automount.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lumen-api
+  namespace: lumen
+automountServiceAccountToken: false
+
+---
+# The smoke test (06-smoke-test-analysis.yaml) calls the API with a token of
+# this ServiceAccount, audience lumen-api.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lumen-smoke-test
+  namespace: lumen
+automountServiceAccountToken: false

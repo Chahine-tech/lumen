@@ -23,8 +23,8 @@ func TestLatest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v != 1 {
-		t.Fatalf("Latest = %d, want 1", v)
+	if v != 2 {
+		t.Fatalf("Latest = %d, want 2", v)
 	}
 	if _, err := migrations.Latest(fstest.MapFS{"initial.sql": {}}); err == nil {
 		t.Fatal("a file without a version prefix must be an error")
@@ -122,12 +122,12 @@ func TestUpFreshDatabase(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if v, err := migrations.Version(ctx, owner); err != nil || v != 1 {
-		t.Fatalf("Version = %d, %v, want 1", v, err)
+	if v, err := migrations.Version(ctx, owner); err != nil || v != 2 {
+		t.Fatalf("Version = %d, %v, want 2", v, err)
 	}
 	// The second run applied nothing
-	if got := appliedVersions(t, owner); len(got) != 1 {
-		t.Fatalf("applied versions = %v, want [1]", got)
+	if got := appliedVersions(t, owner); len(got) != 2 {
+		t.Fatalf("applied versions = %v, want [1 2]", got)
 	}
 }
 
@@ -151,8 +151,8 @@ func TestUpAdoptsLegacySchema(t *testing.T) {
 	if err := migrations.Up(ctx, dsnAs(ownerRole), migrations.Files(), ""); err != nil {
 		t.Fatal(err)
 	}
-	if v, err := migrations.Version(ctx, owner); err != nil || v != 1 {
-		t.Fatalf("Version = %d, %v, want 1", v, err)
+	if v, err := migrations.Version(ctx, owner); err != nil || v != 2 {
+		t.Fatalf("Version = %d, %v, want 2", v, err)
 	}
 	var name string
 	if err := owner.QueryRow(ctx, "SELECT name FROM items").Scan(&name); err != nil || name != "kept" {
@@ -217,8 +217,8 @@ func TestRuntimeRoleRights(t *testing.T) {
 			t.Errorf("runtime role, DML refused: %s: %v", s, err)
 		}
 	}
-	if v, err := migrations.Version(ctx, rt); err != nil || v != 1 {
-		t.Errorf("runtime role, Version = %d, %v, want 1", v, err)
+	if v, err := migrations.Version(ctx, rt); err != nil || v != 2 {
+		t.Errorf("runtime role, Version = %d, %v, want 2", v, err)
 	}
 
 	for _, s := range []string{
@@ -249,7 +249,8 @@ func TestStoreWorksAfterExpandMigration(t *testing.T) {
 	ctx := context.Background()
 	fsys := fstest.MapFS{
 		"00001_initial_schema.sql": mustFile(t, "00001_initial_schema.sql"),
-		"00002_items_description.sql": {Data: []byte("-- +goose Up\nALTER TABLE items ADD COLUMN description TEXT;\n" +
+		"00002_events_actor.sql":   mustFile(t, "00002_events_actor.sql"),
+		"00003_items_description.sql": {Data: []byte("-- +goose Up\nALTER TABLE items ADD COLUMN description TEXT;\n" +
 			"-- +goose Down\nALTER TABLE items DROP COLUMN description;\n")},
 	}
 	if err := migrations.Up(ctx, dsnAs(ownerRole), fsys, runtimeRole); err != nil {
@@ -261,7 +262,7 @@ func TestStoreWorksAfterExpandMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	created, err := s.CreateItem(ctx, "during canary")
+	created, err := s.CreateItem(ctx, "during canary", "test:a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,10 +272,47 @@ func TestStoreWorksAfterExpandMigration(t *testing.T) {
 	if _, err := s.GetItems(ctx, 10, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteItem(ctx, created.ID); err != nil {
+	if err := s.DeleteItem(ctx, created.ID, "test:a"); err != nil {
 		t.Fatal(err)
 	}
-	if v, err := s.SchemaVersion(ctx); err != nil || v != 2 {
-		t.Fatalf("SchemaVersion = %d, %v, want 2", v, err)
+	if v, err := s.SchemaVersion(ctx); err != nil || v != 3 {
+		t.Fatalf("SchemaVersion = %d, %v, want 3", v, err)
+	}
+}
+
+// Migration 2 (events.actor) during a canary: the previous version, which
+// inserts events without an actor, keeps working as the runtime role, and
+// its events have a null actor; this version records the actor.
+func TestActorMigrationDuringCanary(t *testing.T) {
+	dsnAs := testDatabase(t)
+	ctx := context.Background()
+	if err := migrations.Up(ctx, dsnAs(ownerRole), migrations.Files(), runtimeRole); err != nil {
+		t.Fatal(err)
+	}
+	rt := connect(t, dsnAs(runtimeRole))
+	// The statement of v1.7.0 (store.CreateItem)
+	exec(t, rt, `INSERT INTO events (type, aggregate, payload) VALUES ('ItemCreated', 'item', '{"id":1}')`)
+
+	counter := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_events_total"}, []string{"type"})
+	s, err := store.NewPostgresStore(ctx, dsnAs(runtimeRole), dsnAs(runtimeRole), counter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := s.CreateItem(ctx, "new", "test:creator"); err != nil {
+		t.Fatal(err)
+	}
+	events, err := s.GetEvents(ctx, "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("%d events, want 2", len(events))
+	}
+	if events[0].Actor == nil || *events[0].Actor != "test:creator" {
+		t.Errorf("new event actor = %v, want test:creator", events[0].Actor)
+	}
+	if events[1].Actor != nil {
+		t.Errorf("previous version's event actor = %q, want null", *events[1].Actor)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Chahine-tech/lumen/internal/auth"
 	"github.com/Chahine-tech/lumen/internal/handlers"
 )
 
@@ -20,7 +21,11 @@ func status(t *testing.T, h http.Handler, path string) int {
 
 // The public port (routed by Traefik) serves neither the metrics nor pprof.
 func TestPublicMuxHasNoAdminRoutes(t *testing.T) {
-	mux := (&App{}).publicMux(handlers.NewHandler(nil, nil, nil))
+	authn, err := auth.New(&auth.Config{}, auth.Enforce, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := (&App{}).publicMux(handlers.NewHandler(nil, nil, nil), authn)
 	for path, want := range map[string]int{
 		"/livez":                 http.StatusOK, // control: the mux serves
 		"/metrics":               http.StatusNotFound,

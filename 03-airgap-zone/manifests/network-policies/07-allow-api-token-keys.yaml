@@ -1,0 +1,35 @@
+# lumen-api fetches the public keys that verify its callers' tokens
+# (issue #18, app/07-api-auth.yaml): from the Kubernetes API server
+# (/openid/v1/jwks) and from Vault (identity/oidc/.well-known/keys).
+# Vault's ingress from the lumen namespace is in 16-allow-vault.yaml.
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-egress-to-token-keys
+  namespace: lumen
+  annotations:
+    description: "Allow lumen-api to fetch the token signing keys from the API server and Vault"
+spec:
+  podSelector:
+    matchLabels:
+      app: lumen-api
+  policyTypes:
+    - Egress
+  egress:
+    # Kubernetes API server. The policy sees the server port the Service
+    # (kubernetes.default, 443) is translated to: 6443 alone was enough on
+    # K3s v1.33.6 (k3d), and without this rule the keys could not be fetched
+    - ports:
+        - protocol: TCP
+          port: 6443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: vault
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+      ports:
+        - protocol: TCP
+          port: 8200

@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/Chahine-tech/lumen/internal/auth"
 	"github.com/Chahine-tech/lumen/internal/handlers"
 	"github.com/Chahine-tech/lumen/internal/metrics"
 	"github.com/Chahine-tech/lumen/internal/middleware"
@@ -41,6 +43,19 @@ func NewApp() (*App, error) {
 	port            := getEnv("PORT", "8080")
 	adminPort       := getEnv("ADMIN_PORT", "9090")
 	pprofEnabled    := getEnv("PPROF_ENABLED", "false") == "true"
+
+	authMode, err := auth.ParseMode(getEnv("AUTH_MODE", ""))
+	if err != nil {
+		return nil, err
+	}
+	authConfig, err := loadAuthConfig(getEnv("AUTH_CONFIG", ""), authMode)
+	if err != nil {
+		return nil, err
+	}
+	rateLimit, err := strconv.ParseInt(getEnv("CALLER_RATE_LIMIT", "50"), 10, 64)
+	if err != nil || rateLimit < 0 {
+		return nil, fmt.Errorf("invalid CALLER_RATE_LIMIT: must be a number of requests per second, 0 to disable")
+	}
 
 	drainDelay, err := time.ParseDuration(getEnv("SHUTDOWN_DRAIN_DELAY", "5s"))
 	if err != nil {
@@ -97,14 +112,29 @@ func NewApp() (*App, error) {
 	}
 	h := handlers.NewHandler(redisStore, items, m)
 
-	mux := a.publicMux(h)
+	authn, err := auth.New(authConfig, authMode, func(result string) {
+		m.AuthResultsTotal.WithLabelValues(result, string(authMode)).Inc()
+	})
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("Authentication configured", "mode", authMode, "issuers", len(authConfig.Issuers),
+		"caller_rate_limit", rateLimit)
 
+	mux := a.publicMux(h, authn)
+
+	// Authenticate before the rate limit and the idempotency record, which
+	// are kept per caller. The kubelet probes carry no token.
 	handler := middleware.Recovery(
 		middleware.Tracing("lumen-api")(
 			middleware.Logging(
 				middleware.Metrics(m)(
-					middleware.BodyLimit(1<<20)( // 1 MiB — largest legitimate payload is a small JSON
-						middleware.Idempotency(redisStore, http.MethodPost, http.MethodDelete)(mux),
+					authn.Authenticate("/livez", "/readyz")(
+						middleware.CallerRateLimit(redisStore, rateLimit, m.RateLimitedTotal.Inc)(
+							middleware.BodyLimit(1<<20)( // 1 MiB: the largest legitimate payload is a small JSON
+								middleware.Idempotency(redisStore, http.MethodPost, http.MethodDelete)(mux),
+							),
+						),
 					),
 				),
 			),
@@ -130,8 +160,10 @@ func NewApp() (*App, error) {
 
 // publicMux holds the routes served on PORT: the API and the probes. The
 // metrics and pprof are on the admin listener, which is neither routed by
-// Traefik nor reachable from outside the monitoring namespace.
-func (a *App) publicMux(h *handlers.Handler) *http.ServeMux {
+// Traefik nor reachable from outside the monitoring namespace. Each API
+// route checks the permission of its operation (auth.Config.Permissions);
+// /hello needs an authenticated caller only.
+func (a *App) publicMux(h *handlers.Handler, authn *auth.Authenticator) *http.ServeMux {
 	mux := http.NewServeMux()
 	// Kubernetes probes (probes.go), and /health: dependency report for humans
 	mux.HandleFunc("GET /livez", a.livez)
@@ -140,13 +172,13 @@ func (a *App) publicMux(h *handlers.Handler) *http.ServeMux {
 	mux.HandleFunc("/hello", h.Hello)
 
 	// Items CRUD routes (require PostgreSQL)
-	mux.HandleFunc("GET /items", h.GetItems)
-	mux.HandleFunc("POST /items", h.CreateItem)
-	mux.HandleFunc("GET /items/{id}", h.GetItem)
-	mux.HandleFunc("DELETE /items/{id}", h.DeleteItem)
+	mux.HandleFunc("GET /items", authn.Require(auth.OpItemsRead, h.GetItems))
+	mux.HandleFunc("POST /items", authn.Require(auth.OpItemsCreate, h.CreateItem))
+	mux.HandleFunc("GET /items/{id}", authn.Require(auth.OpItemsRead, h.GetItem))
+	mux.HandleFunc("DELETE /items/{id}", authn.Require(auth.OpItemsDelete, h.DeleteItem))
 
 	// Event log: audit trail (append-only, read from replica)
-	mux.HandleFunc("GET /events", h.GetEvents)
+	mux.HandleFunc("GET /events", authn.Require(auth.OpEventsRead, h.GetEvents))
 	return mux
 }
 
@@ -206,6 +238,20 @@ func (a *App) Run() error {
 	}
 
 	return nil
+}
+
+// loadAuthConfig reads AUTH_CONFIG. Without it, report mode runs with no
+// issuer (every request is served without a caller, for a local run);
+// enforce mode refuses to start.
+func loadAuthConfig(path string, mode auth.Mode) (*auth.Config, error) {
+	if path != "" {
+		return auth.LoadConfig(path)
+	}
+	if mode == auth.Report {
+		slog.Warn("AUTH_CONFIG not set: no token issuer, every request is served without a caller (report mode)")
+		return &auth.Config{}, nil
+	}
+	return nil, fmt.Errorf("AUTH_CONFIG is not set: required with AUTH_MODE=%s", auth.Enforce)
 }
 
 func getEnv(key, defaultValue string) string {

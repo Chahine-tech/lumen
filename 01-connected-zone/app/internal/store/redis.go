@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -94,6 +95,21 @@ return 0
 
 func (s *RedisStore) ReleaseIdempotencyLock(ctx context.Context, key, token string) error {
 	return releaseLock.Run(ctx, s.client, []string{"idempotency:lock:" + key}, token).Err()
+}
+
+// CountRequest counts one request of caller in the current fixed window and
+// returns the count so far. The key names the window, so each window
+// starts at zero; it expires after two windows.
+func (s *RedisStore) CountRequest(ctx context.Context, caller string, window time.Duration) (int64, error) {
+	n := time.Now().UnixNano() / int64(window)
+	key := "ratelimit:" + caller + ":" + strconv.FormatInt(n, 10)
+	pipe := s.client.TxPipeline()
+	incr := pipe.Incr(ctx, key)
+	pipe.PExpire(ctx, key, 2*window)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return 0, err
+	}
+	return incr.Val(), nil
 }
 
 func (s *RedisStore) Close() error {

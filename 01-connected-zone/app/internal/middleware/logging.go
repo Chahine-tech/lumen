@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Chahine-tech/lumen/internal/auth"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -34,7 +35,8 @@ func Logging(next http.Handler) http.Handler {
 			statusCode:     http.StatusOK,
 		}
 
-		next.ServeHTTP(wrapped, r)
+		ctx, caller := auth.Track(r.Context())
+		next.ServeHTTP(wrapped, r.WithContext(ctx))
 
 		span := trace.SpanFromContext(r.Context())
 		slog.Info("request",
@@ -44,6 +46,7 @@ func Logging(next http.Handler) http.Handler {
 			"size_bytes", wrapped.size,
 			"duration_ms", time.Since(start).Milliseconds(),
 			"remote_addr", r.RemoteAddr,
+			"caller", caller(),
 			"trace_id", span.SpanContext().TraceID().String(),
 		)
 	})

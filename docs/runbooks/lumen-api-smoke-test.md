@@ -5,13 +5,20 @@
 
 1. `GET /health` answers 200. Retried for up to 30s: a new pod cannot reach
    the API for its first seconds, until kube-router has programmed its
-   NetworkPolicies.
+   NetworkPolicies. A 401 or 403 fails at once.
+   With `SMOKE_EXPECT_AUTH=true`: `GET /items` without a token answers 401
+   (authentication enforced, issue #18).
 2. `POST /items` with an `Idempotency-Key` creates an item (201).
 3. The same request again is replayed: 201, `Idempotency-Replayed: true`,
    the same body.
 4. `GET /items/{id}` returns it.
 5. `DELETE /items/{id}` answers 204, then `GET` answers 404 within 10s
    (reads go to a replica).
+
+Every request but the 401 check carries the bearer token read from
+`SMOKE_TOKEN_FILE`; in the cluster, a projected token of the ServiceAccount
+`lumen-smoke-test`, audience `lumen-api`
+([authentication](lumen-api-authentication.md)).
 
 The test item is deleted even when a later check fails. The idempotency
 record stays in Redis for 24h under a random `smoke-...` key. Exit code 0
@@ -38,6 +45,8 @@ version without `smoke` (v1.6.0 and older) must still pass the step.
 Traefik only.
 
 ## Status: two steps
+
+Step 2 ships with v1.7.0, applied once that release is deployed: [release v1.7.0](release-v1.7.0.md).
 
 - **Step 1 (now)**: the `smoke` subcommand, its tests, and the
   NetworkPolicy (it selects no pod yet).

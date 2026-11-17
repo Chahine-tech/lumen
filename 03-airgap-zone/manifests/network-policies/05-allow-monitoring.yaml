@@ -1,8 +1,7 @@
 # Allow Prometheus to scrape lumen-api
 #
-# 8080: /metrics up to v1.6.0. 9090: the admin port of later versions
-# (/metrics, and pprof when PPROF_ENABLED=true). Once the ServiceMonitor
-# scrapes the admin port (after the first release with it), 8080 can go:
+# 9090 only: the admin port (/metrics, and pprof when PPROF_ENABLED=true).
+# Up to v1.6.0 /metrics was on 8080, which Prometheus no longer reaches:
 # docs/runbooks/lumen-api-admin-port.md
 #
 # kubernetes.io/metadata.name is set by Kubernetes on every namespace; the
@@ -31,7 +30,5 @@ spec:
             matchLabels:
               app.kubernetes.io/name: prometheus
       ports:
-        - protocol: TCP
-          port: 8080
         - protocol: TCP
           port: 9090

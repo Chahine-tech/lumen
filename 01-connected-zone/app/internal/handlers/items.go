@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/Chahine-tech/lumen/internal/auth"
 	"github.com/Chahine-tech/lumen/internal/store"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -45,6 +46,15 @@ func writeStoreError(w http.ResponseWriter, err error, notFoundMsg, failureMsg s
 		return
 	}
 	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": failureMsg})
+}
+
+// actor is recorded with the events: the authenticated caller, or
+// auth.Anonymous when the request was served without one (report mode).
+func actor(r *http.Request) string {
+	if c := auth.Caller(r.Context()); c != "" {
+		return c
+	}
+	return auth.Anonymous
 }
 
 // validateItemName returns the trimmed name, or an error message.
@@ -89,7 +99,7 @@ func (h *Handler) CreateItem(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	_, dbSpan := tracer.Start(dbCtx, "db.insert.item")
 	dbSpan.SetAttributes(attribute.String("db.operation", "INSERT"), attribute.String("db.table", "items"))
-	item, err := h.pgStore.CreateItem(dbCtx, name)
+	item, err := h.pgStore.CreateItem(dbCtx, name, actor(r))
 	if err != nil {
 		dbSpan.RecordError(err)
 		dbSpan.SetStatus(codes.Error, err.Error())
@@ -213,7 +223,7 @@ func (h *Handler) DeleteItem(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	_, dbSpan := tracer.Start(dbCtx, "db.delete.item")
 	dbSpan.SetAttributes(attribute.String("db.operation", "DELETE"), attribute.Int("db.item.id", id))
-	if err := h.pgStore.DeleteItem(dbCtx, id); err != nil {
+	if err := h.pgStore.DeleteItem(dbCtx, id, actor(r)); err != nil {
 		if !errors.Is(err, store.ErrNotFound) {
 			dbSpan.RecordError(err)
 			dbSpan.SetStatus(codes.Error, err.Error())

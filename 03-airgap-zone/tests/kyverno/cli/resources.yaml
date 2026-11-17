@@ -259,16 +259,3 @@ spec:
     spec:
       serviceAccountName: lumen-vso
       containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]
----
-apiVersion: batch/v1
-kind: CronJob
-metadata: {name: c-sa-vso, namespace: vault}
-spec:
-  schedule: "0 0 * * *"
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          restartPolicy: Never
-          serviceAccountName: cnpg-backup-vso
-          containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]

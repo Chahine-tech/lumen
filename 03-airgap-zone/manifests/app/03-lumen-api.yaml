@@ -13,6 +13,7 @@ data:
   # Credentials from Secret lumen-db-vault (managed by VSO from Vault KV lumen/db)
   PG_RW_HOST: "lumen-db-rw.lumen.svc.cluster.local"
   PG_RO_HOST: "lumen-db-ro.lumen.svc.cluster.local"
+  PG_DBNAME: "app"
 
 ---
 apiVersion: v1
@@ -25,7 +26,7 @@ metadata:
     tier: backend
   annotations:
     prometheus.io/scrape: "true"
-    prometheus.io/port: "8080"
+    prometheus.io/port: "9090"
     prometheus.io/path: "/metrics"
 spec:
   type: ClusterIP
@@ -34,8 +35,8 @@ spec:
       targetPort: 8080
       protocol: TCP
       name: http
-    # /metrics and pprof (off by default), not routed by Traefik. Scraped
-    # once the deployed image has it: docs/runbooks/lumen-api-admin-port.md
+    # /metrics and pprof (off by default), not routed by Traefik, scraped
+    # by the ServiceMonitor: docs/runbooks/lumen-api-admin-port.md
     - port: 9090
       targetPort: 9090
       protocol: TCP
@@ -104,7 +105,7 @@ metadata:
   labels:
     app: lumen-api
     tier: backend
-    version: v1.6.0
+    version: v1.7.0
 spec:
   replicas: 2
   selector:
@@ -115,14 +116,41 @@ spec:
       labels:
         app: lumen-api
         tier: backend
-        version: v1.6.0
+        version: v1.7.0
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
+        prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
     spec:
       # Above the app's 30s shutdown budget (drain delay + in-flight requests)
       terminationGracePeriodSeconds: 45
+      serviceAccountName: lumen-api
+      automountServiceAccountToken: false
+      volumes:
+        # Read by the API to fetch the API server's signing keys, which
+        # verify the callers' ServiceAccount tokens (07-api-auth.yaml)
+        - name: kube-api
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+        - name: auth
+          configMap:
+            name: lumen-api-auth
+        # Root of the infrastructure CA, which signs Vault's certificate
+        # (vault/06-vault-tls.yaml): verifies Vault's token keys
+        - name: vault-ca
+          secret:
+            secretName: vault-ca
+            items:
+              - key: ca.crt
+                path: ca.crt
       containers:
         - name: lumen-api
           image: 192.168.2.2:5000/lumen-api:v1.6.0
@@ -130,6 +158,9 @@ spec:
           ports:
             - containerPort: 8080
               name: http
+              protocol: TCP
+            - containerPort: 9090
+              name: admin
               protocol: TCP
           env:
             - name: REDIS_ADDR
@@ -165,33 +196,52 @@ spec:
                   key: PORT
             - name: TEMPO_ENDPOINT
               value: "http://tempo.monitoring.svc.cluster.local:4318"
-            # PostgreSQL DSNs (read/write splitting)
-            # lumen-db-vault Secret is managed by Vault Secrets Operator (VSO)
-            # Source of truth: Vault KV v2 at lumen/db
-            # This is the owner of the database: v1.6.0 creates the schema at
-            # startup. After the first release with `lumen-api migrate`, the
-            # schema moves to a PreSync Job and lumen-api to the DML-only role
-            # lumen_runtime (Secret lumen-db-runtime): step 2 of
-            # docs/runbooks/database-migrations.md
+            # PostgreSQL DSNs (read/write splitting), as lumen_runtime: DML
+            # only. The schema is migrated by the PreSync Job below, as the
+            # owner. Secret lumen-db-runtime: VSO, from Vault KV
+            # lumen/db-runtime (docs/runbooks/database-migrations.md)
             - name: PG_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: lumen-db-vault
+                  name: lumen-db-runtime
                   key: password
             - name: PG_USER
               valueFrom:
                 secretKeyRef:
-                  name: lumen-db-vault
+                  name: lumen-db-runtime
                   key: username
             - name: PG_DBNAME
               valueFrom:
-                secretKeyRef:
-                  name: lumen-db-vault
-                  key: dbname
+                configMapKeyRef:
+                  name: lumen-api-config
+                  key: PG_DBNAME
             - name: PG_RW_DSN
               value: "postgresql://$(PG_USER):$(PG_PASSWORD)@lumen-db-rw.lumen.svc.cluster.local:5432/$(PG_DBNAME)"
             - name: PG_RO_DSN
               value: "postgresql://$(PG_USER):$(PG_PASSWORD)@lumen-db-ro.lumen.svc.cluster.local:5432/$(PG_DBNAME)"
+            - name: AUTH_CONFIG
+              value: /etc/lumen-api/auth/auth.json
+            # Authentication (issue #18, 07-api-auth.yaml). report: requests
+            # without a valid token or permission are served and counted
+            # (lumen_auth_results_total), while callers move to tokens;
+            # enforce: 401 and 403. Set here, not in the ConfigMap: a change
+            # goes through the canary and its smoke test.
+            # docs/runbooks/lumen-api-authentication.md
+            - name: AUTH_MODE
+              value: report
+            # Requests per second per caller, all replicas together (0: off)
+            - name: CALLER_RATE_LIMIT
+              value: "50"
+          volumeMounts:
+            - name: kube-api
+              mountPath: /var/run/secrets/lumen-api/kube-api
+              readOnly: true
+            - name: auth
+              mountPath: /etc/lumen-api/auth
+              readOnly: true
+            - name: vault-ca
+              mountPath: /var/run/secrets/lumen-api/vault-ca
+              readOnly: true
           resources:
             requests:
               cpu: 100m
@@ -199,39 +249,33 @@ spec:
             limits:
               cpu: 500m
               memory: 128Mi
-          # Liveness must not depend on Redis or PostgreSQL: /health checks
-          # them, so a short outage of either restarted every pod at once
-          # (k3d test, Redis down 130s: 8 restarts before, 0 with this).
-          # The TCP check works with every image. Readiness stays on /health
-          # until the deployed image has /readyz: during a Redis outage pods
-          # are unready (no restart, back within 30s).
-          #
-          # Once the image is a release with /livez and /readyz (after
-          # v1.6.0), switch to:
-          #   startupProbe:   httpGet /livez,  periodSeconds 2, failureThreshold 30
-          #   livenessProbe:  httpGet /livez,  periodSeconds 15, timeoutSeconds 5
-          #   readinessProbe: httpGet /readyz, periodSeconds 2, timeoutSeconds 2,
-          #                   failureThreshold 1 (503 from SIGTERM: leaves the
-          #                   Service within ~2s, the app drains 5s more)
-          # (docs/architecture.md, "Probes and shutdown")
+          # The probes do not depend on Redis or PostgreSQL: /health checks
+          # them, so a short outage of either restarted or unreadied every
+          # pod at once (k3d test, Redis down 130s: 8 restarts and 0/2 ready
+          # with /health, 0 restarts and 2/2 ready with these).
+          # docs/architecture.md, "Probes and shutdown"
           startupProbe:
-            tcpSocket:
+            httpGet:
+              path: /livez
               port: 8080
             periodSeconds: 2
-            failureThreshold: 30     # up to 60s to start (schema migration)
+            failureThreshold: 30     # up to 60s: Redis and PostgreSQL are retried for 30s at startup
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /livez
               port: 8080
             periodSeconds: 15
             timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health
+              path: /readyz
               port: 8080
-            initialDelaySeconds: 5
-            periodSeconds: 10
-            timeoutSeconds: 3
+            periodSeconds: 2
+            timeoutSeconds: 2
+            # 503 from SIGTERM: the pod leaves the Service within ~2s, the
+            # app drains 5s more
+            failureThreshold: 1
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -248,6 +292,9 @@ spec:
       canaryService: lumen-api-canary
       steps:
         - setWeight: 20   # 20% canary, 80% stable
+        - analysis:       # smoke test against the canary pods (06-smoke-test-analysis.yaml)
+            templates:
+              - templateName: smoke-test
         - analysis:       # auto-rollback if success rate < 95% for 3 consecutive checks
             templates:
               - templateName: success-rate
@@ -256,3 +303,82 @@ spec:
             templates:
               - templateName: success-rate
         - setWeight: 100  # full promotion
+
+---
+# Schema migration, before every sync of lumen-app: ArgoCD runs this PreSync
+# hook and applies the Rollout only once it has succeeded.
+# docs/runbooks/database-migrations.md
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lumen-db-migrate
+  namespace: lumen
+automountServiceAccountToken: false
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lumen-db-migrate
+  namespace: lumen
+  labels:
+    app: lumen-db-migrate
+    tier: backend
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    # Keep the last Job (and its logs) until the next sync replaces it
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 0             # a failed migration fails the sync; ArgoCD retries the sync
+  activeDeadlineSeconds: 600  # the advisory lock waits up to 5 min for another run
+  template:
+    metadata:
+      labels:
+        app: lumen-db-migrate   # not lumen-api: kept out of the Services and the PDB
+        tier: backend
+    spec:
+      serviceAccountName: lumen-db-migrate
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          # Same image as the Rollout (see above)
+          image: 192.168.2.2:5000/lumen-api:v1.7.0
+          args: ["migrate"]
+          env:
+            # Owner of the database (Vault lumen/db)
+            - name: PG_USER
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-db-vault
+                  key: username
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-db-vault
+                  key: password
+            - name: PG_DBNAME
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-db-vault
+                  key: dbname
+            - name: PG_MIGRATE_DSN
+              value: "postgresql://$(PG_USER):$(PG_PASSWORD)@lumen-db-rw.lumen.svc.cluster.local:5432/$(PG_DBNAME)"
+            - name: PG_RUNTIME_ROLE
+              value: lumen_runtime
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault

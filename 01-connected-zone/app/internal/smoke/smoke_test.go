@@ -25,6 +25,7 @@ type fakeAPI struct {
 	deleteNoop  bool // DELETE answers 204 but keeps the item
 	staleReads  int  // GETs after a delete that still return the item (replica lag)
 	afterDelete map[int]int
+	token       string // when set, every route needs "Bearer <token>"
 }
 
 func newFakeAPI() *fakeAPI {
@@ -34,6 +35,10 @@ func newFakeAPI() *fakeAPI {
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.token != "" && r.Header.Get("Authorization") != "Bearer "+f.token {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 	switch {
 	case r.URL.Path == "/health":
 		if f.healthFails > 0 {
@@ -42,6 +47,8 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(f.health)
+	case r.Method == http.MethodGet && r.URL.Path == "/items":
+		_, _ = w.Write([]byte("[]"))
 	case r.Method == http.MethodPost && r.URL.Path == "/items":
 		key := r.Header.Get("Idempotency-Key")
 		if b, ok := f.replays[key]; ok && !f.noReplay {
@@ -89,11 +96,16 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func run(t *testing.T, f *fakeAPI) error {
 	t.Helper()
+	return runWith(t, f, Options{})
+}
+
+func runWith(t *testing.T, f *fakeAPI, opts Options) error {
+	t.Helper()
 	srv := httptest.NewServer(f)
 	defer srv.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	return Run(ctx, srv.Client(), srv.URL+"/")
+	return Run(ctx, srv.Client(), srv.URL+"/", opts)
 }
 
 func TestRunPasses(t *testing.T) {
@@ -173,7 +185,36 @@ func TestRunUnreachable(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	url := srv.URL
 	srv.Close()
-	if err := Run(context.Background(), &http.Client{Timeout: time.Second}, url); err == nil || !strings.Contains(err.Error(), "health:") {
+	if err := Run(context.Background(), &http.Client{Timeout: time.Second}, url, Options{}); err == nil || !strings.Contains(err.Error(), "health:") {
 		t.Fatalf("Run: %v, want a health error", err)
+	}
+}
+
+func TestRunWithToken(t *testing.T) {
+	f := newFakeAPI()
+	f.token = "t0ken"
+	if err := runWith(t, f, Options{Token: "t0ken", ExpectAuth: true}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(f.items) != 0 {
+		t.Errorf("items left behind: %v", f.items)
+	}
+	// Control: without the token, the API refuses /health, and the smoke
+	// test fails at once instead of waiting for it
+	start := time.Now()
+	if err := runWith(t, f, Options{}); err == nil || !strings.Contains(err.Error(), "health: status 401") {
+		t.Fatalf("Run without the token: %v", err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("a 401 on /health was retried for %s", time.Since(start))
+	}
+}
+
+// ExpectAuth fails against an API that serves requests without a token
+// (AUTH_MODE=report, or no authentication).
+func TestRunExpectAuthFailsWhenNotEnforced(t *testing.T) {
+	err := runWith(t, newFakeAPI(), Options{Token: "t0ken", ExpectAuth: true})
+	if err == nil || !strings.Contains(err.Error(), "auth: GET /items without a token: status 200") {
+		t.Fatalf("Run: %v", err)
 	}
 }

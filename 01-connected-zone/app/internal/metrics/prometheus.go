@@ -10,6 +10,11 @@ type Metrics struct {
 	HTTPRequestDuration   *prometheus.HistogramVec
 	RedisConnectionStatus prometheus.Gauge
 	EventsTotal           *prometheus.CounterVec
+	// AuthResultsTotal counts authentication and permission results
+	// (internal/auth): in report mode, the requests enforce would refuse
+	AuthResultsTotal *prometheus.CounterVec
+	// RateLimitedTotal counts the requests refused by the per-caller limit
+	RateLimitedTotal prometheus.Counter
 }
 
 func NewMetrics() *Metrics {
@@ -41,6 +46,19 @@ func NewMetrics() *Metrics {
 				Help: "Total number of domain events produced, by type",
 			},
 			[]string{"type"},
+		),
+		AuthResultsTotal: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "lumen_auth_results_total",
+				Help: "Authentication and permission results, by result (ok, missing, invalid, unavailable, forbidden) and mode",
+			},
+			[]string{"result", "mode"},
+		),
+		RateLimitedTotal: promauto.NewCounter(
+			prometheus.CounterOpts{
+				Name: "lumen_rate_limited_total",
+				Help: "Requests refused by the per-caller rate limit",
+			},
 		),
 	}
 }
