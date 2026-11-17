@@ -122,8 +122,9 @@ may create tokens for that ServiceAccount (`serviceaccounts/token`, verb
 
 The code needs migration 2 (`events.actor`), run by the PreSync Job of
 [v1.7.0 step 2](release-v1.7.0.md), and a smoke test image that sends a
-token. So, after v1.7.0 and its step 2, in two phases. Release procedure
-as for v1.7.0: the `main` pipeline builds the image, then the tag.
+token. Both are in `main` since 17 November 2026, with this code: phase 1
+is the release of v1.7.0, step 6 of
+[cutover-november-2026](cutover-november-2026.md).
 
 ### Before: Vault on the existing cluster
 
@@ -138,12 +139,12 @@ kubectl exec -n vault vault-0 -- sh -c 'VAULT_TOKEN=<admin token> vault read -fo
 # "client_id": "lumen-api", "key": "lumen-api"
 ```
 
-### Phase 1: v1.8.0 with `AUTH_MODE=report`
+### Phase 1: v1.7.0 with `AUTH_MODE=report`
 
-Merge this branch and release v1.8.0. The release commit rewrites every
-`lumen-api` image line of `03-lumen-api.yaml`, the migration Job's
-included, so the Job applies migration 2 before the canary. The smoke test
-keeps its v1.7.0 image: it sends no token, which report mode serves.
+The release commit rewrites every `lumen-api` image line of
+`03-lumen-api.yaml`, the migration Job's included, so the Job applies
+migration 2 before the canary. The smoke test, pinned to v1.7.0 by hand,
+sends its token; it does not check for a 401 yet.
 
 ```bash
 kubectl logs -n lumen job/lumen-db-migrate | grep 00002_events_actor
@@ -160,15 +161,15 @@ sum by (result) (increase(lumen_auth_results_total[1h]))
 - `unavailable` must stay at 0: lumen-api cannot fetch the keys (Vault not
   configured, NetworkPolicy). In enforce mode those requests get 503.
 - `missing`, `invalid`, `forbidden`: requests enforce would refuse. Move
-  their callers to tokens, or add them to the permissions, until only the
-  smoke test of each rollout remains (it sends no token until phase 2).
+  their callers to tokens, or add them to the permissions, until they stay
+  at 0. The smoke test sends its token; that it adds nothing to these
+  counts in report mode was not measured.
   The log line `Auth: request served without a caller (report mode)`
   names the route.
 
 ### Phase 2: `AUTH_MODE=enforce`
 
-1. `app/06-smoke-test-analysis.yaml`: the v1.8.0 image, by the Rollout's
-   reference (`lumen-api:v1.8.0@sha256:...`), and
+1. `app/06-smoke-test-analysis.yaml`, which already runs the v1.7.0 image:
    ```yaml
    - name: SMOKE_EXPECT_AUTH
      value: "true"
@@ -184,9 +185,8 @@ against it, with the token and the 401 check.
 - Phase 2: revert the commit, both files: a canary goes back to report
   mode. Reverting `AUTH_MODE` alone would fail the smoke test, which
   expects a 401.
-- Phase 1: revert the release commit, back to v1.7.0. Migration 2 stays:
-  the column is nullable, and v1.7.0's insert works with it (test
-  `TestActorMigrationDuringCanary`).
+- Phase 1 is the release of v1.7.0:
+  [cutover-november-2026, Going back](cutover-november-2026.md#going-back).
 
 ## Tested
 
