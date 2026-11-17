@@ -125,41 +125,53 @@ vault auth enable kubernetes || echo "  (already enabled)"
 vault write auth/kubernetes/config \
   kubernetes_host="https://kubernetes.default.svc.cluster.local:443"
 
-# Role for lumen-api pods (default ServiceAccount in lumen namespace)
-vault write auth/kubernetes/role/lumen-api \
-  bound_service_account_names=default \
-  bound_service_account_namespaces=lumen \
-  policies=lumen-api-policy \
-  ttl=1h
+# Every role is bound to one dedicated ServiceAccount, never `default`, and
+# to the audience vault (issue #6). Tokens live 15 minutes: VSO logs in
+# again when its token expires.
 
-# Role for cert-manager (cert-manager-vault-auth SA in cert-manager namespace)
+# Role for VSO syncing the Redis password and the PostgreSQL runtime
+# credentials in lumen (ServiceAccount lumen-vso, vso/02-vault-auth.yaml)
+vault write auth/kubernetes/role/lumen-api \
+  bound_service_account_names=lumen-vso \
+  bound_service_account_namespaces=lumen \
+  audience=vault \
+  policies=lumen-api-policy \
+  ttl=15m
+
+# Role for cert-manager (cert-manager-vault-auth SA in cert-manager
+# namespace), short-lived tokens requested by cert-manager
+# (vault/03-vault-issuer.yaml)
 vault write auth/kubernetes/role/cert-manager \
   bound_service_account_names=cert-manager-vault-auth \
   bound_service_account_namespaces=cert-manager \
+  audience=vault \
   policies=cert-manager-policy \
-  ttl=1h
+  ttl=15m
 
 # Role for VSO syncing the Traefik dashboard credentials (traefik namespace)
 vault write auth/kubernetes/role/traefik-dashboard \
-  bound_service_account_names=default \
+  bound_service_account_names=traefik-dashboard-vso \
   bound_service_account_namespaces=traefik \
+  audience=vault \
   policies=traefik-dashboard-policy \
-  ttl=1h
+  ttl=15m
 
 # Role for VSO syncing the Grafana admin credentials (monitoring namespace)
 vault write auth/kubernetes/role/grafana-admin \
-  bound_service_account_names=default \
+  bound_service_account_names=grafana-admin-vso \
   bound_service_account_namespaces=monitoring \
+  audience=vault \
   policies=grafana-admin-policy \
-  ttl=1h
+  ttl=15m
 
 # Role for VSO syncing the PostgreSQL owner credentials (lumen namespace).
 # Dedicated ServiceAccount (manifests/vso/03-lumen-db-secret.yaml)
 vault write auth/kubernetes/role/lumen-db-owner \
   bound_service_account_names=lumen-db-owner-vso \
   bound_service_account_namespaces=lumen \
+  audience=vault \
   policies=lumen-db-owner-policy \
-  ttl=1h
+  ttl=15m
 
 # Role for VSO syncing the PostgreSQL backup S3 credentials (lumen namespace).
 # Bound to a dedicated ServiceAccount, not `default`
@@ -167,16 +179,18 @@ vault write auth/kubernetes/role/lumen-db-owner \
 vault write auth/kubernetes/role/cnpg-backup \
   bound_service_account_names=cnpg-backup-vso \
   bound_service_account_namespaces=lumen \
+  audience=vault \
   policies=cnpg-backup-policy \
-  ttl=1h
+  ttl=15m
 
 # Role for VSO syncing the Gitea Actions runner token (gitea namespace).
 # Dedicated ServiceAccount (manifests/vso/06-gitea-runner-secret.yaml)
 vault write auth/kubernetes/role/gitea-runner \
   bound_service_account_names=gitea-runner-vso \
   bound_service_account_namespaces=gitea \
+  audience=vault \
   policies=gitea-runner-policy \
-  ttl=1h
+  ttl=15m
 
 echo "  ok: Kubernetes auth configured"
 

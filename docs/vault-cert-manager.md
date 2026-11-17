@@ -4,6 +4,11 @@ This document covers Phase 19: deploying HashiCorp Vault HA (3-replica Raft clus
 
 **Date**: February 23, 2026
 
+> **Since issue #6 (November 2026), no Vault role is bound to a `default`
+> ServiceAccount**, and cert-manager uses short-lived tokens: the role
+> commands below are history, `03-airgap-zone/scripts/vault-configure.sh` is
+> current. [runbooks/vault-identities.md](runbooks/vault-identities.md).
+>
 > **Since issue #3 (November 2026), Vault unseals itself** through a transit
 > Vault on backup-1; `vault-keys.json`, the unseal steps and the vault-init
 > Job below are history: [runbooks/vault-auto-unseal.md](runbooks/vault-auto-unseal.md).
@@ -967,9 +972,9 @@ kubectl get clusterissuer vault-issuer
 ### Verify cert-manager can reach Vault (debug)
 
 ```bash
-# Test Kubernetes auth directly
-TOKEN=$(kubectl get secret cert-manager-vault-token -n cert-manager \
-  -o jsonpath='{.data.token}' | base64 -d)
+# Test Kubernetes auth directly. Since issue #6 there is no token Secret:
+# cert-manager requests a short-lived token (serviceAccountRef)
+TOKEN=$(kubectl create token cert-manager-vault-auth -n cert-manager --audience vault --duration 10m)
 
 kubectl exec -n vault vault-0 -- sh -c "
 VAULT_ADDR=https://127.0.0.1:8200 vault write auth/kubernetes/login \

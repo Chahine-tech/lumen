@@ -4,3 +4,13 @@ metadata:
   name: gitea
   labels:
     name: gitea
+
+---
+# No token in the pods that run as the default ServiceAccount: none of them
+# calls the Kubernetes API, and no Vault role accepts it (issue #6)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: gitea
+automountServiceAccountToken: false

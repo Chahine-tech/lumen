@@ -12,23 +12,43 @@
 #   - cert-manager deployed
 
 ---
-# ServiceAccount used by cert-manager to authenticate to Vault
+# ServiceAccount cert-manager authenticates to Vault as. No long-lived token
+# Secret (issue #6): cert-manager requests a short-lived token for it at
+# each login (serviceAccountRef below)
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: cert-manager-vault-auth
   namespace: cert-manager
+automountServiceAccountToken: false
 
 ---
-# Long-lived token for cert-manager → Vault Kubernetes auth
-apiVersion: v1
-kind: Secret
+# Lets cert-manager's controller request tokens for that ServiceAccount only
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
 metadata:
-  name: cert-manager-vault-token
+  name: cert-manager-vault-token-request
   namespace: cert-manager
-  annotations:
-    kubernetes.io/service-account.name: cert-manager-vault-auth
-type: kubernetes.io/service-account-token
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["cert-manager-vault-auth"]
+    verbs: ["create"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cert-manager-vault-token-request
+  namespace: cert-manager
+subjects:
+  - kind: ServiceAccount
+    name: cert-manager
+    namespace: cert-manager
+roleRef:
+  kind: Role
+  name: cert-manager-vault-token-request
+  apiGroup: rbac.authorization.k8s.io
 
 ---
 # ClusterIssuer: cert-manager issues certs via Vault PKI
@@ -49,6 +69,9 @@ spec:
       kubernetes:
         role: cert-manager
         mountPath: /v1/auth/kubernetes
-        secretRef:
-          name: cert-manager-vault-token
-          key: token
+        serviceAccountRef:
+          name: cert-manager-vault-auth
+          # cert-manager always adds its own audience (the issuer's name);
+          # the Vault role requires vault
+          audiences:
+            - vault

@@ -212,3 +212,63 @@ spec:
     metadata: {labels: {k: v}}
     spec:
       containers: [{name: main, image: "nginx:1.27"}]
+---
+# Vault-only ServiceAccounts
+apiVersion: v1
+kind: Pod
+metadata: {name: p-sa-vso, namespace: lumen}
+spec:
+  serviceAccountName: lumen-vso
+  containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-sa-vso, namespace: monitoring}
+spec:
+  serviceAccountName: grafana-admin-vso
+  containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-sa-cm-vault, namespace: cert-manager}
+spec:
+  serviceAccountName: cert-manager-vault-auth
+  containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-sa-default, namespace: lumen}
+spec:
+  serviceAccountName: default
+  containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: p-sa-other, namespace: lumen}
+spec:
+  serviceAccountName: lumen-db-migrate
+  containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: d-sa-vso, namespace: lumen}
+spec:
+  selector: {matchLabels: {k: v}}
+  template:
+    metadata: {labels: {k: v}}
+    spec:
+      serviceAccountName: lumen-vso
+      containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: c-sa-vso, namespace: vault}
+spec:
+  schedule: "0 0 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: cnpg-backup-vso
+          containers: [{name: main, image: "192.168.2.2:5000/redis:7.4.1"}]
