@@ -1,5 +1,11 @@
 # Release v1.7.0
 
+> Since 17 November 2026 the branch `release-v1.7.0-step2` is merged into
+> `main`, with the authentication (#18) and the Vault and Redis changes.
+> The two phases below no longer apply as written: v1.7.0 is released with
+> step 2 in one go, by [cutover-november-2026](cutover-november-2026.md).
+> This page stays for the reasons and the checks of each phase.
+
 v1.7.0 is the first release with the changes made since v1.6.0 for issues
 #15, #16, #17, #19 and #33. Several of them need the new image before the
 manifests can use it, so the release goes in two phases:

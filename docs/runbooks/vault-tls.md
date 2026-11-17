@@ -136,6 +136,6 @@ exec` with stdin, Grafana and the Gitea runner's VSO resources (same
   certificate has no IP but 127.0.0.1: a client that followed a redirect to
   that address would fail verification. Not seen in the tests, not
   measured either.
-- lumen-api (branch `api-auth`, #18) fetches Vault's token keys over
-  `http://`: to switch to `https://` with the `vault-ca` Secret of `lumen`
-  once both are merged.
+- lumen-api (#18) fetches Vault's token keys over `https://`, with the
+  `vault-ca` Secret of `lumen`. Not run against this Vault yet
+  ([lumen-api-authentication, Limits](lumen-api-authentication.md#limits)).
