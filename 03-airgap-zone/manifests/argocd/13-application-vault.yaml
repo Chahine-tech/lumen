@@ -4,8 +4,9 @@ metadata:
   name: vault
   namespace: argocd
   annotations:
-    # Wave 7: after gitea (5), alloy (6) — Vault must be up before cert-manager (wave 8)
-    argocd.argoproj.io/sync-wave: "7"
+    # Wave 8: after cert-manager (7), which issues Vault's listener
+    # certificate (issue #5); the pods wait for its Secret
+    argocd.argoproj.io/sync-wave: "8"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:

@@ -54,7 +54,7 @@ echo "[2/3] Writing ${VAULT_PATH} to Vault..."
   KEY_ID="$KEY_ID" SECRET_KEY="$SECRET_KEY" REGION="$S3_REGION" python3 -c \
     'import json,os; print(json.dumps({"ACCESS_KEY_ID": os.environ["KEY_ID"], "ACCESS_SECRET_KEY": os.environ["SECRET_KEY"], "REGION": os.environ["REGION"]}))'
 } | multipass exec node-1 -- kubectl exec -i -n vault vault-0 -- sh -c \
-  'read -r VAULT_TOKEN; export VAULT_TOKEN VAULT_ADDR=http://127.0.0.1:8200
+  'read -r VAULT_TOKEN; export VAULT_TOKEN VAULT_ADDR=https://127.0.0.1:8200
    V=$(cat); [ -n "$V" ] || { echo "empty document, nothing written" >&2; exit 1; }
    printf "%s" "$V" | vault kv put '"$VAULT_PATH"' - > /dev/null'
 echo "  ✅ Written"

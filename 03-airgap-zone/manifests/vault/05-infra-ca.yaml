@@ -1,0 +1,12 @@
+# Infrastructure CA (issue #5): signs the certificates of components that
+# must not depend on Vault, Vault's own listener first. The intermediate's
+# key and chain are in the Secret cert-manager/infra-ca, created by
+# 03-airgap-zone/scripts/infra-ca.sh; the root's key stays off the cluster.
+# docs/runbooks/vault-tls.md
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: infra-ca
+spec:
+  ca:
+    secretName: infra-ca

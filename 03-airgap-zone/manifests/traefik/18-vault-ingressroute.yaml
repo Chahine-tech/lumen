@@ -1,5 +1,18 @@
 # Vault UI IngressRoute
 # Routes https://vault.airgap.local → vault-ui.vault.svc.cluster.local:8200
+# Traefik terminates the client's TLS and opens a new TLS connection to
+# Vault, verified with the root of the infrastructure CA (issue #5)
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: vault-tls
+  namespace: vault
+spec:
+  serverName: vault-ui.vault.svc.cluster.local
+  rootCAs:
+    - secret: vault-server-tls   # ca.crt (vault/06-vault-tls.yaml)
 
 ---
 # HTTP → HTTPS redirect
@@ -41,6 +54,8 @@ spec:
       services:
         - name: vault-ui
           port: 8200
+          scheme: https
+          serversTransport: vault-tls
       middlewares:
         - name: security-headers
           namespace: traefik

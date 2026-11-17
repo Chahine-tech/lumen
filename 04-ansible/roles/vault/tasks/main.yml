@@ -3,6 +3,34 @@
 # Full Vault init is a one-time manual operation (see docs/vault-cert-manager.md)
 # This role only handles the unseal step that must happen after every restart
 
+# Vault's listener certificate (issue #5, docs/runbooks/vault-tls.md): the
+# pods wait for it. The intermediate CA is put in the cluster by hand
+# (03-airgap-zone/scripts/infra-ca.sh apply): its root key stays offline.
+- name: Check the infrastructure CA Secret
+  ansible.builtin.command: kubectl get secret infra-ca -n cert-manager
+  register: vault_infra_ca
+  changed_when: false
+  failed_when: false
+
+- name: Fail without the infrastructure CA
+  ansible.builtin.fail:
+    msg: |
+      Secret cert-manager/infra-ca not found: Vault's certificate cannot be issued.
+      Run 03-airgap-zone/scripts/infra-ca.sh init, then apply (docs/runbooks/vault-tls.md).
+  when: vault_infra_ca.rc != 0
+
+# Retried: cert-manager's CRDs come with its ArgoCD Application
+- name: Apply the infrastructure CA issuer and Vault's certificates
+  ansible.builtin.command: >-
+    kubectl apply
+    -f {{ project_root }}/03-airgap-zone/manifests/vault/05-infra-ca.yaml
+    -f {{ project_root }}/03-airgap-zone/manifests/vault/06-vault-tls.yaml
+  register: vault_tls_apply
+  until: vault_tls_apply.rc == 0
+  retries: 30
+  delay: 10
+  changed_when: "'created' in vault_tls_apply.stdout or 'configured' in vault_tls_apply.stdout"
+
 - name: Wait for Vault pods to exist
   ansible.builtin.command: kubectl get pods -n vault --no-headers
   register: vault_pods
