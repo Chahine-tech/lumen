@@ -6,7 +6,7 @@
 # Seed once (any machine with vault CLI + htpasswd, using an admin token):
 #   htpasswd -nbB admin '<strong-password>' | vault kv put lumen/traefik-dashboard users=-
 #
-# Vault side (created by the vault-init Job):
+# Vault side (created by 03-airgap-zone/scripts/vault-configure.sh):
 #   - policy traefik-dashboard-policy: read lumen/data/traefik-dashboard
 #   - k8s auth role traefik-dashboard: bound to SA default in namespace traefik
 #

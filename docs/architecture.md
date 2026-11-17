@@ -781,14 +781,15 @@ VM provisioning and cluster configuration are fully automated. Two tools, two di
   ├── local_file.node1_cloudinit            ├── site.yml       ← full bootstrap
   │   (render SSH key + IP → yaml)          ├── start.yml      ← after Mac reboot
   ├── local_file.node2_cloudinit            ├── stop.yml       ← clean shutdown
-  ├── multipass_instance.node1             ├── unseal.yml     ← Vault unseal
-  │   cpus=4, memory=6G, disk=40G          └── provision.yml  ← Ansible-only fallback
+  ├── multipass_instance.node1             └── provision.yml  ← Ansible-only fallback
+  │   cpus=4, memory=6G, disk=40G
   └── multipass_instance.node2
-      cpus=2, memory=4G, disk=30G          roles (11):
+      cpus=2, memory=4G, disk=30G          roles (12):
                                             ├── multipass   registry   images
   cloud-init (injected at creation):        ├── k3s         metallb    garage
   ├── SSH public key → authorized_keys      ├── argocd      gitea      vault
-  ├── eth1 static IP via netplan            ├── dns         verify
+  ├── eth1 static IP via netplan            ├── vault_transit
+                                            ├── dns         verify
   ├── Docker install (node-1 only)
   └── sysctl: inotify=8192 (Falco)
 ```

@@ -8,6 +8,7 @@
 #   - TLS on the listener and Raft joins (issue #5): certificate from the
 #     infrastructure CA, vault/06-vault-tls.yaml, docs/runbooks/vault-tls.md
 #   - UI accessible via vault.airgap.local (Traefik re-encrypts to Vault)
+#   - Auto-unseal through the transit Vault on backup-1 (issue #3)
 
 global:
   enabled: true
@@ -65,6 +66,10 @@ server:
   extraVolumes:
     - type: secret
       name: vault-server-tls
+    # Token for the transit Vault on backup-1 (seal "transit" below),
+    # created by 03-airgap-zone/scripts/vault-transit.sh
+    - type: secret
+      name: vault-transit-token
   extraEnvironmentVars:
     VAULT_CACERT: /vault/userconfig/vault-server-tls/ca.crt
 
@@ -114,6 +119,19 @@ server:
           tls_cert_file   = "/vault/userconfig/vault-server-tls/tls.crt"
           tls_key_file    = "/vault/userconfig/vault-server-tls/tls.key"
           tls_min_version = "tls12"
+        }
+
+        # Auto-unseal (issue #3): the root key is encrypted with the transit
+        # key of the Vault on backup-1, which decrypts it at each start.
+        # The Shamir keys are recovery keys, held offline.
+        # docs/runbooks/vault-auto-unseal.md
+        seal "transit" {
+          address     = "https://192.168.2.4:8200"
+          token       = "file:///vault/userconfig/vault-transit-token/token"
+          key_name    = "lumen-vault"
+          mount_path  = "transit/"
+          # Same infrastructure CA as this listener (issue #5)
+          tls_ca_cert = "/vault/userconfig/vault-server-tls/ca.crt"
         }
 
         # Register with Kubernetes for health checks

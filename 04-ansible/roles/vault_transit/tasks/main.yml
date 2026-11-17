@@ -1,0 +1,138 @@
+---
+# Role: vault_transit: the transit Vault on backup-1, whose key unseals the
+# cluster's Vault at each start (issue #3, docs/runbooks/vault-auto-unseal.md)
+#
+# Prerequisites:
+#   - backup-1 created by Terraform (05-terraform, cloud-init installs Docker)
+#   - Image tar from scripts/mirror.py pull in 01-connected-zone/artifacts/vault/
+#   - Its certificate, from the infrastructure CA:
+#       03-airgap-zone/scripts/infra-ca.sh server {{ infra_ca_dir }} vault-transit \
+#         IP:{{ backup_ip }} DNS:vault-transit.airgap.local
+#
+# Result: the transit Vault listening on {{ backup_ip }}:{{ vault_transit_port }},
+# sealed. First time: 03-airgap-zone/scripts/vault-transit.sh init; after a
+# restart of backup-1: vault-transit.sh unseal.
+
+- name: Check that backup-1 is running
+  ansible.builtin.command: multipass info {{ backup_vm_name }}
+  register: vault_transit_vm
+  changed_when: false
+  failed_when: vault_transit_vm.rc != 0 or 'Running' not in vault_transit_vm.stdout
+
+- name: Check the transit Vault certificate
+  ansible.builtin.stat:
+    path: "{{ infra_ca_dir }}/vault-transit.{{ item }}"
+  loop: [crt, key]
+  register: vault_transit_cert
+
+- name: Fail without the certificate
+  ansible.builtin.fail:
+    msg: |
+      {{ infra_ca_dir }}/vault-transit.crt or .key missing. Create them:
+        03-airgap-zone/scripts/infra-ca.sh server {{ infra_ca_dir }} vault-transit IP:{{ backup_ip }} DNS:vault-transit.airgap.local
+  when: vault_transit_cert.results | rejectattr('stat.exists') | list | length > 0
+
+- name: Check if the Vault image is loaded on backup-1
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo docker image inspect {{ vault_transit_image }}
+  register: vault_transit_image_check
+  changed_when: false
+  failed_when: false
+
+- name: Transfer the Vault image tar to backup-1
+  ansible.builtin.command: >
+    multipass transfer
+    {{ project_root }}/01-connected-zone/artifacts/vault/images/vault-{{ vault_transit_version }}.tar
+    {{ backup_vm_name }}:/tmp/vault.tar
+  when: vault_transit_image_check.rc != 0
+  changed_when: true
+
+- name: Load the Vault image
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- bash -c
+    "sudo docker load -i /tmp/vault.tar && rm /tmp/vault.tar"
+  when: vault_transit_image_check.rc != 0
+  changed_when: true
+
+- name: Create the transit Vault directories
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo install -d -m 0700
+    /etc/vault-transit /var/lib/vault-transit
+  changed_when: false
+
+- name: Render the configuration and the start script
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/tmp/{{ item }}"
+    mode: "0600"
+  loop: [vault-transit.hcl, run-vault-transit.sh]
+
+- name: Read the installed configuration and certificate
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo cat
+    /etc/vault-transit/vault-transit.hcl /etc/vault-transit/tls.crt
+  register: vault_transit_remote
+  changed_when: false
+  failed_when: false
+
+# The key goes through /tmp on both sides for the copy only
+- name: Install the configuration, certificate and key on backup-1
+  ansible.builtin.shell: >
+    set -e;
+    multipass transfer /tmp/vault-transit.hcl {{ infra_ca_dir }}/vault-transit.crt
+    {{ infra_ca_dir }}/vault-transit.key {{ infra_ca_dir }}/root.crt {{ backup_vm_name }}:/tmp/ &&
+    multipass exec {{ backup_vm_name }} -- sudo bash -c
+    "install -m 0644 /tmp/vault-transit.hcl /etc/vault-transit/vault-transit.hcl &&
+    install -m 0644 /tmp/vault-transit.crt /etc/vault-transit/tls.crt &&
+    install -m 0600 /tmp/vault-transit.key /etc/vault-transit/tls.key &&
+    install -m 0644 /tmp/root.crt /etc/vault-transit/ca.crt &&
+    rm -f /tmp/vault-transit.hcl /tmp/vault-transit.crt /tmp/vault-transit.key /tmp/root.crt"
+  when: >
+    vault_transit_remote.stdout | trim !=
+    (lookup('file', '/tmp/vault-transit.hcl') ~ '\n' ~ lookup('file', infra_ca_dir ~ '/vault-transit.crt')) | trim
+  register: vault_transit_config
+  changed_when: true
+
+- name: Remove the local copy of the configuration
+  ansible.builtin.file:
+    path: /tmp/vault-transit.hcl
+    state: absent
+
+- name: Check if the transit Vault container is running
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo docker inspect
+    --format={{ '{{' }}.State.Running{{ '}}' }} {{ vault_transit_container }}
+  register: vault_transit_running
+  changed_when: false
+  failed_when: false
+
+- name: (Re)create the transit Vault container
+  ansible.builtin.shell: >
+    multipass transfer /tmp/run-vault-transit.sh {{ backup_vm_name }}:/tmp/run-vault-transit.sh &&
+    multipass exec {{ backup_vm_name }} -- sudo bash /tmp/run-vault-transit.sh
+  when: >
+    vault_transit_running.rc != 0 or
+    vault_transit_running.stdout | trim != 'true' or
+    vault_transit_config is changed
+  changed_when: true
+
+- name: Read the transit Vault status
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo docker exec
+    -e VAULT_ADDR=https://127.0.0.1:8200 -e VAULT_CACERT=/vault/config/ca.crt
+    {{ vault_transit_container }} vault status -format=json
+  register: vault_transit_status
+  until: vault_transit_status.stdout | length > 0
+  retries: 10
+  delay: 3
+  changed_when: false
+  failed_when: false  # exit code 2 when sealed
+
+- name: Next step
+  ansible.builtin.debug:
+    msg: >-
+      Transit Vault on {{ backup_ip }}:{{ vault_transit_port }}:
+      {{ 'not initialized: run 03-airgap-zone/scripts/vault-transit.sh init'
+         if '"initialized": false' in vault_transit_status.stdout else
+         'sealed: run 03-airgap-zone/scripts/vault-transit.sh unseal'
+         if '"sealed": true' in vault_transit_status.stdout else 'unsealed' }}

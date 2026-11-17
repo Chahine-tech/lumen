@@ -152,8 +152,7 @@ from the datreeio CRDs catalog, pinned. The CRDs themselves are skipped.
 
 **Accepted misconfigurations**: `trivy-ignore.yaml` lists each accepted
 finding with the reason and what would remove it (ArgoCD upstream RBAC,
-Gitea and its runner for issue #29, the vault-init and cert-generation
-Jobs). An entry covers one check in one rendered file.
+Gitea and its runner for issue #29, the cert-generation Job). An entry covers one check in one rendered file.
 
 **What the image list check reads**: the `image` and `imageName` fields,
 and container args that hand an image to an operator

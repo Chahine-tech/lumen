@@ -1,7 +1,7 @@
 ---
-# Role: vault — Wait for Vault pods, then unseal
-# Full Vault init is a one-time manual operation (see docs/vault-cert-manager.md)
-# This role only handles the unseal step that must happen after every restart
+# Role: vault: Vault's certificates, then wait for the pods to unseal by
+# themselves (transit auto-unseal, issue #3). Initialization is a one-time
+# operation: 03-airgap-zone/scripts/vault-bootstrap.sh
 
 # Vault's listener certificate (issue #5, docs/runbooks/vault-tls.md): the
 # pods wait for it. The intermediate CA is put in the cluster by hand
@@ -43,19 +43,29 @@
   ansible.builtin.debug:
     msg: "{{ vault_pods.stdout_lines }}"
 
-- name: Check vault-keys.json exists
-  ansible.builtin.stat:
-    path: "{{ vault_keys_file }}"
-  register: vault_keys_stat
+# Auto-unseal through the transit Vault on backup-1 (issue #3): nothing to
+# unseal here. A pod that started while the transit Vault was sealed exits,
+# and the kubelet restarts it until the transit Vault answers.
+- name: Read the Vault status
+  ansible.builtin.command: kubectl exec -n {{ vault_namespace }} vault-0 -- vault status -format=json
+  register: vault_status
+  changed_when: false
+  failed_when: false  # exit code 2 when sealed
 
-- name: Skip unseal if vault-keys.json not found
+- name: First start
   ansible.builtin.debug:
     msg: |
-      vault-keys.json not found — skipping unseal.
-      Vault init is a one-time manual operation.
-      See: docs/vault-cert-manager.md for instructions.
-  when: not vault_keys_stat.stat.exists
+      Vault is not initialized. Run 03-airgap-zone/scripts/vault-bootstrap.sh
+      (docs/runbooks/vault-auto-unseal.md): it prints the recovery keys once.
+  when: '"initialized\": false" in vault_status.stdout'
 
-- name: Unseal Vault
-  ansible.builtin.include_tasks: unseal.yml
-  when: vault_keys_stat.stat.exists
+- name: Wait for every Vault pod to be unsealed
+  ansible.builtin.command: >
+    kubectl get pods -n {{ vault_namespace }} -l component=server
+    -o jsonpath={.items[*].status.containerStatuses[0].ready}
+  register: vault_ready
+  until: vault_ready.stdout.split() | length == vault_pods | length and 'false' not in vault_ready.stdout
+  retries: 40
+  delay: 15
+  changed_when: false
+  when: '"initialized\": false" not in vault_status.stdout'

@@ -211,6 +211,13 @@ images:
     renovate: true
     used_by: .gitea/workflows/secret-scan.yaml
 
+  # Transit Vault on backup-1 (Ansible role vault_transit, docker load): its
+  # key unseals the cluster's Vault (issue #3)
+  - source: docker.io/hashicorp/vault:1.19.0
+    digest: sha256:c53c28cbb630af36f5e56812691fd4e6d5a3ccdf3bccf9aa4cce3f1c4ec26be2
+    archive: vault/images/vault-1.19.0.tar
+    used_by: 04-ansible/roles/vault_transit/tasks/main.yml
+
   # Garage on backup-1 (Ansible role garage, docker load)
   - source: docker.io/dxflrs/garage:v2.5.0
     digest: sha256:32b5de84cf9e3ae9c0b4d0f02566c442029e62203a4ed1bca9cdf2327fc19388
