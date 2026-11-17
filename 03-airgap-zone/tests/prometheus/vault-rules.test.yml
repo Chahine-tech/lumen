@@ -1,0 +1,81 @@
+# promtool unit tests for manifests/kube-prometheus-stack/vault-rules.yaml
+# Run: make test-alert-rules
+rule_files: [.rules/vault-rules.yml]
+evaluation_interval: 1m
+tests:
+  # Healthy: no audit failure, snapshot 1h old. Nothing fires
+  - interval: 1m
+    input_series:
+      - series: 'vault_audit_log_request_failure{pod="vault-0"}'
+        values: '0x200'
+      - series: 'vault_audit_log_response_failure{pod="vault-0"}'
+        values: '0x200'
+      - series: 'vault_core_unsealed{cluster="lumen-vault"}'
+        values: '1x200'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="vault",cronjob="vault-raft-snapshot"}'
+        values: '0+60x200'
+    alert_rule_test:
+      - {eval_time: 3h, alertname: VaultAuditLogFailure, exp_alerts: []}
+      - {eval_time: 3h, alertname: VaultMetricsAbsent, exp_alerts: []}
+      - {eval_time: 3h, alertname: VaultRaftSnapshotTooOld, exp_alerts: []}
+      - {eval_time: 3h, alertname: VaultRaftSnapshotNeverSucceeded, exp_alerts: []}
+
+  # One response failure at t=10m: fires at once, then clears
+  - interval: 1m
+    input_series:
+      - series: 'vault_audit_log_request_failure{pod="vault-0"}'
+        values: '0x30'
+      - series: 'vault_audit_log_response_failure{pod="vault-0"}'
+        values: '0x9 1x21'
+      - series: 'vault_core_unsealed{cluster="lumen-vault"}'
+        values: '1x30'
+    alert_rule_test:
+      - {eval_time: 9m, alertname: VaultAuditLogFailure, exp_alerts: []}
+      - eval_time: 11m
+        alertname: VaultAuditLogFailure
+        exp_alerts:
+          - exp_labels: {severity: critical, service: vault}
+            exp_annotations:
+              summary: Vault failed to write audit log entries
+              description: '1 audit entries failed in 5 minutes. Requests that cannot be logged are refused. Check: kubectl logs -n vault -l component=server'
+      - {eval_time: 25m, alertname: VaultAuditLogFailure, exp_alerts: []}
+
+  # Last success at t=0, never renewed: fires after 26h + 15m
+  - interval: 1m
+    input_series:
+      - series: 'kube_cronjob_status_last_successful_time{namespace="vault",cronjob="vault-raft-snapshot"}'
+        values: '0x1800'
+      - series: 'vault_core_unsealed{cluster="lumen-vault"}'
+        values: '1x1800'
+    alert_rule_test:
+      - {eval_time: 26h, alertname: VaultRaftSnapshotTooOld, exp_alerts: []}
+      - eval_time: 26h20m
+        alertname: VaultRaftSnapshotTooOld
+        exp_alerts:
+          - exp_labels: {severity: warning, service: vault}
+            exp_annotations:
+              summary: No successful Vault snapshot for more than 26 hours
+              description: 'Last successful run 1d 2h 20m 0s ago. Check: kubectl get jobs -n vault -l app=vault-raft-snapshot'
+
+  # No metric at all: the absent alerts fire after their delay
+  - interval: 10m
+    input_series:
+      - series: 'up{job="other"}'
+        values: '1x200'
+    alert_rule_test:
+      - {eval_time: 10m, alertname: VaultMetricsAbsent, exp_alerts: []}
+      - eval_time: 20m
+        alertname: VaultMetricsAbsent
+        exp_alerts:
+          - exp_labels: {severity: warning, service: vault}
+            exp_annotations:
+              summary: No Vault metrics
+              description: 'Prometheus has no vault_core_unsealed: Vault is down or sealed, or the scrape is broken (ServiceMonitor vault, NetworkPolicy, certificate).'
+      - {eval_time: 25h, alertname: VaultRaftSnapshotNeverSucceeded, exp_alerts: []}
+      - eval_time: 26h10m
+        alertname: VaultRaftSnapshotNeverSucceeded
+        exp_alerts:
+          - exp_labels: {severity: warning, service: vault, namespace: vault, cronjob: vault-raft-snapshot}
+            exp_annotations:
+              summary: The Vault snapshot CronJob has no successful run
+              description: 'No kube_cronjob_status_last_successful_time for vault-raft-snapshot after 26 hours: it never succeeded, or kube-state-metrics is not scraped.'

@@ -20,11 +20,12 @@
   when: vault_infra_ca.rc != 0
 
 # Retried: cert-manager's CRDs come with its ArgoCD Application
-- name: Apply the infrastructure CA issuer and Vault's certificates
+- name: Apply the infrastructure CA issuer, Vault's certificates and the snapshot CronJob
   ansible.builtin.command: >-
     kubectl apply
     -f {{ project_root }}/03-airgap-zone/manifests/vault/05-infra-ca.yaml
     -f {{ project_root }}/03-airgap-zone/manifests/vault/06-vault-tls.yaml
+    -f {{ project_root }}/03-airgap-zone/manifests/vault/07-raft-snapshot.yaml
   register: vault_tls_apply
   until: vault_tls_apply.rc == 0
   retries: 30

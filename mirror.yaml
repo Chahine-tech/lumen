@@ -211,6 +211,11 @@ images:
     renovate: true
     used_by: .gitea/workflows/secret-scan.yaml
 
+  # Vault Raft snapshots to Garage (manifests/vault/07-raft-snapshot.yaml,
+  # issue #4)
+  - source: docker.io/rclone/rclone:1.75.2
+    digest: sha256:1fd40f8c4587cb9dc86558d979d62087005df03b7fae6b5bdb9168707ef72725
+
   # Transit Vault on backup-1 (Ansible role vault_transit, docker load): its
   # key unseals the cluster's Vault (issue #3)
   - source: docker.io/hashicorp/vault:1.19.0

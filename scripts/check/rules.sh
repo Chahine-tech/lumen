@@ -14,11 +14,13 @@ docker run --rm -v "$PWD/.cache/rules:/r" -w /r --entrypoint sh "$PROMETHEUS_IMA
 
 echo "== promtool test rules"
 mkdir -p 03-airgap-zone/tests/prometheus/.rules
-python3 -c 'import sys,yaml; d=yaml.safe_load(open(sys.argv[1])); yaml.safe_dump({"groups": d["spec"]["groups"]}, open(sys.argv[2], "w"))' \
-  03-airgap-zone/manifests/kube-prometheus-stack/cnpg-backup-rules.yaml \
-  03-airgap-zone/tests/prometheus/.rules/cnpg-backup-rules.yml
+for r in cnpg-backup-rules vault-rules; do
+  python3 -c 'import sys,yaml; d=yaml.safe_load(open(sys.argv[1])); yaml.safe_dump({"groups": d["spec"]["groups"]}, open(sys.argv[2], "w"))' \
+    "03-airgap-zone/manifests/kube-prometheus-stack/$r.yaml" \
+    "03-airgap-zone/tests/prometheus/.rules/$r.yml"
+done
 docker run --rm -v "$PWD/03-airgap-zone/tests/prometheus:/w" -w /w --entrypoint promtool \
-  "$PROMETHEUS_IMAGE" test rules cnpg-backup-rules.test.yml
+  "$PROMETHEUS_IMAGE" test rules cnpg-backup-rules.test.yml vault-rules.test.yml
 
 echo "== SLO rules up to date with 03-airgap-zone/slo (make slo-generate)"
 rm -rf .cache/slo && mkdir -p .cache/slo

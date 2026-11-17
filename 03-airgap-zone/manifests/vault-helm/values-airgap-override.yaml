@@ -119,6 +119,15 @@ server:
           tls_cert_file   = "/vault/userconfig/vault-server-tls/tls.crt"
           tls_key_file    = "/vault/userconfig/vault-server-tls/tls.key"
           tls_min_version = "tls12"
+          # /v1/sys/metrics without a token, for Prometheus (issue #4)
+          telemetry {
+            unauthenticated_metrics_access = true
+          }
+        }
+
+        telemetry {
+          prometheus_retention_time = "24h"
+          disable_hostname          = true
         }
 
         # Auto-unseal (issue #3): the root key is encrypted with the transit
@@ -167,6 +176,22 @@ server:
   serviceAccount:
     create: true
     name: vault
+
+# Metrics scraped by Prometheus over TLS (issue #4): audit failures and the
+# Raft state, alerts in kube-prometheus-stack/vault-rules.yaml. Prometheus
+# scrapes the pod addresses, which the certificate does not name: serverName
+# is the Service's name, which it does
+serverTelemetry:
+  serviceMonitor:
+    enabled: true
+    selectors:
+      release: kube-prometheus-stack
+    tlsConfig:
+      serverName: vault.vault.svc.cluster.local
+      ca:
+        secret:
+          name: vault-server-tls
+          key: ca.crt
 
 # ─────────────────────────────────────────────
 # Vault UI — accessible via Traefik IngressRoute
