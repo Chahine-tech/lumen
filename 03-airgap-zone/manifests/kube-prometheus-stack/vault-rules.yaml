@@ -1,0 +1,76 @@
+# Alerts on Vault's audit device and Raft snapshots (issue #4)
+# docs/runbooks/vault-audit-snapshots.md
+#
+#   vault_audit_*          Vault telemetry (/v1/sys/metrics), scraped by the
+#                          ServiceMonitor of the Vault chart, active pod only
+#   kube_cronjob_status_*  kube-state-metrics, CronJob vault-raft-snapshot
+#
+# No receiver is configured in Alertmanager yet (issue #23).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vault
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack  # required by the Prometheus Operator ruleSelector
+spec:
+  groups:
+    - name: vault
+      rules:
+        # With stdout as its only audit device, Vault refuses every request
+        # that it cannot log
+        - alert: VaultAuditLogFailure
+          expr: |
+            sum(increase(vault_audit_log_request_failure[5m]))
+              + sum(increase(vault_audit_log_response_failure[5m])) > 0
+          labels:
+            severity: critical
+            service: vault
+          annotations:
+            summary: Vault failed to write audit log entries
+            description: >-
+              {{ $value }} audit entries failed in 5 minutes. Requests that
+              cannot be logged are refused. Check: kubectl logs -n vault -l component=server
+
+        # The alert above stays silent when Vault is not scraped
+        - alert: VaultMetricsAbsent
+          expr: absent(vault_core_unsealed)
+          for: 15m
+          labels:
+            severity: warning
+            service: vault
+          annotations:
+            summary: No Vault metrics
+            description: >-
+              Prometheus has no vault_core_unsealed: Vault is down or sealed,
+              or the scrape is broken (ServiceMonitor vault, NetworkPolicy,
+              certificate).
+
+        # Daily schedule (02:30 UTC) + 2h of slack, as for PostgreSQL
+        - alert: VaultRaftSnapshotTooOld
+          expr: |
+            time() - max(kube_cronjob_status_last_successful_time{namespace="vault", cronjob="vault-raft-snapshot"})
+              > 26 * 3600
+          for: 15m
+          labels:
+            severity: warning
+            service: vault
+          annotations:
+            summary: No successful Vault snapshot for more than 26 hours
+            description: >-
+              Last successful run {{ $value | humanizeDuration }} ago.
+              Check: kubectl get jobs -n vault -l app=vault-raft-snapshot
+
+        # The metric exists only after a first success
+        - alert: VaultRaftSnapshotNeverSucceeded
+          expr: |
+            absent(kube_cronjob_status_last_successful_time{namespace="vault", cronjob="vault-raft-snapshot"})
+          for: 26h
+          labels:
+            severity: warning
+            service: vault
+          annotations:
+            summary: The Vault snapshot CronJob has no successful run
+            description: >-
+              No kube_cronjob_status_last_successful_time for vault-raft-snapshot
+              after 26 hours: it never succeeded, or kube-state-metrics is not scraped.

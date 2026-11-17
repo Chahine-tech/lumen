@@ -106,8 +106,7 @@ spec:
         - protocol: TCP
           port: 8200
 
-    # Any pod of the namespace. Was for the vault-init Job, removed in issue
-    # #3 (vault-bootstrap.sh uses kubectl exec); kept until tested without it
+    # Any pod of the namespace: the vault-raft-snapshot CronJob (issue #4)
     - from:
         - podSelector: {}
       ports:

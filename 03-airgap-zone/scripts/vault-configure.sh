@@ -10,14 +10,14 @@ set -e
 # ---------------------------------------------
 # Enable KV v2 secrets engine
 # ---------------------------------------------
-echo "[1/5] Enabling KV v2 engine at path 'lumen/'..."
+echo "[1/6] Enabling KV v2 engine at path 'lumen/'..."
 vault secrets enable -path=lumen kv-v2 || echo "  (already enabled)"
 echo "  ok: KV v2 engine ready at lumen/"
 
 # ---------------------------------------------
 # Enable and configure PKI engine
 # ---------------------------------------------
-echo "[2/5] Configuring PKI engine..."
+echo "[2/6] Configuring PKI engine..."
 vault secrets enable pki || echo "  (already enabled)"
 vault secrets tune -max-lease-ttl=87600h pki
 
@@ -48,7 +48,7 @@ echo "  ok: PKI engine configured"
 # ---------------------------------------------
 # Create policies
 # ---------------------------------------------
-echo "[3/5] Creating policies..."
+echo "[3/6] Creating policies..."
 
 # lumen-api policy: read app secrets. PostgreSQL: the runtime role only
 # (DML), not the owner credentials of lumen/db
@@ -115,7 +115,7 @@ echo "  ok: Policies created"
 # ---------------------------------------------
 # Enable Kubernetes auth method
 # ---------------------------------------------
-echo "[4/5] Configuring Kubernetes auth..."
+echo "[4/6] Configuring Kubernetes auth..."
 vault auth enable kubernetes || echo "  (already enabled)"
 
 # Configure Kubernetes auth with in-cluster credentials
@@ -181,9 +181,41 @@ vault write auth/kubernetes/role/gitea-runner \
 echo "  ok: Kubernetes auth configured"
 
 # ---------------------------------------------
+# Audit device and Raft snapshots (issue #4)
+# ---------------------------------------------
+echo "[5/6] Audit device and Raft snapshot role..."
+# Audit log on stdout: Alloy ships the pods' output to Loki, so every
+# request (secret reads included, values HMAC'd) is in Loki with
+# {namespace="vault"}. Vault refuses requests when no audit device can
+# write: stdout does not fill up like a file. docs/runbooks/vault-audit-snapshots.md
+if vault audit list 2>/dev/null | grep -q '^stdout/'; then
+  echo "  ok: audit device stdout/ already enabled"
+else
+  vault audit enable -path=stdout file file_path=stdout
+fi
+
+# The vault-raft-snapshot CronJob (manifests/vault/07-raft-snapshot.yaml):
+# takes the snapshot and reads the Garage key it uploads it with
+vault policy write raft-snapshot-policy - <<'POLICY'
+path "sys/storage/raft/snapshot" {
+  capabilities = ["read"]
+}
+path "lumen/data/vault-snapshot" {
+  capabilities = ["read"]
+}
+POLICY
+vault write auth/kubernetes/role/raft-snapshot \
+  bound_service_account_names=vault-snapshot \
+  bound_service_account_namespaces=vault \
+  audience=vault \
+  policies=raft-snapshot-policy \
+  ttl=15m
+echo "  ok: raft-snapshot role (S3 key: 03-airgap-zone/scripts/seed-vault-snapshot-creds.sh)"
+
+# ---------------------------------------------
 # Seed PostgreSQL credentials from lumen-db-app
 # ---------------------------------------------
-echo "[5/5] Seeding PostgreSQL credentials into Vault KV..."
+echo "[6/6] Seeding PostgreSQL credentials into Vault KV..."
 # From the Secret lumen/lumen-db-app, passed by vault-bootstrap.sh
 PG_USER=${PG_USER:-}
 PG_PASSWORD=${PG_PASSWORD:-}

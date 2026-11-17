@@ -5,9 +5,10 @@
 #   - backup-1 created by Terraform (05-terraform, cloud-init installs Docker)
 #   - Image tar from scripts/mirror.py pull in 01-connected-zone/artifacts/garage/
 #
-# Result: Garage listening on {{ backup_ip }}:3900 with bucket
-# {{ garage_bucket }} and access key {{ garage_key_name }} (read + write).
-# The key is copied to Vault by 03-airgap-zone/scripts/seed-cnpg-backup-creds.sh.
+# Result: Garage listening on {{ backup_ip }}:3900 with one bucket and one
+# access key (read + write) per entry of garage_buckets. The keys are copied
+# to Vault by 03-airgap-zone/scripts/seed-cnpg-backup-creds.sh and
+# seed-vault-snapshot-creds.sh.
 
 - name: Check that backup-1 is running
   ansible.builtin.command: multipass info {{ backup_vm_name }}
@@ -104,47 +105,57 @@
   delay: 3
   changed_when: false
 
-- name: Check if bucket {{ garage_bucket }} exists
+# One bucket and one key per user: the PostgreSQL backups, the Vault
+# snapshots (garage_buckets in group_vars)
+- name: Check if the buckets exist
   ansible.builtin.command: >
     multipass exec {{ backup_vm_name }} -- sudo docker exec {{ garage_container }}
-    /garage bucket info {{ garage_bucket }}
+    /garage bucket info {{ item.bucket }}
+  loop: "{{ garage_buckets }}"
   register: garage_bucket_info
   changed_when: false
   failed_when: false
 
-- name: Create bucket {{ garage_bucket }}
+- name: Create the missing buckets
   ansible.builtin.command: >
     multipass exec {{ backup_vm_name }} -- sudo docker exec {{ garage_container }}
-    /garage bucket create {{ garage_bucket }}
-  when: garage_bucket_info.rc != 0
+    /garage bucket create {{ item.item.bucket }}
+  loop: "{{ garage_bucket_info.results }}"
+  when: item.rc != 0
   changed_when: true
 
-- name: Check if access key {{ garage_key_name }} exists
+- name: Check if the access keys exist
   ansible.builtin.command: >
     multipass exec {{ backup_vm_name }} -- sudo docker exec {{ garage_container }}
-    /garage key info {{ garage_key_name }}
+    /garage key info {{ item.key }}
+  loop: "{{ garage_buckets }}"
   register: garage_key_info
   changed_when: false
   failed_when: false
+  no_log: true  # the output contains the secret key
 
-- name: Create access key {{ garage_key_name }}
+- name: Create the missing access keys
   ansible.builtin.command: >
     multipass exec {{ backup_vm_name }} -- sudo docker exec {{ garage_container }}
-    /garage key create {{ garage_key_name }}
-  when: garage_key_info.rc != 0
+    /garage key create {{ item.item.key }}
+  loop: "{{ garage_key_info.results }}"
+  when: item.rc != 0
   changed_when: true
   no_log: true  # the output contains the secret key
 
-# Read + write only: write covers DeleteObject (Barman retention). No --owner,
-# so the key cannot change bucket settings or grant access to other keys.
-- name: Allow {{ garage_key_name }} to read and write {{ garage_bucket }}
+# Read + write only: write covers DeleteObject (Barman retention, the
+# snapshots' 30 days). No --owner, so a key cannot change bucket settings
+# or grant access to other keys.
+- name: Allow each key to read and write its bucket only
   ansible.builtin.command: >
     multipass exec {{ backup_vm_name }} -- sudo docker exec {{ garage_container }}
-    /garage bucket allow --read --write {{ garage_bucket }} --key {{ garage_key_name }}
+    /garage bucket allow --read --write {{ item.bucket }} --key {{ item.key }}
+  loop: "{{ garage_buckets }}"
   changed_when: false
 
 - name: Next step
   ansible.builtin.debug:
     msg: |
-      Garage ready on {{ backup_ip }}:3900 (bucket {{ garage_bucket }}).
-      Copy the access key to Vault: 03-airgap-zone/scripts/seed-cnpg-backup-creds.sh
+      Garage ready on {{ backup_ip }}:3900 (buckets {{ garage_buckets | map(attribute='bucket') | join(', ') }}).
+      Copy the access keys to Vault: 03-airgap-zone/scripts/seed-cnpg-backup-creds.sh,
+      seed-vault-snapshot-creds.sh

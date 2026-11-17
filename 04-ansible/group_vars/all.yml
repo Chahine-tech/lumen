@@ -34,6 +34,13 @@ garage_container: "garage"
 garage_s3_region: "garage"
 garage_bucket: "lumen-pg-backups"
 garage_key_name: "lumen-cnpg-backup"
+# Bucket and key per user: the PostgreSQL backups, the Vault Raft snapshots
+# (issue #4, manifests/vault/07-raft-snapshot.yaml)
+garage_buckets:
+  - bucket: "{{ garage_bucket }}"
+    key: "{{ garage_key_name }}"
+  - bucket: "lumen-vault-snapshots"
+    key: "lumen-vault-snapshot"
 
 # Transit Vault on backup-1: unseals the cluster's Vault (issue #3)
 vault_transit_version: "1.19.0"
