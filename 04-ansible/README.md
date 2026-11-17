@@ -35,10 +35,12 @@ ssh ubuntu@192.168.2.3 echo "node-2 OK"
 > **Note**: If you don't have an `id_ed25519` key, generate one:
 > `ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""`
 
-### 3. vault-keys.json
+### 3. Infrastructure CA
 
-`vault-keys.json` must exist at the project root for playbooks that unseal Vault.
-It is generated once during Vault init and must **never** be committed.
+`~/.lumen-pki` (`03-airgap-zone/scripts/infra-ca.sh init`), with the
+certificate of the transit Vault (`infra-ca.sh server`): the `vault` and
+`vault_transit` roles need them. `docs/runbooks/vault-tls.md`,
+`docs/runbooks/vault-auto-unseal.md`.
 
 ### 4. Gitea admin password
 
@@ -54,13 +56,15 @@ read -rs GITEA_ADMIN_PASSWORD && export GITEA_ADMIN_PASSWORD
 
 ## Daily usage
 
-### Unseal Vault (after every VM or Mac restart)
+### Vault after a restart
+
+The cluster's Vault unseals itself through the transit Vault on backup-1
+(issue #3). Only the transit Vault is unsealed by hand, after a restart of
+backup-1: `start.yml` asks for it.
 
 ```bash
-ansible-playbook 04-ansible/unseal.yml
+03-airgap-zone/scripts/vault-transit.sh unseal
 ```
-
-Unseals vault-0, vault-1, vault-2 using the keys from `vault-keys.json`.
 
 ### Start the cluster
 
@@ -74,7 +78,8 @@ What it does:
 1. `multipass start backup-1`, then `multipass start node-1 node-2`
 2. Waits for nodes to be Ready
 3. Restores the MetalLB ARP entry (`sudo arp -s 192.168.2.100 <MAC>`)
-4. Unseals Vault
+4. Asks for the transit Vault to be unsealed if it is sealed, then waits for
+   the Vault pods to unseal themselves
 
 ### Stop the cluster gracefully
 
@@ -98,7 +103,7 @@ ansible-playbook 04-ansible/site.yml --ask-become-pass
 > 1. SSH key injected into VMs (see above)
 > 2. Container images available in `02-transit-zone/registry-data/`
 >    (or push manually via `02-transit-zone/push-*.sh` scripts)
-> 3. `vault-keys.json` if the cluster was previously initialized (otherwise init manually after)
+> 3. The infrastructure CA and the transit Vault's certificate (above)
 
 ### Partial run (by tags)
 
@@ -132,12 +137,12 @@ ansible-playbook 04-ansible/site.yml --skip-tags images --ask-become-pass
 │   ├── argocd/            # ArgoCD + Applications
 │   ├── gitea/             # Gitea org/repo + git push
 │   ├── garage/            # Garage (S3) on backup-1, PostgreSQL backups
-│   ├── vault/             # Wait for pods + unseal
+│   ├── vault_transit/     # Transit Vault on backup-1 (auto-unseal)
+│   ├── vault/             # Vault certificates, wait for the pods to unseal
 │   ├── dns/               # /etc/hosts + macOS CA trust
 │   └── verify/            # Health checks
 ├── site.yml               # Full bootstrap
-├── unseal.yml             # Unseal Vault only
-├── start.yml              # Start VMs + ARP + unseal
+├── start.yml              # Start VMs + ARP + transit Vault, wait for Vault
 └── stop.yml               # Drain + stop VMs
 ```
 
@@ -154,26 +159,15 @@ ansible-playbook 04-ansible/site.yml --skip-tags images --ask-become-pass
 
 ---
 
-## Vault init (one-time, manual)
-
-Vault bootstrap is intentionally manual — unseal keys cannot be stored in plaintext in a playbook.
+## Vault init (one-time)
 
 ```bash
-# 1. Wait for Vault to be deployed by ArgoCD
-kubectl get pods -n vault -w
-
-# 2. Initialize Vault (generates vault-keys.json)
-kubectl exec -n vault vault-0 -- vault operator init \
-  -key-shares=5 -key-threshold=3 -format=json > vault-keys.json
-
-# Keep vault-keys.json safe — never commit it
-
-# 3. Unseal
-ansible-playbook 04-ansible/unseal.yml
-
-# 4. Configure secrets (KV, PKI, K8s auth)
-# See: docs/vault-cert-manager.md
+03-airgap-zone/scripts/vault-transit.sh init     # transit Vault: its keys, the cluster's token
+03-airgap-zone/scripts/vault-bootstrap.sh init   # cluster Vault: recovery keys, configuration
 ```
+
+Both print their keys once and store them nowhere: hand them to their
+holders, offline. `docs/runbooks/vault-auto-unseal.md`.
 
 ---
 
@@ -186,13 +180,17 @@ multipass exec node-1 -- bash -c \
   "echo '$(cat ~/.ssh/id_ed25519.pub)' >> ~/.ssh/authorized_keys"
 ```
 
-### Vault still sealed after unseal.yml
+### Vault pods not ready after a restart
 
 ```bash
-kubectl exec -n vault vault-0 -- vault status
-# If Sealed: true, re-run:
-ansible-playbook 04-ansible/unseal.yml
+kubectl logs -n vault vault-0 | grep -i seal
+# "error parsing Seal configuration ... Vault is sealed": unseal the transit Vault
+03-airgap-zone/scripts/vault-transit.sh unseal
+# "permission denied": the transit token expired or is bound to other
+# addresses: vault-transit.sh token (docs/runbooks/vault-auto-unseal.md)
 ```
+
+The pods retry with the kubelet's backoff (up to 5 min).
 
 ### ArgoCD Applications OutOfSync
 

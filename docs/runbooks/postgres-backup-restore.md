@@ -77,8 +77,8 @@ the container when `garage.toml` or the secrets change.
 
 ### 4. Vault policy and role (existing cluster)
 
-On a new cluster the `vault-init` Job creates them. On a running cluster the
-Job does not run again, so create them by hand with an admin token (the
+On a new cluster `vault-configure.sh` (run by `vault-bootstrap.sh`) creates
+them. On a running cluster, create them by hand with an admin token (the
 bootstrap root token is revoked: `vault operator generate-root`, see
 `docs/vault-cert-manager.md`):
 

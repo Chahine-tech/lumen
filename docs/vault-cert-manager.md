@@ -4,6 +4,10 @@ This document covers Phase 19: deploying HashiCorp Vault HA (3-replica Raft clus
 
 **Date**: February 23, 2026
 
+> **Since issue #3 (November 2026), Vault unseals itself** through a transit
+> Vault on backup-1; `vault-keys.json`, the unseal steps and the vault-init
+> Job below are history: [runbooks/vault-auto-unseal.md](runbooks/vault-auto-unseal.md).
+>
 > **Since issue #5 (November 2026), Vault serves TLS** on its listener and
 > Raft joins, with a certificate from the infrastructure CA, not from Vault.
 > Clients use `https://` and the root of that CA. Bootstrap, migration and
@@ -274,7 +278,7 @@ done
 
 ### 6. Vault Engine Configuration
 
-Run after init+unseal. The `02-vault-init-job.yaml` Job automates this, but can also be done manually:
+Run after init+unseal. Since issue #3, `03-airgap-zone/scripts/vault-bootstrap.sh` does it (it streams `vault-configure.sh` into `vault-0`), replacing the `02-vault-init-job.yaml` Job; by hand:
 
 > **Note**: the vault-init Job revokes the bootstrap root token once configuration is done.
 > If you need admin access afterwards, generate a fresh root token first:
@@ -1050,7 +1054,7 @@ Located at project root. Contains unseal keys + root token. Needed after every p
 | [03-airgap-zone/manifests/cert-manager-helm/values.yaml](../03-airgap-zone/manifests/cert-manager-helm/values.yaml) | cert-manager chart defaults |
 | [03-airgap-zone/manifests/cert-manager-helm/values-airgap-override.yaml](../03-airgap-zone/manifests/cert-manager-helm/values-airgap-override.yaml) | cert-manager airgap overrides (images, securePort 10260, CRDs) |
 | [03-airgap-zone/manifests/vault/01-namespace.yaml](../03-airgap-zone/manifests/vault/01-namespace.yaml) | Vault namespace |
-| [03-airgap-zone/manifests/vault/02-vault-init-job.yaml](../03-airgap-zone/manifests/vault/02-vault-init-job.yaml) | One-shot Job: init → unseal → configure engines (manual) |
+| [03-airgap-zone/scripts/vault-bootstrap.sh](../03-airgap-zone/scripts/vault-bootstrap.sh), [vault-configure.sh](../03-airgap-zone/scripts/vault-configure.sh) | Init (recovery keys), configuration (replaced the vault-init Job, issue #3) |
 | [03-airgap-zone/manifests/vault/03-vault-issuer.yaml](../03-airgap-zone/manifests/vault/03-vault-issuer.yaml) | ServiceAccount + Secret + ClusterIssuer for cert-manager → Vault PKI |
 | [03-airgap-zone/manifests/vault/04-airgap-certificate.yaml](../03-airgap-zone/manifests/vault/04-airgap-certificate.yaml) | Certificate resource: `*.airgap.local`, 8700h, renew 30d before |
 | [03-airgap-zone/manifests/network-policies/16-allow-vault.yaml](../03-airgap-zone/manifests/network-policies/16-allow-vault.yaml) | NetworkPolicies for vault namespace |

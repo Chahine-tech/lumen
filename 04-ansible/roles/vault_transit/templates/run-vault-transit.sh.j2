@@ -1,0 +1,18 @@
+#!/bin/bash
+# (Re)create the transit Vault container on {{ backup_vm_name }}. Managed by Ansible.
+# It starts sealed: 03-airgap-zone/scripts/vault-transit.sh unseal
+set -e
+
+docker rm -f {{ vault_transit_container }} 2>/dev/null || true
+
+# Published on the VM address only. IPC_LOCK: Vault locks its memory, so
+# keys are not swapped to disk
+docker run -d \
+  --name {{ vault_transit_container }} \
+  --restart unless-stopped \
+  --cap-add IPC_LOCK \
+  -p {{ backup_ip }}:{{ vault_transit_port }}:8200 \
+  -v /etc/vault-transit:/vault/config \
+  -v /var/lib/vault-transit:/vault/file \
+  {{ vault_transit_image }} \
+  server

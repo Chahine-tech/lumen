@@ -45,8 +45,8 @@ reachable only from the lab network (`192.168.2.0/24`, MetalLB VIP
 
 ## 2. Runner registration token
 
-1. Create the Vault policy and role (a new cluster gets them from the
-   `vault-init` Job; on a running cluster, with an admin token):
+1. Create the Vault policy and role (a new cluster gets them from
+   `vault-configure.sh`; on a running cluster, with an admin token):
    ```bash
    kubectl exec -it -n vault vault-0 -- sh
    export VAULT_TOKEN=<admin token>
@@ -106,8 +106,8 @@ curl -sk -o /dev/null -w '%{http_code}\n' -u "admin:$OLD" https://grafana.airgap
 
 `cosign.key` and `vault-keys.json` are at the repository root. They are
 ignored by git, so they did not leak, but they are the most sensitive files of
-the project: issues #3 (unseal keys) and #13 (Cosign key in Vault Transit)
-remove them.
+the project. Issue #3 removes `vault-keys.json` (auto-unseal, recovery keys
+held offline: `docs/runbooks/vault-auto-unseal.md`); issue #13 the Cosign key.
 
 ## Preventing the next leak
 

@@ -14,7 +14,7 @@ offline root (lumen root CA, 10 years)            ~/.lumen-pki/root.key, never i
 | Client | Trusts the root through |
 |---|---|
 | Vault pods (`vault` CLI with `kubectl exec`, Raft `retry_join`) | `VAULT_CACERT`, `leader_ca_cert_file`: `/vault/userconfig/vault-server-tls/ca.crt` |
-| `vault-init` Job | `VAULT_CACERT`, the `ca.crt` of `vault-server-tls` only |
+| `vault-bootstrap.sh` (issue #3: `kubectl exec` in `vault-0`) | the pods' `VAULT_CACERT` |
 | VSO (`lumen`, `gitea`, `monitoring`, `traefik`) | `VaultConnection.spec.caCertSecretRef: vault-ca` |
 | cert-manager `vault-issuer` | `caBundleSecretRef`: `cert-manager/vault-ca` |
 | Traefik, for `vault.airgap.local` | `ServersTransport vault-tls`: it terminates the client's TLS and opens a new one to Vault |
@@ -39,7 +39,8 @@ Before the Vault pods can start (they wait for the Secret
 ```
 
 The Ansible `vault` role checks for that Secret, applies
-`vault/05-infra-ca.yaml` and `vault/06-vault-tls.yaml`, then unseals. By hand:
+`vault/05-infra-ca.yaml` and `vault/06-vault-tls.yaml`, then waits for the
+pods (auto-unseal, [vault-auto-unseal](vault-auto-unseal.md)). By hand:
 
 ```bash
 kubectl apply -f 03-airgap-zone/manifests/vault/05-infra-ca.yaml \
@@ -81,9 +82,6 @@ push, and step 3 right after it: VSO and cert-manager retry until then.
    curl -sk https://vault.airgap.local/v1/sys/health
    ```
 
-The `vault-init` Job uses `https` too, verified with the root: delete it
-before running it again.
-
 ## Renewal
 
 cert-manager renews `vault-server-tls` 30 days before it expires (1 year).
@@ -115,7 +113,7 @@ images pulled as `192.168.2.2:5000/...` through a registry mirror:
 | `infra-ca.sh init`, `apply` | root, intermediate, Secret; certificates Ready, `ca.crt` equal to the root, chain verifies | `init` again: refused, the root is kept |
 | Raft, 3 pods over TLS | 3 peers, all ready | |
 | `vault` CLI in the pods (`kubectl exec`), the seed scripts' `kv put` | works over `https://127.0.0.1:8200` | |
-| `vault-init` pod spec, `vault status` | OK | without `VAULT_CACERT`: `x509` error |
+| `vault-init` pod spec (Job removed since, issue #3), `vault status` | OK | without `VAULT_CACERT`: `x509` error |
 | Plain HTTP to 8200 | 400 | |
 | VSO, `vso/01`, `02` and `04`: `VaultStaticSecret` synced | OK | without `caCertSecretRef`: `x509: certificate signed by unknown authority` |
 | `vault-issuer` with `caBundleSecretRef`, a certificate from Vault PKI | Ready, issued | without it: TLS verification error |
@@ -131,10 +129,9 @@ exec` with stdin, Grafana and the Gitea runner's VSO resources (same
 ## Limits
 
 - **Manual reload** once a year (above). Nothing alerts on it yet (#25).
-- **The `vault-init` Job cannot complete on a new cluster**, unrelated to
-  TLS: it calls `kubectl`, which the Vault image does not have (checked).
-  It would fail after `vault operator init` without storing the keys.
-  Belongs to #3.
+- The `vault-init` Job could not complete on a new cluster (it called
+  `kubectl` and `python3`, which the Vault image lacks). Replaced by
+  `vault-bootstrap.sh` in issue #3 ([vault-auto-unseal](vault-auto-unseal.md)).
 - The pods' `VAULT_API_ADDR` is `https://<pod IP>:8200`, and the
   certificate has no IP but 127.0.0.1: a client that followed a redirect to
   that address would fail verification. Not seen in the tests, not

@@ -538,7 +538,7 @@ Master key (256 bits)
        │ Shamir split (5 shards, threshold 3)
        ▼
   shard-1  shard-2  shard-3  shard-4  shard-5
-  (in vault-keys.json)
+  (held by five people, offline)
 
 On startup — Vault is "sealed" (data inaccessible)
   → provide any 3 shards
@@ -546,7 +546,9 @@ On startup — Vault is "sealed" (data inaccessible)
   → Vault is "unsealed" (operational)
 ```
 
-Vault **never** stores the master key in memory between restarts. That's why after every reboot, Vault starts in "sealed" state and `unseal.yml` must be replayed.
+Vault **never** stores the master key in memory between restarts, so after every reboot it starts "sealed".
+
+In this project the shards are **recovery keys** since issue #3: the root key is encrypted with a transit key held by a second Vault on `backup-1`, outside the cluster, which decrypts it at each start (**auto-unseal**). The recovery keys are only needed for `vault operator generate-root` or a seal migration. The transit Vault itself is unsealed by hand after a restart of `backup-1`. `docs/runbooks/vault-auto-unseal.md`.
 
 ### Vault HA with Raft
 
@@ -563,7 +565,7 @@ Request → vault.airgap.local → Traefik → vault-active Service
                                           → always the Raft leader
 ```
 
-If `vault-0` goes down, Raft elects a new leader from `vault-1`/`vault-2`. But all three pods must be unsealed — that's why `unseal.yml` unseals the 3 pods sequentially.
+If `vault-0` goes down, Raft elects a new leader from `vault-1`/`vault-2`. Each pod that restarts unseals itself through the transit Vault.
 
 ---
 

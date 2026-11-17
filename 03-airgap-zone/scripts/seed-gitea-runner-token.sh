@@ -17,7 +17,7 @@
 # arrived about a second late, as Gitea's output does (k3d test, 2026-11-12).
 #
 # Prerequisites: Vault unsealed, the gitea-runner policy + role present
-# (vault-init Job, or docs/runbooks/rotate-leaked-credentials.md), and a
+# (vault-configure.sh, or docs/runbooks/rotate-leaked-credentials.md), and a
 # Vault token allowed to write lumen/data/gitea-runner in VAULT_TOKEN or typed
 # at the prompt.
 #

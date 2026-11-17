@@ -8,7 +8,7 @@
 #
 # Prerequisites:
 #   - Vault initialized and unsealed
-#   - vault-init-job completed (PKI engine + K8s auth configured)
+#   - vault-bootstrap.sh init done (PKI engine + K8s auth configured)
 #   - cert-manager deployed
 
 ---

@@ -9,8 +9,9 @@
 #
 # Prerequisites:
 #   - backup-1 running Garage (ansible-playbook 04-ansible/site.yml --tags garage)
-#   - Vault unsealed, and the cnpg-backup policy + role present (vault-init Job,
-#     or the manual commands in docs/runbooks/postgres-backup-restore.md)
+#   - Vault unsealed, and the cnpg-backup policy + role present
+#     (vault-configure.sh, or the manual commands in
+#     docs/runbooks/postgres-backup-restore.md)
 #   - A Vault token allowed to write lumen/data/cnpg-backup, in VAULT_TOKEN or
 #     typed at the prompt (the bootstrap root token is revoked; see
 #     `vault operator generate-root` in docs/vault-cert-manager.md)

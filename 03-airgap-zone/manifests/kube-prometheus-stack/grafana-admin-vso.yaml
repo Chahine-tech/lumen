@@ -2,7 +2,7 @@
 #
 # Replaces the hardcoded `adminPassword: admin` that used to live in
 # values-airgap-override.yaml. Source of truth: Vault KV v2 at lumen/grafana
-# (keys admin-user / admin-password), seeded by the vault-init Job.
+# (keys admin-user / admin-password), seeded by 03-airgap-zone/scripts/vault-configure.sh.
 # The chart reads them via grafana.admin.existingSecret.
 
 ---

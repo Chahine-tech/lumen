@@ -60,9 +60,9 @@ EXISTS`). So the change ships in two steps:
 
 ## Step 1 on the existing cluster
 
-On a new cluster the `vault-init` Job creates the policies, the role and the
-`lumen/db-runtime` password. On a running cluster it does not run again: do
-it by hand, with an admin token (the bootstrap root token is revoked:
+On a new cluster `vault-configure.sh` (run by `vault-bootstrap.sh`) creates
+the policies, the role and the `lumen/db-runtime` password. On a running
+cluster, do it by hand, with an admin token (the bootstrap root token is revoked:
 `vault operator generate-root`, see `docs/vault-cert-manager.md`).
 
 ### 1. Vault: owner role, runtime password

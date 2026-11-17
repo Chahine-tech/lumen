@@ -9,7 +9,8 @@
 #   1. Start Multipass VMs (backup-1, then node-1, node-2)
 #   2. Wait for K3s nodes to be Ready
 #   3. Restore ARP entry for MetalLB VIP (lost on reboot)
-#   4. Unseal Vault (includes unseal.yml)
+#   4. Unseal the transit Vault on backup-1 (asks for it), then wait for the
+#      cluster's Vault, which unseals itself through it (issue #3)
 
 - name: Start Multipass VMs
   hosts: localhost
@@ -61,5 +62,38 @@
       ansible.builtin.debug:
         msg: "ARP entry set: {{ metallb_vip }} -> {{ node1_mac.stdout | trim }}"
 
-- name: Unseal Vault
-  ansible.builtin.import_playbook: unseal.yml
+- name: Vault
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    # It starts sealed after a restart of backup-1. The cluster's Vault pods
+    # exit and are restarted until it is unsealed, then unseal themselves
+    - name: Read the transit Vault status
+      ansible.builtin.command: >
+        multipass exec {{ backup_vm_name }} -- sudo docker exec
+        -e VAULT_ADDR=https://127.0.0.1:8200 -e VAULT_CACERT=/vault/config/ca.crt
+        {{ vault_transit_container }} vault status -format=json
+      register: transit_status
+      until: transit_status.stdout | length > 0
+      retries: 20
+      delay: 3
+      changed_when: false
+      failed_when: false  # exit code 2 when sealed
+
+    - name: Ask for the transit Vault to be unsealed
+      ansible.builtin.pause:
+        prompt: >-
+          The transit Vault is sealed. In another terminal, run
+          03-airgap-zone/scripts/vault-transit.sh unseal, then press Enter
+      when: '"sealed\": true" in transit_status.stdout'
+
+    - name: Wait for every Vault pod to be unsealed
+      ansible.builtin.command: >
+        kubectl get pods -n {{ vault_namespace }} -l component=server
+        -o jsonpath={.items[*].status.containerStatuses[0].ready}
+      register: vault_ready
+      until: vault_ready.stdout.split() | length == vault_pods | length and 'false' not in vault_ready.stdout
+      retries: 40   # the kubelet restarts the pods with a backoff of up to 5 min
+      delay: 15
+      changed_when: false
