@@ -5,7 +5,7 @@
 #   kafka_consumergroup_lag             Kafka Exporter
 #   lumen_outbox_*, lumen_events_*      outbox relay and event consumer
 #
-# No receiver is configured in Alertmanager yet (issue #23).
+# Notifications: docs/runbooks/alerting.md
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -25,6 +25,7 @@ spec:
             severity: warning
             service: kafka
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
             summary: Kafka partitions are under-replicated
             description: >-
               {{ $value }} partitions have fewer in-sync replicas than
@@ -37,6 +38,7 @@ spec:
             severity: critical
             service: kafka
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
             summary: Kafka partitions have no leader
             description: >-
               {{ $value }} partitions can be neither read nor written.
@@ -50,6 +52,7 @@ spec:
             severity: critical
             service: kafka
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
             summary: Kafka does not have exactly one active controller
             description: >-
               {{ $value }} active controllers. Without a quorum of the 3
@@ -63,6 +66,7 @@ spec:
             severity: warning
             service: kafka
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
             summary: No Kafka broker metrics
             description: Kafka is down, or Prometheus does not scrape it.
 
@@ -73,6 +77,7 @@ spec:
             severity: warning
             service: kafka
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
             summary: The event consumer is falling behind
             description: >-
               {{ $value }} messages are waiting. Check: kubectl logs -n kafka -l app=lumen-events-consumer
@@ -86,6 +91,7 @@ spec:
             severity: critical
             service: lumen-api
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
             summary: Events are not reaching Kafka
             description: >-
               The oldest event has waited {{ $value | humanizeDuration }} in
@@ -99,6 +105,7 @@ spec:
             severity: critical
             service: lumen-api
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
             summary: No outbox relay is running
             description: Events accumulate in the outbox until a relay runs.
 
@@ -108,6 +115,7 @@ spec:
             severity: warning
             service: lumen-api
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
             summary: The event consumer could not read a message
             description: >-
               Messages went to the topic lumen.events.dlq. See

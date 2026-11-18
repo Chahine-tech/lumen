@@ -14,7 +14,7 @@ See [docs/architecture.md](docs/architecture.md) for the full system overview.
 | Cluster | K3s (arm64, 1 server + 2 agents), Flannel, MetalLB, Traefik v3 |
 | Databases | Redis 7 HA Sentinel + PostgreSQL 16 (CloudNativePG) |
 | Messaging | Kafka 4.3 (Strimzi, KRaft), transactional outbox, idempotent consumer |
-| Observability | Prometheus + Grafana + Loki + Alloy + Tempo + OpenTelemetry |
+| Observability | Prometheus + Grafana + Loki + Alloy + Tempo + OpenTelemetry, alerts through Alertmanager to ntfy with a dead man's switch |
 | Security | Kyverno (registry, tags, resources in `lumen` and `kafka`; labels and Cosign signatures in `lumen`) + PSS + NetworkPolicies + Falco |
 | Secrets / TLS | Vault HA (Raft, TLS, transit auto-unseal, audit log, snapshots) + cert-manager + VSO + mTLS at the edge |
 | GitOps / CI | ArgoCD + Gitea Actions + Argo Rollouts (canary) |
@@ -85,6 +85,7 @@ It asks for the transit Vault on `backup-1` to be unsealed (`03-airgap-zone/scri
 | Area | Runbooks |
 |---|---|
 | Deployment | [Cutover of November 2026](docs/runbooks/cutover-november-2026.md), [release v1.7.0](docs/runbooks/release-v1.7.0.md), [K3s upgrade path](docs/runbooks/k3s-upgrade-path.md) |
+| Observability | [Alerting](docs/runbooks/alerting.md) |
 | Vault | [TLS](docs/runbooks/vault-tls.md), [auto-unseal](docs/runbooks/vault-auto-unseal.md), [audit and snapshots](docs/runbooks/vault-audit-snapshots.md), [identities](docs/runbooks/vault-identities.md) |
 | Data | [Kafka](docs/runbooks/kafka.md), [Redis](docs/runbooks/redis.md), [PostgreSQL backup and restore](docs/runbooks/postgres-backup-restore.md), [database migrations](docs/runbooks/database-migrations.md) |
 | lumen-api | [Authentication](docs/runbooks/lumen-api-authentication.md), [admin port](docs/runbooks/lumen-api-admin-port.md), [smoke test](docs/runbooks/lumen-api-smoke-test.md) |
@@ -95,7 +96,6 @@ It asks for the transit Vault on `backup-1` to be unsealed (`03-airgap-zone/scri
 - One K3s control plane, and volumes tied to one node ([#9](https://github.com/Chahine-tech/lumen/issues/9)).
 - `group_vars` pins K3s v1.28.5, older than what several components support ([#10](https://github.com/Chahine-tech/lumen/issues/10), [upgrade path](docs/runbooks/k3s-upgrade-path.md)).
 - The registry has no TLS or authentication ([#11](https://github.com/Chahine-tech/lumen/issues/11)).
-- Alertmanager has no receiver: alerts fire and reach nobody ([#23](https://github.com/Chahine-tech/lumen/issues/23)).
 - Admission policies cover part of the namespaces ([#26](https://github.com/Chahine-tech/lumen/issues/26)).
 - The administrative UIs have no SSO ([#27](https://github.com/Chahine-tech/lumen/issues/27)).
 - Most traffic between services inside the cluster is not encrypted ([#34](https://github.com/Chahine-tech/lumen/issues/34)).

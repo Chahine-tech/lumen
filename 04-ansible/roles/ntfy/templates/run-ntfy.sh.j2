@@ -1,0 +1,60 @@
+#!/bin/bash
+# (Re)create the ntfy container on {{ backup_vm_name }}. Managed by Ansible.
+# The tokens and passwords are generated once, in /etc/ntfy/secrets.env.
+set -euo pipefail
+umask 077
+
+secrets=/etc/ntfy/secrets.env
+ntfy() { docker run --rm -i {{ ntfy_image }} "$@"; }
+hash_password() { printf '%s\n%s\n' "$1" "$1" | ntfy user hash 2>/dev/null | tail -n 1; }
+
+if [ ! -f "$secrets" ]; then
+  reader_password=$(openssl rand -hex 24)
+  {
+    echo "ALERTMANAGER_TOKEN=$(ntfy token generate | tail -n 1)"
+    echo "DEADMAN_TOKEN=$(ntfy token generate | tail -n 1)"
+    echo "READER_PASSWORD=$reader_password"
+    echo "ALERTMANAGER_HASH='$(hash_password "$(openssl rand -hex 24)")'"
+    echo "DEADMAN_HASH='$(hash_password "$(openssl rand -hex 24)")'"
+    echo "READER_HASH='$(hash_password "$reader_password")'"
+  } > "$secrets"
+fi
+# shellcheck disable=SC1090
+. "$secrets"
+
+cat > /etc/ntfy/server.yml <<CONFIG
+base-url: https://{{ backup_ip }}:{{ ntfy_port }}
+listen-http: "-"
+listen-https: ":{{ ntfy_port }}"
+cert-file: /etc/ntfy/tls.crt
+key-file: /etc/ntfy/tls.key
+cache-file: /var/lib/ntfy/cache.db
+cache-duration: 24h
+auth-file: /var/lib/ntfy/auth.db
+auth-default-access: deny-all
+enable-signup: false
+enable-login: true
+auth-users:
+  - "alertmanager:${ALERTMANAGER_HASH}:user"
+  - "deadman:${DEADMAN_HASH}:user"
+  - "reader:${READER_HASH}:user"
+auth-access:
+  - "alertmanager:{{ ntfy_alerts_topic }}:wo"
+  - "alertmanager:{{ ntfy_watchdog_topic }}:wo"
+  - "deadman:{{ ntfy_watchdog_topic }}:ro"
+  - "deadman:{{ ntfy_alerts_topic }}:wo"
+  - "reader:{{ ntfy_alerts_topic }}:ro"
+auth-tokens:
+  - "alertmanager:${ALERTMANAGER_TOKEN}:Alertmanager"
+  - "deadman:${DEADMAN_TOKEN}:Dead man switch"
+CONFIG
+
+docker rm -f {{ ntfy_container }} 2>/dev/null || true
+docker run -d \
+  --name {{ ntfy_container }} \
+  --restart unless-stopped \
+  -p {{ backup_ip }}:{{ ntfy_port }}:{{ ntfy_port }} \
+  -v /etc/ntfy:/etc/ntfy:ro \
+  -v /var/lib/ntfy:/var/lib/ntfy \
+  {{ ntfy_image }} \
+  serve

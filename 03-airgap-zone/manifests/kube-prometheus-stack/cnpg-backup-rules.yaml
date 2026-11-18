@@ -6,8 +6,7 @@
 #   - cnpg_pg_stat_archiver_*: default CNPG monitoring queries, reported by
 #     the primary only
 #
-# No receiver is configured in Alertmanager yet (issue #23): these alerts are
-# visible in Prometheus/Alertmanager UIs until routing exists.
+# Notifications: docs/runbooks/alerting.md
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -30,6 +29,7 @@ spec:
             severity: warning
             service: lumen-db
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/postgres-backup-restore.md
             summary: lumen-db has no successful base backup for more than 26 hours
             description: >-
               Last available base backup is {{ $value | humanizeDuration }} old.
@@ -46,6 +46,7 @@ spec:
             severity: warning
             service: lumen-db
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/postgres-backup-restore.md
             summary: No backup metrics for lumen-db
             description: >-
               Prometheus has no barman_cloud_cloudnative_pg_io_last_available_backup_timestamp
@@ -65,6 +66,7 @@ spec:
             severity: warning
             service: lumen-db
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/postgres-backup-restore.md
             summary: The most recent base backup of lumen-db failed
             description: >-
               Check: kubectl get backup -n lumen and the plugin-barman-cloud
@@ -83,6 +85,7 @@ spec:
             severity: critical
             service: lumen-db
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/postgres-backup-restore.md
             summary: WAL archiving is failing on {{ $labels.pod }}
             description: >-
               The last WAL archive attempt failed and none succeeded since. Point

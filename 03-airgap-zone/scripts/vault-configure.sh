@@ -77,6 +77,14 @@ path "lumen/data/db-runtime" {
 }
 POLICY
 
+# alertmanager-ntfy policy: VSO reads the token Alertmanager publishes with
+# (seeded by scripts/seed-ntfy-token.sh, issue #23)
+vault policy write alertmanager-ntfy-policy - <<'POLICY'
+path "lumen/data/alertmanager-ntfy" {
+  capabilities = ["read"]
+}
+POLICY
+
 # cert-manager policy: issue PKI certs
 vault policy write cert-manager-policy - <<'POLICY'
 path "pki/sign/airgap-role" {
@@ -152,6 +160,14 @@ vault write auth/kubernetes/role/kafka-workers \
   bound_service_account_namespaces=kafka \
   audience=vault \
   policies=kafka-workers-policy \
+  ttl=15m
+
+# Role for VSO syncing the ntfy token of Alertmanager (monitoring namespace)
+vault write auth/kubernetes/role/alertmanager-ntfy \
+  bound_service_account_names=alertmanager-ntfy-vso \
+  bound_service_account_namespaces=monitoring \
+  audience=vault \
+  policies=alertmanager-ntfy-policy \
   ttl=15m
 
 # Role for cert-manager (cert-manager-vault-auth SA in cert-manager

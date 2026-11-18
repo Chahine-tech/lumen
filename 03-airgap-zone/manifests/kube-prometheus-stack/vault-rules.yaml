@@ -5,7 +5,7 @@
 #                          ServiceMonitor of the Vault chart, active pod only
 #   kube_cronjob_status_*  kube-state-metrics, CronJob vault-raft-snapshot
 #
-# No receiver is configured in Alertmanager yet (issue #23).
+# Notifications: docs/runbooks/alerting.md
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -27,6 +27,7 @@ spec:
             severity: critical
             service: vault
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/vault-audit-snapshots.md#alerts
             summary: Vault failed to write audit log entries
             description: >-
               {{ $value }} audit entries failed in 5 minutes. Requests that
@@ -40,6 +41,7 @@ spec:
             severity: warning
             service: vault
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/vault-audit-snapshots.md#alerts
             summary: No Vault metrics
             description: >-
               Prometheus has no vault_core_unsealed: Vault is down or sealed,
@@ -56,6 +58,7 @@ spec:
             severity: warning
             service: vault
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/vault-audit-snapshots.md#alerts
             summary: No successful Vault snapshot for more than 26 hours
             description: >-
               Last successful run {{ $value | humanizeDuration }} ago.
@@ -70,6 +73,7 @@ spec:
             severity: warning
             service: vault
           annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/vault-audit-snapshots.md#alerts
             summary: The Vault snapshot CronJob has no successful run
             description: >-
               No kube_cronjob_status_last_successful_time for vault-raft-snapshot

@@ -283,6 +283,25 @@ spec:
         - protocol: TCP
           port: 9090
 
+    # The other replica: notifications are deduplicated over gossip
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alertmanager
+      ports:
+        - protocol: TCP
+          port: 9094
+        - protocol: UDP
+          port: 9094
+
+    # ntfy on backup-1 (issue #23)
+    - to:
+        - ipBlock:
+            cidr: 192.168.2.4/32
+      ports:
+        - protocol: TCP
+          port: 2586
+
 ---
 # Allow ingress to Prometheus from monitoring namespace
 apiVersion: networking.k8s.io/v1
@@ -387,3 +406,16 @@ spec:
       ports:
         - protocol: TCP
           port: 9093
+        - protocol: TCP
+          port: 8080  # config-reloader metrics
+
+    # The other replica: notifications are deduplicated over gossip
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alertmanager
+      ports:
+        - protocol: TCP
+          port: 9094
+        - protocol: UDP
+          port: 9094

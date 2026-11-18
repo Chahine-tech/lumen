@@ -12,6 +12,17 @@ rm -rf .cache/rules
 python3 03-airgap-zone/tests/manifests/extract-rules.py .cache/rules .cache/rendered/*.yaml
 docker run --rm -v "$PWD/.cache/rules:/r" -w /r --entrypoint sh "$PROMETHEUS_IMAGE" -c 'promtool check rules *.yml'
 
+echo "== every alert of this repository links to a runbook"
+python3 - 03-airgap-zone/manifests/kube-prometheus-stack/*-rules.yaml <<'PY'
+import sys, yaml
+missing = [r["alert"] for f in sys.argv[1:] for d in yaml.safe_load_all(open(f)) if d
+           for g in d["spec"]["groups"] for r in g["rules"]
+           if "alert" in r and "runbook_url" not in r.get("annotations", {})]
+if missing:
+    sys.exit(f"alerts without runbook_url: {missing}")
+print("ok")
+PY
+
 echo "== promtool test rules"
 mkdir -p 03-airgap-zone/tests/prometheus/.rules
 for r in cnpg-backup-rules vault-rules kafka-rules; do
