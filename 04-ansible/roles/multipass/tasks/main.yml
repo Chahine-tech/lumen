@@ -36,6 +36,23 @@
   register: node2_launch
   changed_when: true  # runs only when the VM does not exist
 
+- name: Check if node-3 exists
+  ansible.builtin.command: multipass info node-3
+  register: node3_info
+  changed_when: false
+  failed_when: false
+
+- name: Launch node-3 (worker)
+  ansible.builtin.command: >
+    multipass launch
+    --name node-3
+    --cpus {{ node3_cpus }}
+    --memory {{ node3_memory }}
+    --disk {{ node3_disk }}
+  when: node3_info.rc != 0
+  register: node3_launch
+  changed_when: true  # runs only when the VM does not exist
+
 - name: Ensure node-1 is running
   ansible.builtin.command: multipass start node-1
   when: node1_info.rc == 0 and 'Stopped' in node1_info.stdout
@@ -44,6 +61,11 @@
 - name: Ensure node-2 is running
   ansible.builtin.command: multipass start node-2
   when: node2_info.rc == 0 and 'Stopped' in node2_info.stdout
+  changed_when: true
+
+- name: Ensure node-3 is running
+  ansible.builtin.command: multipass start node-3
+  when: node3_info.rc == 0 and 'Stopped' in node3_info.stdout
   changed_when: true
 
 - name: Show VM list

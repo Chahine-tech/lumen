@@ -8,6 +8,11 @@ output "node2_ipv4" {
   description = "DHCP IP on eth0 (Multipass internal bridge — may change on reboot)"
 }
 
+output "node3_ipv4" {
+  value       = multipass_instance.node3.ipv4
+  description = "DHCP IP on eth0 (Multipass internal bridge, may change on reboot)"
+}
+
 output "node1_static_ip" {
   value       = var.node1_ip
   description = "Static IP on eth1 — configured via cloud-init netplan, stable across reboots"
@@ -16,6 +21,11 @@ output "node1_static_ip" {
 output "node2_static_ip" {
   value       = var.node2_ip
   description = "Static IP on eth1 — configured via cloud-init netplan, stable across reboots"
+}
+
+output "node3_static_ip" {
+  value       = var.node3_ip
+  description = "Static IP on eth1, configured via cloud-init netplan, stable across reboots"
 }
 
 output "backup_static_ip" {
@@ -29,6 +39,7 @@ output "next_step" {
     VMs created. Static IPs configured via cloud-init:
       node-1: ${var.node1_ip}  (control-plane + registry)
       node-2: ${var.node2_ip}  (worker)
+      node-3: ${var.node3_ip}  (worker)
       backup-1: ${var.backup_ip}  (Garage, PostgreSQL backups)
 
     Next:

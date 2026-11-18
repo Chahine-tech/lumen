@@ -48,6 +48,31 @@ variable "node2_ip" {
   description = "Static IP for node-2 (configured on eth1 via cloud-init)"
 }
 
+variable "node3_name" {
+  default     = "node-3"
+  description = "Multipass VM name for the second worker"
+}
+
+variable "node3_cpus" {
+  default     = 2
+  description = "CPUs for node-3 (worker)"
+}
+
+variable "node3_memory" {
+  default     = "4G"
+  description = "RAM for node-3"
+}
+
+variable "node3_disk" {
+  default     = "30G"
+  description = "Disk for node-3"
+}
+
+variable "node3_ip" {
+  default     = "192.168.2.5"
+  description = "Static IP for node-3 (configured on eth1 via cloud-init)"
+}
+
 variable "backup_name" {
   default     = "backup-1"
   description = "Multipass VM name for the backup object store (Garage)"

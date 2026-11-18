@@ -37,6 +37,13 @@
         timeout: 120
         delay: 5
 
+    - name: Wait for node-3 SSH ({{ node3_ip }})
+      ansible.builtin.wait_for:
+        host: "{{ node3_ip }}"
+        port: 22
+        timeout: 120
+        delay: 5
+
     - name: VMs ready
       ansible.builtin.debug:
         msg: |

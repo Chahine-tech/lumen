@@ -3,7 +3,7 @@
 #
 # Run this script every time you restart your Mac or the VMs.
 # It handles everything that doesn't survive reboots:
-#   1. Start Multipass VMs (backup-1, then node-1 and node-2)
+#   1. Start Multipass VMs (backup-1, then node-1, node-2 and node-3)
 #   2. Restore ARP entry for MetalLB IP (192.168.2.100)
 
 set -e
@@ -16,7 +16,7 @@ echo ""
 echo "[1/2] Starting Multipass VMs..."
 # backup-1 first: PostgreSQL archives WAL to Garage as soon as it starts
 multipass start backup-1
-multipass start node-1 node-2
+multipass start node-1 node-2 node-3
 echo "Waiting for nodes to be Ready..."
 until multipass exec node-1 -- kubectl get nodes --no-headers 2>/dev/null | grep -q "Ready"; do
   sleep 3

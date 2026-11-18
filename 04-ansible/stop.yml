@@ -6,7 +6,7 @@
 #
 # What it does:
 #   1. Drain node-2 (evict workloads cleanly)
-#   2. Stop both cluster VMs, then backup-1 (Garage)
+#   2. Stop the three cluster VMs, then backup-1 (Garage)
 
 - name: Drain and stop the cluster
   hosts: localhost
@@ -23,6 +23,8 @@
       ansible.builtin.debug:
         msg: "{{ nodes_check.stdout_lines }}"
 
+    # node-2 only: the PodDisruptionBudgets of Kafka and Redis allow one pod
+    # down, and a second drain would wait for it until it times out
     - name: Drain node-2 (evict workloads)
       ansible.builtin.command: >
         kubectl drain node-2
@@ -36,7 +38,7 @@
       failed_when: drain_result.rc != 0
 
     - name: Stop Multipass VMs
-      ansible.builtin.command: multipass stop node-2 node-1
+      ansible.builtin.command: multipass stop node-3 node-2 node-1
       register: stop_result
       changed_when: true
 

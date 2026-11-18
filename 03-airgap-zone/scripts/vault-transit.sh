@@ -19,12 +19,12 @@
 #                (default: multipass exec backup-1 -- sudo docker exec -i vault-transit)
 # KUBECTL        default: multipass exec node-1 -- kubectl
 # CLUSTER_CIDRS  addresses the cluster's token is valid from: the nodes, which
-#                the pods' traffic leaves from (default 192.168.2.2/32,192.168.2.3/32)
+#                the pods' traffic leaves from (default 192.168.2.2/32,192.168.2.3/32,192.168.2.5/32)
 set -euo pipefail
 
 TRANSIT_EXEC=${TRANSIT_EXEC:-multipass exec backup-1 -- sudo docker exec -i vault-transit}
 KUBECTL=${KUBECTL:-multipass exec node-1 -- kubectl}
-CLUSTER_CIDRS=${CLUSTER_CIDRS:-192.168.2.2/32,192.168.2.3/32}
+CLUSTER_CIDRS=${CLUSTER_CIDRS:-192.168.2.2/32,192.168.2.3/32,192.168.2.5/32}
 KEY_SHARES=3
 KEY_THRESHOLD=2
 
