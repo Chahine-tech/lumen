@@ -17,6 +17,48 @@ spec:
   groups:
     - name: vault
       rules:
+        # A sealed pod fails its readiness probe. Prometheus scrapes the active
+        # pod only, so its metrics cannot show a sealed standby
+        - alert: VaultPodNotReady
+          expr: kube_pod_status_ready{namespace="vault",condition="true",pod=~"vault-[0-9]+"} == 0
+          for: 2m
+          labels:
+            severity: warning
+            service: vault
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#vault-availability
+            summary: A Vault pod is sealed or not ready
+            description: >-
+              {{ $labels.pod }} is not ready. Check: kubectl exec -n vault {{ $labels.pod }} -- vault status
+
+        # 3 voters tolerate the loss of one
+        - alert: VaultRaftFailureToleranceLost
+          expr: min(vault_autopilot_failure_tolerance) < 1
+          for: 5m
+          labels:
+            severity: critical
+            service: vault
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#vault-availability
+            summary: Vault cannot lose another node
+            description: >-
+              Raft tolerates the loss of {{ $value }} node. One more failure stops
+              Vault. Check: kubectl exec -n vault vault-0 -- vault operator raft list-peers
+
+        # Without a majority there is no active pod, and so no Vault metric
+        - alert: VaultQuorumLost
+          expr: count(kube_pod_status_ready{namespace="vault",condition="true",pod=~"vault-[0-9]+"} == 1) < 2 or absent(kube_pod_status_ready{namespace="vault",condition="true",pod=~"vault-[0-9]+"} == 1)
+          for: 2m
+          labels:
+            severity: critical
+            service: vault
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#vault-availability
+            summary: Vault has lost its Raft majority
+            description: >-
+              Fewer than 2 Vault pods are ready: Vault serves no request.
+              Check: kubectl get pods -n vault
+
         # With stdout as its only audit device, Vault refuses every request
         # that it cannot log
         - alert: VaultAuditLogFailure

@@ -1,0 +1,108 @@
+# promtool unit tests for manifests/kube-prometheus-stack/postgres-rules.yaml
+# Run: make test-alert-rules
+rule_files: [.rules/postgres-rules.yml]
+evaluation_interval: 1m
+tests:
+  # Healthy: nothing fires
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_status_ready{namespace="lumen",condition="true",pod="lumen-db-1"}'
+        values: '1x30'
+      - series: 'cnpg_pg_replication_streaming_replicas{namespace="lumen",pod="lumen-db-1"}'
+        values: '2x30'
+      - series: 'cnpg_pg_replication_streaming_replicas{namespace="lumen",pod="lumen-db-2"}'
+        values: '0x30'
+      - series: 'cnpg_pg_replication_in_recovery{namespace="lumen",pod="lumen-db-1"}'
+        values: '0x30'
+      - series: 'cnpg_pg_replication_in_recovery{namespace="lumen",pod="lumen-db-2"}'
+        values: '1x30'
+      - series: 'cnpg_pg_replication_lag{namespace="lumen",pod="lumen-db-2"}'
+        values: '0x30'
+      - series: 'cnpg_backends_total{namespace="lumen",pod="lumen-db-1",usename="app"}'
+        values: '10x30'
+      - series: 'cnpg_pg_settings_setting{namespace="lumen",pod="lumen-db-1",name="max_connections"}'
+        values: '100x30'
+    alert_rule_test:
+      - {eval_time: 20m, alertname: PostgresInstanceNotReady, exp_alerts: []}
+      - {eval_time: 20m, alertname: PostgresReplicaMissing, exp_alerts: []}
+      - {eval_time: 20m, alertname: PostgresNoPrimary, exp_alerts: []}
+      - {eval_time: 20m, alertname: PostgresFailover, exp_alerts: []}
+      - {eval_time: 20m, alertname: PostgresReplicationLagHigh, exp_alerts: []}
+      - {eval_time: 20m, alertname: PostgresConnectionsHigh, exp_alerts: []}
+
+  # A replica stopped, and the connections close to the limit
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_status_ready{namespace="lumen",condition="true",pod="lumen-db-3"}'
+        values: '1x4 0x20'
+      - series: 'cnpg_pg_replication_streaming_replicas{namespace="lumen",pod="lumen-db-1"}'
+        values: '2x4 1x20'
+      - series: 'cnpg_pg_replication_in_recovery{namespace="lumen",pod="lumen-db-1"}'
+        values: '0x25'
+      - series: 'cnpg_pg_replication_lag{namespace="lumen",pod="lumen-db-2"}'
+        values: '600x25'
+      - series: 'cnpg_backends_total{namespace="lumen",pod="lumen-db-1",usename="app"}'
+        values: '85x25'
+      - series: 'cnpg_pg_settings_setting{namespace="lumen",pod="lumen-db-1",name="max_connections"}'
+        values: '100x25'
+    alert_rule_test:
+      - {eval_time: 5m, alertname: PostgresInstanceNotReady, exp_alerts: []}
+      - eval_time: 10m
+        alertname: PostgresInstanceNotReady
+        exp_alerts:
+          - exp_labels: {severity: warning, service: lumen-db, namespace: lumen, condition: "true", pod: lumen-db-3}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#postgresql-availability
+              summary: A PostgreSQL instance is not ready
+              description: 'lumen-db-3 is not ready. Check: kubectl get cluster lumen-db -n lumen'
+      - eval_time: 10m
+        alertname: PostgresReplicaMissing
+        exp_alerts:
+          - exp_labels: {severity: warning, service: lumen-db}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#postgresql-availability
+              summary: PostgreSQL has fewer than 2 streaming replicas
+              description: 'The primary streams to 1 replicas out of 2. Check: kubectl get cluster lumen-db -n lumen'
+      - eval_time: 10m
+        alertname: PostgresReplicationLagHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, service: lumen-db}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#postgresql-availability
+              summary: A PostgreSQL replica is behind
+              description: A replica is 10m 0s behind the primary.
+      - eval_time: 10m
+        alertname: PostgresConnectionsHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, service: lumen-db, namespace: lumen, pod: lumen-db-1}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#postgresql-availability
+              summary: PostgreSQL is close to max_connections
+              description: lumen-db-1 uses 85% of its connections.
+
+  # No primary, then a promotion
+  - interval: 1m
+    input_series:
+      - series: 'cnpg_pg_replication_in_recovery{namespace="lumen",pod="lumen-db-1"}'
+        values: '1x4 1x25'
+      - series: 'cnpg_pg_replication_in_recovery{namespace="lumen",pod="lumen-db-2"}'
+        values: '1x9 0x20'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: PostgresNoPrimary
+        exp_alerts:
+          - exp_labels: {severity: critical, service: lumen-db}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#postgresql-availability
+              summary: PostgreSQL does not have exactly one primary
+              description: '0 instances accept writes. Check: kubectl get pods -n lumen -L cnpg.io/instanceRole'
+      - {eval_time: 15m, alertname: PostgresNoPrimary, exp_alerts: []}
+      - eval_time: 12m
+        alertname: PostgresFailover
+        exp_alerts:
+          - exp_labels: {severity: warning, service: lumen-db}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#postgresql-availability
+              summary: The PostgreSQL primary changed
+              description: 'An instance changed role in the last 10 minutes. Check: kubectl get events -n lumen --field-selector involvedObject.name=lumen-db'
+      - {eval_time: 25m, alertname: PostgresFailover, exp_alerts: []}

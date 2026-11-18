@@ -83,3 +83,46 @@ tests:
               runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/vault-audit-snapshots.md#alerts
               summary: The Vault snapshot CronJob has no successful run
               description: 'No kube_cronjob_status_last_successful_time for vault-raft-snapshot after 26 hours: it never succeeded, or kube-state-metrics is not scraped.'
+
+  # One pod sealed, then the majority lost
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_status_ready{namespace="vault",condition="true",pod="vault-0"}'
+        values: '1x40'
+      - series: 'kube_pod_status_ready{namespace="vault",condition="true",pod="vault-1"}'
+        values: '1x19 0x20'
+      - series: 'kube_pod_status_ready{namespace="vault",condition="true",pod="vault-2"}'
+        values: '1x4 0x35'
+      - series: 'vault_autopilot_failure_tolerance{pod="vault-0"}'
+        values: '1x4 0x35'
+      - series: 'vault_core_unsealed{cluster="lumen-vault"}'
+        values: '1x40'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="vault",cronjob="vault-raft-snapshot"}'
+        values: '0+60x40'
+    alert_rule_test:
+      - {eval_time: 4m, alertname: VaultPodNotReady, exp_alerts: []}
+      - eval_time: 10m
+        alertname: VaultPodNotReady
+        exp_alerts:
+          - exp_labels: {severity: warning, service: vault, namespace: vault, condition: "true", pod: vault-2}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#vault-availability
+              summary: A Vault pod is sealed or not ready
+              description: 'vault-2 is not ready. Check: kubectl exec -n vault vault-2 -- vault status'
+      - eval_time: 12m
+        alertname: VaultRaftFailureToleranceLost
+        exp_alerts:
+          - exp_labels: {severity: critical, service: vault}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#vault-availability
+              summary: Vault cannot lose another node
+              description: 'Raft tolerates the loss of 0 node. One more failure stops Vault. Check: kubectl exec -n vault vault-0 -- vault operator raft list-peers'
+      - {eval_time: 12m, alertname: VaultQuorumLost, exp_alerts: []}
+      - eval_time: 25m
+        alertname: VaultQuorumLost
+        exp_alerts:
+          - exp_labels: {severity: critical, service: vault}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#vault-availability
+              summary: Vault has lost its Raft majority
+              description: 'Fewer than 2 Vault pods are ready: Vault serves no request. Check: kubectl get pods -n vault'
