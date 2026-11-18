@@ -86,3 +86,55 @@ spec:
           port: 6443
         - protocol: TCP
           port: 443
+
+---
+# The outbox relay and the event consumer read and write PostgreSQL
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-event-workers-postgres
+  namespace: kafka
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [lumen-outbox-relay, lumen-events-consumer]
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lumen
+          podSelector:
+            matchLabels:
+              cnpg.io/cluster: lumen-db
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# Prometheus scrapes the brokers, the Kafka Exporter and the workers
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scraping
+  namespace: kafka
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9404  # brokers, Kafka Exporter
+        - protocol: TCP
+          port: 9090  # relay, consumer

@@ -32,8 +32,8 @@ spec:
     podControllers:
       controllers: [deployments, statefulsets, daemonsets]
   matchConditions:
-    - name: lumen-namespace-only
-      expression: request.namespace == 'lumen'
+    - name: lumen-and-kafka-only
+      expression: request.namespace in ['lumen', 'kafka']
   variables:
     - name: images
       expression: >-

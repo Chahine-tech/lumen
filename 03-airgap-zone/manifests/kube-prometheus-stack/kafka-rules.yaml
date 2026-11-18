@@ -1,0 +1,114 @@
+# Alerts on Kafka and on the event stream of lumen-api (issue #44)
+# docs/runbooks/kafka.md
+#
+#   kafka_server_*, kafka_controller_*  JMX exporter of the brokers
+#   kafka_consumergroup_lag             Kafka Exporter
+#   lumen_outbox_*, lumen_events_*      outbox relay and event consumer
+#
+# No receiver is configured in Alertmanager yet (issue #23).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kafka
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack  # required by the Prometheus Operator ruleSelector
+spec:
+  groups:
+    - name: kafka
+      rules:
+        # With min.insync.replicas 2, one more broker lost stops the writes
+        - alert: KafkaUnderReplicatedPartitions
+          expr: sum(kafka_server_replicamanager_underreplicatedpartitions) > 0
+          for: 10m
+          labels:
+            severity: warning
+            service: kafka
+          annotations:
+            summary: Kafka partitions are under-replicated
+            description: >-
+              {{ $value }} partitions have fewer in-sync replicas than
+              replicas. Check: kubectl get pods -n kafka
+
+        - alert: KafkaOfflinePartitions
+          expr: sum(kafka_controller_kafkacontroller_offlinepartitionscount) > 0
+          for: 1m
+          labels:
+            severity: critical
+            service: kafka
+          annotations:
+            summary: Kafka partitions have no leader
+            description: >-
+              {{ $value }} partitions can be neither read nor written.
+              Events wait in the outbox. Check: kubectl get pods -n kafka
+
+        # One broker reports 1, the others 0
+        - alert: KafkaNoActiveController
+          expr: sum(kafka_controller_kafkacontroller_activecontrollercount) != 1
+          for: 2m
+          labels:
+            severity: critical
+            service: kafka
+          annotations:
+            summary: Kafka does not have exactly one active controller
+            description: >-
+              {{ $value }} active controllers. Without a quorum of the 3
+              KRaft nodes, Kafka stops. Check: kubectl logs -n kafka -l strimzi.io/pool-name=combined
+
+        # The alerts above stay silent when the brokers are not scraped
+        - alert: KafkaMetricsAbsent
+          expr: absent(kafka_server_replicamanager_underreplicatedpartitions)
+          for: 10m
+          labels:
+            severity: warning
+            service: kafka
+          annotations:
+            summary: No Kafka broker metrics
+            description: Kafka is down, or Prometheus does not scrape it.
+
+        - alert: KafkaConsumerLagHigh
+          expr: sum by (consumergroup) (kafka_consumergroup_lag{consumergroup="lumen-events-consumer"}) > 1000
+          for: 10m
+          labels:
+            severity: warning
+            service: kafka
+          annotations:
+            summary: The event consumer is falling behind
+            description: >-
+              {{ $value }} messages are waiting. Check: kubectl logs -n kafka -l app=lumen-events-consumer
+
+    - name: lumen-event-stream
+      rules:
+        - alert: LumenOutboxEventsDelayed
+          expr: max(lumen_outbox_oldest_age_seconds) > 300
+          for: 5m
+          labels:
+            severity: critical
+            service: lumen-api
+          annotations:
+            summary: Events are not reaching Kafka
+            description: >-
+              The oldest event has waited {{ $value | humanizeDuration }} in
+              the outbox. Nothing is lost. Check: kubectl logs -n kafka -l app=lumen-outbox-relay
+
+        # The alert above stays silent when no relay runs
+        - alert: LumenOutboxRelayAbsent
+          expr: absent(lumen_outbox_oldest_age_seconds)
+          for: 10m
+          labels:
+            severity: critical
+            service: lumen-api
+          annotations:
+            summary: No outbox relay is running
+            description: Events accumulate in the outbox until a relay runs.
+
+        - alert: LumenEventsDeadLettered
+          expr: sum(increase(lumen_events_consumed_total{result="dead_lettered"}[15m])) > 0
+          labels:
+            severity: warning
+            service: lumen-api
+          annotations:
+            summary: The event consumer could not read a message
+            description: >-
+              Messages went to the topic lumen.events.dlq. See
+              docs/runbooks/kafka.md to read them.

@@ -194,13 +194,13 @@ jobs:
           SEMVER="${{ github.ref_name }}"
           IMAGE="${{ steps.image.outputs.image }}"
           REF="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SEMVER}@${IMAGE#*@}"
-          MANIFEST="03-airgap-zone/manifests/app/03-lumen-api.yaml"
+          MANIFESTS="03-airgap-zone/manifests/app/03-lumen-api.yaml 03-airgap-zone/manifests/kafka/05-event-workers.yaml"
           git config user.email "ci@airgap.local"
           git config user.name "CI Bot"
           git remote set-url origin "http://gitea-admin:${{ secrets.CI_TOKEN }}@192.168.2.2:30300/lumen/lumen.git"
-          sed -i "s|image: 192.168.2.2:5000/lumen-api:.*|image: ${REF}|" "${MANIFEST}"
-          grep -n "image: ${REF}" "${MANIFEST}"
-          git add "${MANIFEST}"
+          sed -i "s|image: 192.168.2.2:5000/lumen-api:.*|image: ${REF}|" ${MANIFESTS}
+          grep -n "image: ${REF}" ${MANIFESTS}
+          git add ${MANIFESTS}
           git commit -m "chore: update lumen-api image to ${SEMVER} [skip ci]"
           git push origin HEAD:main
 

@@ -208,20 +208,20 @@ ok "reader with its ACL: 20 messages read"
 
 produce reader 1 -1 denied-write 15000
 [ "$(count denied-write producer_send_success)" -eq 0 ] || fail "the reader was not refused a write"
-c "cat /tmp/denied-write /tmp/denied-write.err" | grep -q 'AuthorizationException' \
+c "grep -q 'AuthorizationException' /tmp/denied-write /tmp/denied-write.err" \
   || fail "the reader was not refused a write: $(c 'cat /tmp/denied-write.err; tail -n 3 /tmp/denied-write' | cut -c1-300)"
 ok "reader refused a write"
 consume writer kafka-test-b >/dev/null
-c "cat /tmp/consume.err" | grep -q 'AuthorizationException\|Not authorized' || fail "the writer was not refused a read"
+c "grep -q 'AuthorizationException\|Not authorized' /tmp/consume.err" || fail "the writer was not refused a read"
 ok "writer refused a read"
 produce noacl 1 -1 denied-noacl 15000
 [ "$(count denied-noacl producer_send_success)" -eq 0 ] || fail "a user without an ACL was not refused"
-c "cat /tmp/denied-noacl /tmp/denied-noacl.err" | grep -q 'AuthorizationException' \
+c "grep -q 'AuthorizationException' /tmp/denied-noacl /tmp/denied-noacl.err" \
   || fail "a user without an ACL was not refused: $(c 'cat /tmp/denied-noacl.err; tail -n 3 /tmp/denied-noacl' | cut -c1-300)"
 ok "user without an ACL refused"
 produce none 1 -1 denied-nocert 15000
 [ "$(count denied-nocert producer_send_success)" -eq 0 ] || fail "a client without a certificate wrote"
-c "cat /tmp/denied-nocert /tmp/denied-nocert.err" | grep -q 'SSL handshake failed\|SslAuthenticationException\|Failed authentication\|TimeoutException' \
+c "grep -q 'SSL handshake failed\|SslAuthenticationException\|Failed authentication\|TimeoutException' /tmp/denied-nocert /tmp/denied-nocert.err" \
   || fail "no refusal reported for the client without a certificate"
 ok "client without a certificate refused"
 

@@ -10,6 +10,7 @@ On 17 November 2026, `main` received, while the cluster was down:
 | #41 | #6 | one ServiceAccount per Vault consumer ([vault-identities](vault-identities.md)) |
 | #42 | #8 | Redis: one StatefulSet, any pod master ([redis](redis.md)) |
 | #37 | #15 to #19, #33 | v1.7.0 step 2 ([release-v1.7.0](release-v1.7.0.md)) and authentication in report mode ([lumen-api-authentication](lumen-api-authentication.md)) |
+| branch `kafka` | #44 | `node-3`, three CoreDNS replicas, Kafka and the event stream ([kafka](kafka.md)) |
 
 Each runbook describes its own move from the former state, on its own.
 Together they do not fit one ArgoCD sync:
@@ -272,10 +273,10 @@ git push gitea v1.7.0
 git push origin v1.7.0
 ```
 
-The release commit rewrites the two `lumen-api` image lines of
-`03-lumen-api.yaml` (Rollout and migration Job) to
-`v1.7.0@sha256:<digest>`. The smoke test, in another file, is pinned by
-hand:
+The release commit rewrites the `lumen-api` image lines of
+`03-lumen-api.yaml` (Rollout and migration Job) and of
+`kafka/05-event-workers.yaml` to `v1.7.0@sha256:<digest>`. The smoke test, in
+another file, is pinned by hand:
 
 ```bash
 git pull gitea main
@@ -320,6 +321,30 @@ kubectl exec -n lumen redis-0 -c sentinel -- sh -c \
 curl -sk https://lumen-api.airgap.local/health      # 200 from v1.7.0 in report mode
 kubectl delete pvc -n lumen redis-data-redis-master-0
 ```
+
+## 7b. Kafka
+
+Needs Kubernetes 1.32 or later ([k3s-upgrade-path](k3s-upgrade-path.md)):
+check `kubectl get nodes` first. The migration of step 6 has created the
+outbox, and `vso-config` (4.8) the credentials of the workers.
+
+```bash
+ansible-playbook 04-ansible/provision.yml        # node-3
+ansible-playbook 04-ansible/site.yml --tags k3s  # joins node-3, 3 CoreDNS replicas
+kubectl get nodes                                 # 3 nodes, Ready
+kubectl apply -f 03-airgap-zone/manifests/cnpg/03-network-policy.yaml
+kubectl apply -f 03-airgap-zone/manifests/argocd/22-application-strimzi.yaml \
+  -f 03-airgap-zone/manifests/argocd/23-application-kafka.yaml
+sync strimzi
+kubectl rollout status deployment strimzi-cluster-operator -n kafka
+sync kafka
+kubectl wait kafka/lumen -n kafka --for=condition=Ready --timeout=600s
+kubectl get pods -n kafka
+kubectl exec -n lumen lumen-db-1 -c postgres -- psql -U postgres -d app -tAc "SELECT count(*) FROM outbox"   # goes to 0
+```
+
+The two new Applications come with auto-sync on: patch them as in step 2 if
+step 8 is not reached right away.
 
 ## 8. The rest, then auto-sync back
 
@@ -381,6 +406,8 @@ with `"revision":"<commit>"` in `operation.sync`.
 - lumen-api v1.7.0 as a whole against the former Redis (step 6). The
   client against unauthenticated Sentinels was measured, the release was
   not.
+- `node-3` joining a running cluster, and step 7b as a whole
+  ([kafka, Tested](kafka.md#tested)).
 - The source address of the Vault pods' traffic as seen by backup-1: if
   unsealing fails with `permission denied`, see
   [vault-auto-unseal, Not tested](vault-auto-unseal.md#tested).

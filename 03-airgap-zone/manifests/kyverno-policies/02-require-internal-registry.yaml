@@ -1,8 +1,8 @@
 # Images must come from the internal registry (airgap: no external pull)
 #
 # Migrated from the Gatekeeper constraint require-internal-registry
-# (K8sRequiredRegistry): same scope, Pods in lumen and default, containers
-# and init containers.
+# (K8sRequiredRegistry): Pods in lumen and default, and in kafka since issue
+# #44, containers and init containers.
 #
 # ValidatingPolicy (policies.kyverno.io/v1, CEL) rather than ClusterPolicy:
 # ClusterPolicy is deprecated since Kyverno 1.18 and planned for removal.
@@ -48,8 +48,8 @@ spec:
     podControllers:
       controllers: [deployments, statefulsets, daemonsets]
   matchConditions:
-    - name: lumen-and-default-only
-      expression: request.namespace in ['lumen', 'default']
+    - name: lumen-default-and-kafka-only
+      expression: request.namespace in ['lumen', 'default', 'kafka']
   variables:
     - name: images
       expression: >-

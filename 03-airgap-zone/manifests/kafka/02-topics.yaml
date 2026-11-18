@@ -14,3 +14,20 @@ spec:
     min.insync.replicas: 2
     retention.ms: 604800000  # 7 days
     cleanup.policy: delete
+
+---
+# The messages the consumer cannot read, kept for inspection
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaTopic
+metadata:
+  name: lumen.events.dlq
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: lumen
+spec:
+  partitions: 1
+  replicas: 3
+  config:
+    min.insync.replicas: 2
+    retention.ms: 2592000000  # 30 days
+    cleanup.policy: delete

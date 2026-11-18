@@ -38,3 +38,8 @@ spec:
         operations: [Describe, Read]
       - resource: {type: group, name: lumen-events-consumer, patternType: literal}
         operations: [Describe, Read]
+      # Messages it cannot read
+      - resource: {type: topic, name: lumen.events.dlq, patternType: literal}
+        operations: [Describe, Write]
+      - resource: {type: cluster}
+        operations: [IdempotentWrite]

@@ -1,0 +1,205 @@
+# The relay publishes the outbox of PostgreSQL to Kafka, the consumer applies
+# the topic (issue #44, docs/runbooks/kafka.md). They run here, next to the
+# client certificates that Strimzi keeps in this namespace. The PostgreSQL
+# credentials come from Vault (vso/07-kafka-workers-secret.yaml).
+#
+# Two relays: one publishes, the other takes over when it stops. Two
+# consumers share the partitions of the topic.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lumen-outbox-relay
+  namespace: kafka
+  labels:
+    app: lumen-outbox-relay
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lumen-outbox-relay
+  template:
+    metadata:
+      labels:
+        app: lumen-outbox-relay
+        tier: backend
+        kafka-client: "true"
+    spec:
+      automountServiceAccountToken: false
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: lumen-outbox-relay
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: relay
+          # Same image as the Rollout, rewritten by the release job
+          image: 192.168.2.2:5000/lumen-api:v1.7.0
+          args: ["relay"]
+          env:
+            - name: PG_USER
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-db-runtime
+                  key: username
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-db-runtime
+                  key: password
+            - name: PG_DSN
+              value: "postgresql://$(PG_USER):$(PG_PASSWORD)@lumen-db-rw.lumen.svc.cluster.local:5432/app"
+            - name: KAFKA_BROKERS
+              value: lumen-kafka-bootstrap.kafka.svc.cluster.local:9093
+            - name: KAFKA_CA_FILE
+              value: /var/run/secrets/kafka/ca/ca.crt
+            - name: KAFKA_CERT_FILE
+              value: /var/run/secrets/kafka/user/user.crt
+            - name: KAFKA_KEY_FILE
+              value: /var/run/secrets/kafka/user/user.key
+          ports:
+            - name: admin
+              containerPort: 9090
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: admin
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: cluster-ca
+              mountPath: /var/run/secrets/kafka/ca
+              readOnly: true
+            - name: user
+              mountPath: /var/run/secrets/kafka/user
+              readOnly: true
+      volumes:
+        - name: cluster-ca
+          secret:
+            secretName: lumen-cluster-ca-cert
+            items:
+              - {key: ca.crt, path: ca.crt}
+        - name: user
+          secret:
+            secretName: lumen-outbox-relay
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lumen-events-consumer
+  namespace: kafka
+  labels:
+    app: lumen-events-consumer
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lumen-events-consumer
+  template:
+    metadata:
+      labels:
+        app: lumen-events-consumer
+        tier: backend
+        kafka-client: "true"
+    spec:
+      automountServiceAccountToken: false
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: lumen-events-consumer
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: consumer
+          # Same image as the Rollout, rewritten by the release job
+          image: 192.168.2.2:5000/lumen-api:v1.7.0
+          args: ["consume"]
+          env:
+            - name: PG_USER
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-db-runtime
+                  key: username
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-db-runtime
+                  key: password
+            - name: PG_DSN
+              value: "postgresql://$(PG_USER):$(PG_PASSWORD)@lumen-db-rw.lumen.svc.cluster.local:5432/app"
+            - name: KAFKA_BROKERS
+              value: lumen-kafka-bootstrap.kafka.svc.cluster.local:9093
+            - name: KAFKA_CA_FILE
+              value: /var/run/secrets/kafka/ca/ca.crt
+            - name: KAFKA_CERT_FILE
+              value: /var/run/secrets/kafka/user/user.crt
+            - name: KAFKA_KEY_FILE
+              value: /var/run/secrets/kafka/user/user.key
+          ports:
+            - name: admin
+              containerPort: 9090
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: admin
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: cluster-ca
+              mountPath: /var/run/secrets/kafka/ca
+              readOnly: true
+            - name: user
+              mountPath: /var/run/secrets/kafka/user
+              readOnly: true
+      volumes:
+        - name: cluster-ca
+          secret:
+            secretName: lumen-cluster-ca-cert
+            items:
+              - {key: ca.crt, path: ca.crt}
+        - name: user
+          secret:
+            secretName: lumen-events-consumer

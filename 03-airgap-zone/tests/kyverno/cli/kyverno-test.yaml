@@ -97,6 +97,28 @@ results:
     resources: [kube-public/w-any, default/d-internal]
     result: skip
 
+  # The kafka namespace
+  - policy: lumen-require-internal-registry
+    kind: Pod
+    resources: [kafka/p-kafka-external]
+    result: fail
+  - policy: lumen-require-internal-registry
+    kind: Pod
+    resources: [kafka/p-kafka-internal]
+    result: pass
+  - policy: lumen-block-latest-tag
+    kind: Pod
+    resources: [kafka/p-kafka-latest]
+    result: fail
+  - policy: lumen-block-latest-tag
+    kind: Pod
+    resources: [kafka/p-kafka-internal]
+    result: pass
+  - policy: lumen-require-resources
+    kind: Deployment
+    resources: [kafka/r-kafka-none]
+    result: fail
+
   # Vault-only ServiceAccounts: every namespace
   - policy: lumen-restrict-vault-serviceaccounts
     kind: Pod
