@@ -1,0 +1,88 @@
+# NetworkPolicies for the kafka namespace (issue #44)
+#
+# Strimzi generates the ingress rules of the brokers and of the entity
+# operator (kafka/01-cluster.yaml, networkPolicyPeers for the clients).
+# Here: default deny, and the egress every pod of the namespace needs.
+
+---
+# Namespace created here, as for kyverno: CreateNamespace=true combined with
+# ServerSideApply (the Strimzi CRDs) hangs the sync on this ArgoCD version
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kafka
+  labels:
+    name: kafka
+    environment: airgap
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+
+---
+# No token in the pods that run as the default ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: kafka
+automountServiceAccountToken: false
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: kafka
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kafka-egress
+  namespace: kafka
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # The other pods of the namespace
+    - to:
+        - podSelector: {}
+
+---
+# The operators watch their resources
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-strimzi-api-server
+  namespace: kafka
+spec:
+  podSelector:
+    matchExpressions:
+      - key: strimzi.io/kind
+        operator: In
+        values: [cluster-operator, Kafka]
+  policyTypes:
+    - Egress
+  egress:
+    # API server (K3s: node IP on 6443)
+    - ports:
+        - protocol: TCP
+          port: 6443
+        - protocol: TCP
+          port: 443

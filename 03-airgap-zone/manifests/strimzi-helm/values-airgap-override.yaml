@@ -1,0 +1,20 @@
+# Strimzi operator (issue #44). It watches its own namespace, kafka. The
+# Kafka image is set on the Kafka resource (kafka/01-cluster.yaml), by digest.
+strimzi-kafka-operator:
+  defaultImageRegistry: 192.168.2.2:5000
+  defaultImageRepository: strimzi
+  image:
+    tag: "1.3.1@sha256:5aed9adc04f65a99948818791cf97c67dc26607b828727ba32abd644d271959b"
+  topicOperator:
+    image:
+      tag: "1.3.1@sha256:5aed9adc04f65a99948818791cf97c67dc26607b828727ba32abd644d271959b"
+  userOperator:
+    image:
+      tag: "1.3.1@sha256:5aed9adc04f65a99948818791cf97c67dc26607b828727ba32abd644d271959b"
+  kafkaInit:
+    image:
+      tag: "1.3.1@sha256:5aed9adc04f65a99948818791cf97c67dc26607b828727ba32abd644d271959b"
+  # The namespace enforces the restricted Pod Security Standard
+  extraEnvs:
+    - name: STRIMZI_POD_SECURITY_PROVIDER_CLASS
+      value: restricted

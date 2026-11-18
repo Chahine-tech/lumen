@@ -102,6 +102,8 @@ argocd_apps:
   - "19-application-kyverno.yaml"           # admission controller
   - "20-application-kyverno-policies.yaml"  # registry, tags, labels, resources, signatures
   - "21-application-vso-config.yaml"
+  - "22-application-strimzi.yaml"            # Kafka operator (issue #44)
+  - "23-application-kafka.yaml"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # DNS — airgap domains (all resolve to MetalLB VIP)
