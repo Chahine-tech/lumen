@@ -1,0 +1,45 @@
+# One user per client, with the ACLs it needs and no more (issue #44). The
+# User Operator issues each one a client certificate, in a Secret of the
+# same name.
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: lumen-outbox-relay
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: lumen
+spec:
+  authentication:
+    type: tls
+  authorization:
+    type: simple
+    acls:
+      - resource: {type: topic, name: lumen.events, patternType: literal}
+        operations: [Describe, Write]
+      # Idempotent producer
+      - resource: {type: cluster}
+        operations: [IdempotentWrite]
+
+---
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaUser
+metadata:
+  name: lumen-events-consumer
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: lumen
+spec:
+  authentication:
+    type: tls
+  authorization:
+    type: simple
+    acls:
+      - resource: {type: topic, name: lumen.events, patternType: literal}
+        operations: [Describe, Read]
+      - resource: {type: group, name: lumen-events-consumer, patternType: literal}
+        operations: [Describe, Read]
+      # Messages it cannot read
+      - resource: {type: topic, name: lumen.events.dlq, patternType: literal}
+        operations: [Describe, Write]
+      - resource: {type: cluster}
+        operations: [IdempotentWrite]

@@ -187,3 +187,5 @@ This pattern is an **Event Log** (simplified Outbox), not full Event Sourcing:
 | Production usage | Stripe, GitHub outbox | Kafka, EventStoreDB |
 
 This gives **80% of the value** (audit, observability, metrics) for **20% of the complexity**.
+
+Since issue #44, a trigger also copies each event to an `outbox` table, and a relay publishes it to Kafka: see the [Kafka runbook](runbooks/kafka.md).

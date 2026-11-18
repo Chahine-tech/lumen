@@ -1,0 +1,118 @@
+# promtool unit tests for manifests/kube-prometheus-stack/kafka-rules.yaml
+# Run: make test-alert-rules
+rule_files: [.rules/kafka-rules.yml]
+evaluation_interval: 1m
+tests:
+  # Healthy: nothing fires
+  - interval: 1m
+    input_series:
+      - series: 'kafka_server_replicamanager_underreplicatedpartitions{pod="lumen-combined-0"}'
+        values: '0x60'
+      - series: 'kafka_controller_kafkacontroller_offlinepartitionscount{pod="lumen-combined-0"}'
+        values: '0x60'
+      - series: 'kafka_controller_kafkacontroller_activecontrollercount{pod="lumen-combined-0"}'
+        values: '1x60'
+      - series: 'kafka_controller_kafkacontroller_activecontrollercount{pod="lumen-combined-1"}'
+        values: '0x60'
+      - series: 'kafka_consumergroup_lag{consumergroup="lumen-events-consumer",partition="0"}'
+        values: '5x60'
+      - series: 'lumen_outbox_oldest_age_seconds{pod="relay-0"}'
+        values: '1x60'
+      - series: 'lumen_events_consumed_total{result="dead_lettered"}'
+        values: '0x60'
+    alert_rule_test:
+      - {eval_time: 50m, alertname: KafkaUnderReplicatedPartitions, exp_alerts: []}
+      - {eval_time: 50m, alertname: KafkaOfflinePartitions, exp_alerts: []}
+      - {eval_time: 50m, alertname: KafkaNoActiveController, exp_alerts: []}
+      - {eval_time: 50m, alertname: KafkaMetricsAbsent, exp_alerts: []}
+      - {eval_time: 50m, alertname: KafkaConsumerLagHigh, exp_alerts: []}
+      - {eval_time: 50m, alertname: LumenOutboxEventsDelayed, exp_alerts: []}
+      - {eval_time: 50m, alertname: LumenOutboxRelayAbsent, exp_alerts: []}
+      - {eval_time: 50m, alertname: LumenEventsDeadLettered, exp_alerts: []}
+
+  # Broker lost: under-replicated for long enough, then offline partitions
+  # and no controller
+  - interval: 1m
+    input_series:
+      - series: 'kafka_server_replicamanager_underreplicatedpartitions{pod="lumen-combined-0"}'
+        values: '4x30'
+      - series: 'kafka_controller_kafkacontroller_offlinepartitionscount{pod="lumen-combined-0"}'
+        values: '0x9 3x20'
+      - series: 'kafka_controller_kafkacontroller_activecontrollercount{pod="lumen-combined-0"}'
+        values: '1x9 0x20'
+    alert_rule_test:
+      - {eval_time: 5m, alertname: KafkaUnderReplicatedPartitions, exp_alerts: []}
+      - eval_time: 15m
+        alertname: KafkaUnderReplicatedPartitions
+        exp_alerts:
+          - exp_labels: {severity: warning, service: kafka}
+            exp_annotations:
+              summary: Kafka partitions are under-replicated
+              description: '4 partitions have fewer in-sync replicas than replicas. Check: kubectl get pods -n kafka'
+      - eval_time: 15m
+        alertname: KafkaOfflinePartitions
+        exp_alerts:
+          - exp_labels: {severity: critical, service: kafka}
+            exp_annotations:
+              summary: Kafka partitions have no leader
+              description: '3 partitions can be neither read nor written. Events wait in the outbox. Check: kubectl get pods -n kafka'
+      - eval_time: 15m
+        alertname: KafkaNoActiveController
+        exp_alerts:
+          - exp_labels: {severity: critical, service: kafka}
+            exp_annotations:
+              summary: Kafka does not have exactly one active controller
+              description: '0 active controllers. Without a quorum of the 3 KRaft nodes, Kafka stops. Check: kubectl logs -n kafka -l strimzi.io/pool-name=combined'
+
+  # Nothing scraped
+  - interval: 1m
+    input_series:
+      - series: 'up{job="other"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: KafkaMetricsAbsent
+        exp_alerts:
+          - exp_labels: {severity: warning, service: kafka, alertname: KafkaMetricsAbsent}
+            exp_annotations:
+              summary: No Kafka broker metrics
+              description: Kafka is down, or Prometheus does not scrape it.
+      - eval_time: 15m
+        alertname: LumenOutboxRelayAbsent
+        exp_alerts:
+          - exp_labels: {severity: critical, service: lumen-api, alertname: LumenOutboxRelayAbsent}
+            exp_annotations:
+              summary: No outbox relay is running
+              description: Events accumulate in the outbox until a relay runs.
+
+  # Lag, an old event in the outbox, a dead letter
+  - interval: 1m
+    input_series:
+      - series: 'kafka_consumergroup_lag{consumergroup="lumen-events-consumer",partition="0"}'
+        values: '1500x30'
+      - series: 'lumen_outbox_oldest_age_seconds{pod="relay-0"}'
+        values: '600x30'
+      - series: 'lumen_events_consumed_total{result="dead_lettered"}'
+        values: '0x9 2x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: KafkaConsumerLagHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, service: kafka, consumergroup: lumen-events-consumer}
+            exp_annotations:
+              summary: The event consumer is falling behind
+              description: '1500 messages are waiting. Check: kubectl logs -n kafka -l app=lumen-events-consumer'
+      - eval_time: 15m
+        alertname: LumenOutboxEventsDelayed
+        exp_alerts:
+          - exp_labels: {severity: critical, service: lumen-api}
+            exp_annotations:
+              summary: Events are not reaching Kafka
+              description: 'The oldest event has waited 10m 0s in the outbox. Nothing is lost. Check: kubectl logs -n kafka -l app=lumen-outbox-relay'
+      - eval_time: 12m
+        alertname: LumenEventsDeadLettered
+        exp_alerts:
+          - exp_labels: {severity: warning, service: lumen-api}
+            exp_annotations:
+              summary: The event consumer could not read a message
+              description: Messages went to the topic lumen.events.dlq. See docs/runbooks/kafka.md to read them.

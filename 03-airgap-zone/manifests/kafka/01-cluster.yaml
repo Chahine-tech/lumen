@@ -1,0 +1,109 @@
+# Kafka for the lumen-api events (issue #44): 3 KRaft nodes, each a broker and
+# a controller, one per K3s node. Losing one node keeps the controller quorum
+# (2 of 3) and the writes (min.insync.replicas 2).
+apiVersion: kafka.strimzi.io/v1
+kind: KafkaNodePool
+metadata:
+  name: combined
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: lumen
+spec:
+  replicas: 3
+  roles:
+    - controller
+    - broker
+  storage:
+    type: jbod
+    volumes:
+      - id: 0
+        type: persistent-claim
+        size: 5Gi
+        class: local-path
+        deleteClaim: false
+        kraftMetadata: shared
+  resources:
+    requests:
+      cpu: 200m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  jvmOptions:
+    -Xms: 512m
+    -Xmx: 512m
+  template:
+    pod:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  strimzi.io/pool-name: combined
+
+---
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: lumen
+  namespace: kafka
+spec:
+  kafka:
+    version: 4.3.2
+    image: 192.168.2.2:5000/strimzi/kafka:1.3.1-kafka-4.3.2@sha256:130e4bcc6617a001395bcec068311ed2fe34cc66454e5e85b26119d984b4fd92
+    listeners:
+      # mTLS only. Clients: the pods labelled kafka-client=true, here and in
+      # lumen; each one has a KafkaUser (03-users.yaml)
+      - name: tls
+        port: 9093
+        type: internal
+        tls: true
+        authentication:
+          type: tls
+        networkPolicyPeers:
+          - podSelector:
+              matchLabels:
+                kafka-client: "true"
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: lumen
+            podSelector:
+              matchLabels:
+                kafka-client: "true"
+    authorization:
+      type: simple
+    config:
+      default.replication.factor: 3
+      min.insync.replicas: 2
+      offsets.topic.replication.factor: 3
+      transaction.state.log.replication.factor: 3
+      transaction.state.log.min.isr: 2
+      # A replica that missed writes never becomes leader: no acknowledged
+      # message is dropped to get a partition back
+      unclean.leader.election.enable: false
+      # Topics come from git (02-topics.yaml)
+      auto.create.topics.enable: false
+    metricsConfig:
+      type: jmxPrometheusExporter
+      valueFrom:
+        configMapKeyRef:
+          name: kafka-metrics
+          key: kafka-metrics-config.yml
+  # Consumer lag, for the alerts of kube-prometheus-stack/kafka-rules.yaml
+  kafkaExporter:
+    image: 192.168.2.2:5000/strimzi/kafka:1.3.1-kafka-4.3.2@sha256:130e4bcc6617a001395bcec068311ed2fe34cc66454e5e85b26119d984b4fd92
+    topicRegex: "lumen\\..*"
+    groupRegex: "lumen-.*"
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {cpu: 500m, memory: 128Mi}
+  entityOperator:
+    topicOperator:
+      resources:
+        requests: {cpu: 50m, memory: 256Mi}
+        limits: {cpu: 500m, memory: 256Mi}
+    userOperator:
+      resources:
+        requests: {cpu: 50m, memory: 256Mi}
+        limits: {cpu: 500m, memory: 256Mi}

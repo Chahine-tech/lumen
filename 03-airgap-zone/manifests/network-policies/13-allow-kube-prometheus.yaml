@@ -124,6 +124,8 @@ spec:
         - protocol: TCP
           port: 9187  # CloudNativePG metrics exporter
         - protocol: TCP
+          port: 9404  # Kafka brokers and Kafka Exporter (issue #44)
+        - protocol: TCP
           port: 8200  # Vault (/v1/sys/metrics, issue #4)
         - protocol: TCP
           port: 3000  # Gitea

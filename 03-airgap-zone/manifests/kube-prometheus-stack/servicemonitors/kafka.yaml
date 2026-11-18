@@ -1,0 +1,40 @@
+# Kafka (issue #44): the brokers and the Kafka Exporter, on the port Strimzi
+# names tcp-prometheus, and the outbox relay and event consumer.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kafka
+  namespace: kafka
+  labels:
+    release: kube-prometheus-stack  # Critical: tells Prometheus Operator to discover this PodMonitor
+spec:
+  selector:
+    matchExpressions:
+      - key: strimzi.io/name
+        operator: In
+        values: [lumen-kafka, lumen-kafka-exporter]
+  podMetricsEndpoints:
+    - port: tcp-prometheus
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: lumen-event-workers
+  namespace: kafka
+  labels:
+    release: kube-prometheus-stack  # Critical: tells Prometheus Operator to discover this PodMonitor
+spec:
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [lumen-outbox-relay, lumen-events-consumer]
+  podMetricsEndpoints:
+    - port: admin
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

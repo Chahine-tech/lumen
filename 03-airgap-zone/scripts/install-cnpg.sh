@@ -5,7 +5,7 @@
 # upgrade-cnpg.sh instead (one minor at a time).
 #
 # Prerequisites:
-# - K3s running with node-1 and node-2, Kubernetes 1.34 to 1.36 (CNPG 1.30)
+# - K3s running with node-1, node-2 and node-3, Kubernetes 1.34 to 1.36 (CNPG 1.30)
 # - cert-manager running (Barman Cloud plugin certificates)
 # - Artifacts from scripts/mirror.py pull, images pushed by scripts/mirror.py push
 # - Docker registry running on node-1 at 192.168.2.2:5000

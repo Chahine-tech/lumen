@@ -18,6 +18,15 @@ spec:
         - podSelector:
             matchLabels:
               app: lumen-db-migrate
+        # Outbox relay and event consumer (kafka/05-event-workers.yaml)
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kafka
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [lumen-outbox-relay, lumen-events-consumer]
       ports:
         - protocol: TCP
           port: 5432

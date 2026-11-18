@@ -27,9 +27,14 @@ multipass exec node-1 -- bash -c \
 multipass exec node-2 -- bash -c \
   "mkdir -p ~/.ssh && echo '$(cat ~/.ssh/id_ed25519.pub)' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
 
+# Inject SSH key into node-3
+multipass exec node-3 -- bash -c \
+  "mkdir -p ~/.ssh && echo '$(cat ~/.ssh/id_ed25519.pub)' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+
 # Verify
 ssh ubuntu@192.168.2.2 echo "node-1 OK"
 ssh ubuntu@192.168.2.3 echo "node-2 OK"
+ssh ubuntu@192.168.2.5 echo "node-3 OK"
 ```
 
 > **Note**: If you don't have an `id_ed25519` key, generate one:
@@ -75,7 +80,7 @@ ansible-playbook 04-ansible/start.yml --ask-become-pass
 ```
 
 What it does:
-1. `multipass start backup-1`, then `multipass start node-1 node-2`
+1. `multipass start backup-1`, then `multipass start node-1 node-2 node-3`
 2. Waits for nodes to be Ready
 3. Restores the MetalLB ARP entry (`sudo arp -s 192.168.2.100 <MAC>`)
 4. Asks for the transit Vault to be unsealed if it is sealed, then waits for
@@ -89,7 +94,7 @@ ansible-playbook 04-ansible/stop.yml
 
 What it does:
 1. Drains node-2 (evicts workloads cleanly)
-2. `multipass stop node-2 node-1`
+2. `multipass stop node-3 node-2 node-1`
 
 ---
 
@@ -125,7 +130,7 @@ ansible-playbook 04-ansible/site.yml --skip-tags images --ask-become-pass
 ```
 04-ansible/
 ├── inventory/
-│   └── hosts.yml          # node-1 (192.168.2.2), node-2 (192.168.2.3), localhost
+│   └── hosts.yml          # node-1 (192.168.2.2), node-2 (192.168.2.3), node-3 (192.168.2.5), localhost
 ├── group_vars/
 │   └── all.yml            # all variables (versions, IPs, paths)
 ├── roles/
@@ -154,6 +159,7 @@ ansible-playbook 04-ansible/site.yml --skip-tags images --ask-become-pass
 |----|----|------|-----|-----|------|
 | node-1 | 192.168.2.2 | control-plane + registry | 4 | 6G | 40G |
 | node-2 | 192.168.2.3 | worker | 2 | 4G | 30G |
+| node-3 | 192.168.2.5 | worker | 2 | 4G | 30G |
 
 **MetalLB VIP**: 192.168.2.100 (Traefik LoadBalancer)
 
@@ -173,7 +179,7 @@ holders, offline. `docs/runbooks/vault-auto-unseal.md`.
 
 ## Troubleshooting
 
-### SSH refused to node-1/node-2
+### SSH refused to node-1/node-2/node-3
 
 ```bash
 multipass exec node-1 -- bash -c \

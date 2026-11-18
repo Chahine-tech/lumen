@@ -3,8 +3,8 @@
 #
 # Migrated from the Gatekeeper constraint require-resources
 # (K8sRequiredResources): same kinds (Deployment, StatefulSet, DaemonSet),
-# same namespace (lumen), containers of the Pod template only (init
-# containers were not checked and still are not).
+# in lumen and, since issue #44, kafka, containers of the Pod template only
+# (init containers were not checked and still are not).
 apiVersion: policies.kyverno.io/v1
 kind: ValidatingPolicy
 metadata:
@@ -23,8 +23,8 @@ spec:
         operations: [CREATE, UPDATE]
         resources: [deployments, statefulsets, daemonsets]
   matchConditions:
-    - name: lumen-namespace-only
-      expression: request.namespace == 'lumen'
+    - name: lumen-and-kafka-only
+      expression: request.namespace in ['lumen', 'kafka']
   variables:
     - name: incomplete
       expression: >-

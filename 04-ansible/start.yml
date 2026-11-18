@@ -6,7 +6,7 @@
 #   ansible-playbook 04-ansible/start.yml --ask-become-pass  # if sudo needs password
 #
 # What it does:
-#   1. Start Multipass VMs (backup-1, then node-1, node-2)
+#   1. Start Multipass VMs (backup-1, then node-1, node-2, node-3)
 #   2. Wait for K3s nodes to be Ready
 #   3. Restore ARP entry for MetalLB VIP (lost on reboot)
 #   4. Unseal the transit Vault on backup-1 (asks for it), then wait for the
@@ -22,8 +22,8 @@
       ansible.builtin.command: multipass start backup-1
       changed_when: true
 
-    - name: Start node-1 and node-2
-      ansible.builtin.command: multipass start node-1 node-2
+    - name: Start node-1, node-2 and node-3
+      ansible.builtin.command: multipass start node-1 node-2 node-3
       register: start_result
       changed_when: true
       failed_when: start_result.rc != 0

@@ -1,5 +1,5 @@
 ---
-# Role: k3s — Install K3s on node-1 (control plane) and node-2 (worker)
+# Role: k3s: install K3s on node-1 (control plane), node-2 and node-3 (workers)
 # Prerequisites: registry running on node-1:5000
 
 - name: Check if K3s is installed on node-1
@@ -67,6 +67,32 @@
   when: k3s_check_node2.rc != 0
   changed_when: true
 
+- name: Check if K3s is installed on node-3
+  ansible.builtin.command: multipass exec node-3 -- which k3s
+  register: k3s_check_node3
+  changed_when: false
+  failed_when: false
+
+- name: Copy registries.yaml to node-3
+  ansible.builtin.command: >
+    multipass transfer
+    {{ project_root }}/03-airgap-zone/config/registries.yaml
+    node-3:/tmp/registries.yaml
+  changed_when: true
+
+- name: Install K3s on node-3 (worker)
+  ansible.builtin.command: >
+    multipass exec node-3 -- bash -c "
+      mkdir -p /etc/rancher/k3s &&
+      cp /tmp/registries.yaml /etc/rancher/k3s/registries.yaml &&
+      curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION={{ k3s_version }}
+        K3S_URL=https://{{ node1_ip }}:6443
+        K3S_TOKEN={{ k3s_token.stdout | trim }}
+        sh -
+    "
+  when: k3s_check_node3.rc != 0
+  changed_when: true
+
 - name: Fetch kubeconfig from node-1
   ansible.builtin.command: multipass exec node-1 -- cat /etc/rancher/k3s/k3s.yaml
   register: kubeconfig_raw
@@ -78,12 +104,12 @@
     dest: "{{ ansible_env.HOME }}/.kube/config"
     mode: '0600'
 
-- name: Wait for both nodes to be Ready
+- name: Wait for the three nodes to be Ready
   ansible.builtin.command: kubectl get nodes --no-headers
   register: all_nodes
   until: >
     all_nodes.rc == 0 and
-    all_nodes.stdout_lines | length == 2 and
+    all_nodes.stdout_lines | length == 3 and
     'NotReady' not in all_nodes.stdout
   retries: 20
   delay: 5
@@ -92,6 +118,18 @@
 - name: Show cluster nodes
   ansible.builtin.debug:
     msg: "{{ all_nodes.stdout_lines }}"
+
+# K3s deploys one CoreDNS replica. When its node is lost, the cluster has no
+# DNS until the pod moves, and Kafka loses its writes or its clients (issue
+# #44). The K3s manifest sets no replica count, so this survives a restart
+# of K3s; its topology spread puts one replica on each node.
+- name: Run one CoreDNS replica per node
+  ansible.builtin.command: kubectl -n kube-system scale deployment coredns --replicas=3
+  changed_when: true
+
+- name: Wait for the CoreDNS replicas
+  ansible.builtin.command: kubectl -n kube-system rollout status deployment coredns --timeout=180s
+  changed_when: false
 
 # Falco requires enough inotify instances on node-1 (control-plane hosts many pods).
 # Default fs.inotify.max_user_instances=128 is exhausted → "could not initialize inotify handler"
@@ -106,6 +144,14 @@
 - name: Set inotify limits for Falco on node-2
   ansible.builtin.command: >
     multipass exec node-2 -- bash -c "
+      sysctl -w fs.inotify.max_user_instances=512 &&
+      echo 'fs.inotify.max_user_instances=512' | tee /etc/sysctl.d/99-falco.conf
+    "
+  changed_when: true
+
+- name: Set inotify limits for Falco on node-3
+  ansible.builtin.command: >
+    multipass exec node-3 -- bash -c "
       sysctl -w fs.inotify.max_user_instances=512 &&
       echo 'fs.inotify.max_user_instances=512' | tee /etc/sysctl.d/99-falco.conf
     "

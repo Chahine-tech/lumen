@@ -69,6 +69,14 @@ path "lumen/data/db" {
 }
 POLICY
 
+# kafka-workers policy: VSO reads the runtime credentials for the outbox
+# relay and the event consumer (manifests/vso/07-kafka-workers-secret.yaml)
+vault policy write kafka-workers-policy - <<'POLICY'
+path "lumen/data/db-runtime" {
+  capabilities = ["read"]
+}
+POLICY
+
 # cert-manager policy: issue PKI certs
 vault policy write cert-manager-policy - <<'POLICY'
 path "pki/sign/airgap-role" {
@@ -136,6 +144,14 @@ vault write auth/kubernetes/role/lumen-api \
   bound_service_account_namespaces=lumen \
   audience=vault \
   policies=lumen-api-policy \
+  ttl=15m
+
+# Role for VSO syncing the PostgreSQL runtime credentials in kafka (issue #44)
+vault write auth/kubernetes/role/kafka-workers \
+  bound_service_account_names=kafka-workers-vso \
+  bound_service_account_namespaces=kafka \
+  audience=vault \
+  policies=kafka-workers-policy \
   ttl=15m
 
 # Role for cert-manager (cert-manager-vault-auth SA in cert-manager

@@ -183,6 +183,12 @@ images:
   - source: docker.io/bitnami/kubectl:latest
     digest: sha256:5dfadca7688cf2372f78cd4121297a9896eebb4ed2f6eb339350a2ac9ebee941
 
+  # Kafka (strimzi-helm, kafka/01-cluster.yaml)
+  - source: quay.io/strimzi/operator:1.3.1
+    digest: sha256:5aed9adc04f65a99948818791cf97c67dc26607b828727ba32abd644d271959b
+  - source: quay.io/strimzi/kafka:1.3.1-kafka-4.3.2
+    digest: sha256:130e4bcc6617a001395bcec068311ed2fe34cc66454e5e85b26119d984b4fd92
+
   # Vault and the Vault Secrets Operator
   - source: docker.io/hashicorp/vault:1.19.0
     digest: sha256:c53c28cbb630af36f5e56812691fd4e6d5a3ccdf3bccf9aa4cce3f1c4ec26be2
