@@ -89,6 +89,13 @@
   roles:
     - garage
 
+- name: "[9c/11] Start ntfy on backup-1 (alert notifications, dead man's switch)"
+  hosts: localhost
+  gather_facts: false
+  tags: [ntfy, alerting]
+  roles:
+    - ntfy
+
 - name: "[10/11] Configure DNS + CA trust"
   hosts: localhost
   gather_facts: false

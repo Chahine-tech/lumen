@@ -13,6 +13,87 @@ alertmanager:
       repository: prometheus/alertmanager
       tag: v0.28.0
       sha: "cc07615932f01351d66e6220545905362ed64002bce81365e590e68e69719847"
+    # Two replicas: a notification still leaves when one is down, and they
+    # deduplicate over gossip. Silences and the notification log are on disk
+    replicas: 2
+    podAntiAffinity: soft
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 1Gi
+    # Mounted in /etc/alertmanager/secrets/<name>:
+    #   alertmanager-ntfy  publish token (Vault lumen/alertmanager-ntfy, VSO)
+    #   vault-ca           root of the infrastructure CA, which signs ntfy
+    secrets:
+      - alertmanager-ntfy
+      - vault-ca
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  # docs/runbooks/alerting.md (issue #23)
+  config:
+    global:
+      resolve_timeout: 5m
+    inhibit_rules:
+      # A critical alert hides the warning of the same alert
+      - source_matchers: [severity = critical]
+        target_matchers: [severity = warning]
+        equal: [alertname, namespace, service]
+      # Partitions without a leader explain the under-replicated ones
+      - source_matchers: [alertname = KafkaOfflinePartitions]
+        target_matchers: [alertname = KafkaUnderReplicatedPartitions]
+      # The chart's own rule: info alerts stay silent while InfoInhibitor fires
+      - source_matchers: [alertname = InfoInhibitor]
+        target_matchers: [severity = info]
+        equal: [namespace]
+    route:
+      receiver: ntfy-warning
+      group_by: [alertname, namespace, service]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      routes:
+        # Always firing: backup-1 raises the alarm when it stops arriving
+        - matchers: [alertname = Watchdog]
+          receiver: ntfy-watchdog
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 1m
+        - matchers: [alertname = InfoInhibitor]
+          receiver: "null"
+        - matchers: [severity = critical]
+          receiver: ntfy-critical
+          group_wait: 10s
+          repeat_interval: 1h
+        - matchers: [severity = info]
+          receiver: "null"
+    receivers:
+      - name: "null"
+      - name: ntfy-critical
+        webhook_configs:
+          - &ntfy
+            url: https://192.168.2.4:2586/lumen-alerts?template=alertmanager&priority=5&tags=rotating_light
+            send_resolved: true
+            max_alerts: 10
+            http_config:
+              authorization:
+                type: Bearer
+                credentials_file: /etc/alertmanager/secrets/alertmanager-ntfy/token
+              tls_config:
+                ca_file: /etc/alertmanager/secrets/vault-ca/ca.crt
+      - name: ntfy-warning
+        webhook_configs:
+          - <<: *ntfy
+            url: https://192.168.2.4:2586/lumen-alerts?template=alertmanager&priority=3&tags=warning
+      - name: ntfy-watchdog
+        webhook_configs:
+          - <<: *ntfy
+            url: https://192.168.2.4:2586/lumen-watchdog?priority=1
+            send_resolved: false
 
 # Grafana
 grafana:

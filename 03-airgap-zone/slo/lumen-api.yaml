@@ -37,6 +37,7 @@ spec:
         labels:
           service: lumen-api
         annotations:
+          runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#lumen-api-slo-alerts
           summary: lumen-api is burning its availability error budget too fast
         pageAlert:
           labels:
@@ -61,6 +62,7 @@ spec:
         labels:
           service: lumen-api
         annotations:
+          runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#lumen-api-slo-alerts
           summary: lumen-api is burning its latency error budget too fast
         pageAlert:
           labels:

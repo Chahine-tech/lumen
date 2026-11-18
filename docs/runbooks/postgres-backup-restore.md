@@ -268,8 +268,7 @@ cluster yet.
 | `CNPGWALArchivingFailing` | the last WAL archive attempt failed and none succeeded since |
 
 Unit tests: `make test-alert-rules` (promtool, `03-airgap-zone/tests/prometheus/`).
-No Alertmanager receiver exists yet (issue #23): the alerts are only visible in
-the Prometheus and Alertmanager UIs.
+Notifications: [alerting](alerting.md).
 
 The CNPG Grafana dashboard already reads the plugin metrics
 (`barman_cloud_cloudnative_pg_io_*`) in its backup panels.

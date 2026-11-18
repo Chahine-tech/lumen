@@ -229,6 +229,13 @@ images:
     archive: vault/images/vault-1.19.0.tar
     used_by: 04-ansible/roles/vault_transit/tasks/main.yml
 
+  # ntfy on backup-1 (Ansible role ntfy, docker load): alert notifications
+  # and the dead man's switch (issue #23)
+  - source: docker.io/binwiederhier/ntfy:v2.38.1
+    digest: sha256:afcd8f753a1389664802b714064ab014d0d19f4f2e17b0b52ec7e8bd72fce70c
+    archive: ntfy/images/ntfy-2.38.1.tar
+    used_by: 04-ansible/roles/ntfy/tasks/main.yml
+
   # Garage on backup-1 (Ansible role garage, docker load)
   - source: docker.io/dxflrs/garage:v2.5.0
     digest: sha256:32b5de84cf9e3ae9c0b4d0f02566c442029e62203a4ed1bca9cdf2327fc19388

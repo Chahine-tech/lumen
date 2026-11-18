@@ -115,7 +115,7 @@ Vault serves `/v1/sys/metrics` without a token
 (`unauthenticated_metrics_access`), to whoever reaches 8200. The
 ServiceMonitor scrapes the active pod over TLS. It sets `serverName` to
 the Service name, because the certificate does not name the pod addresses
-Prometheus connects to. No receiver is configured yet (#23).
+Prometheus connects to. Notifications: [alerting](alerting.md).
 
 ## Tested
 

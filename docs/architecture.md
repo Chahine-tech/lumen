@@ -623,7 +623,8 @@ Each component in its own namespace with strict NetworkPolicies.
   │
   └── backup-1 (192.168.2.4): outside the K3s cluster
       ├── Garage (S3): PostgreSQL backups, Vault snapshots
-      └── Transit Vault: unseals the cluster's Vault
+      ├── Transit Vault: unseals the cluster's Vault
+      └── ntfy: alert notifications, dead man's switch
       Resources: 1 vCPU / 1GB RAM
 
   Network: 192.168.2.0/24 (Multipass bridge)
@@ -833,11 +834,11 @@ VM provisioning and cluster configuration are fully automated. Two tools, two di
   ├── multipass_instance.node2, node3
   │   cpus=2, memory=4G, disk=30G
   └── multipass_instance.backup
-      cpus=1, memory=1G, disk=30G          roles (12):
+      cpus=1, memory=1G, disk=30G          roles (13):
                                             ├── multipass   registry   images
   cloud-init (injected at creation):        ├── k3s         metallb    garage
   ├── SSH public key → authorized_keys      ├── argocd      gitea      vault
-  ├── eth1 static IP via netplan            ├── vault_transit
+  ├── eth1 static IP via netplan            ├── vault_transit   ntfy
                                             ├── dns         verify
   ├── Docker install (node-1 only)
   └── sysctl: inotify=8192 (Falco)

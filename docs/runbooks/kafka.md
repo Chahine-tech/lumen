@@ -126,7 +126,7 @@ others.
 | `LumenOutboxRelayAbsent` (critical) | no relay metric for 10 minutes |
 | `LumenEventsDeadLettered` | a message reached the dead letter topic |
 
-No receiver is configured yet (#23).
+Notifications: [alerting](alerting.md).
 
 ## Tested
 

@@ -36,6 +36,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: critical, service: vault}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/vault-audit-snapshots.md#alerts
               summary: Vault failed to write audit log entries
               description: '1 audit entries failed in 5 minutes. Requests that cannot be logged are refused. Check: kubectl logs -n vault -l component=server'
       - {eval_time: 25m, alertname: VaultAuditLogFailure, exp_alerts: []}
@@ -54,6 +55,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, service: vault}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/vault-audit-snapshots.md#alerts
               summary: No successful Vault snapshot for more than 26 hours
               description: 'Last successful run 1d 2h 20m 0s ago. Check: kubectl get jobs -n vault -l app=vault-raft-snapshot'
 
@@ -69,6 +71,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, service: vault}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/vault-audit-snapshots.md#alerts
               summary: No Vault metrics
               description: 'Prometheus has no vault_core_unsealed: Vault is down or sealed, or the scrape is broken (ServiceMonitor vault, NetworkPolicy, certificate).'
       - {eval_time: 25h, alertname: VaultRaftSnapshotNeverSucceeded, exp_alerts: []}
@@ -77,5 +80,6 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, service: vault, namespace: vault, cronjob: vault-raft-snapshot}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/vault-audit-snapshots.md#alerts
               summary: The Vault snapshot CronJob has no successful run
               description: 'No kube_cronjob_status_last_successful_time for vault-raft-snapshot after 26 hours: it never succeeded, or kube-state-metrics is not scraped.'

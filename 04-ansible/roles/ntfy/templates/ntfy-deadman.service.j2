@@ -1,0 +1,7 @@
+[Unit]
+Description=Dead man's switch of the lumen cluster
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ntfy-deadman.sh

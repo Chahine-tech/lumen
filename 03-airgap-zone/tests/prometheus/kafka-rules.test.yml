@@ -47,6 +47,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, service: kafka}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
               summary: Kafka partitions are under-replicated
               description: '4 partitions have fewer in-sync replicas than replicas. Check: kubectl get pods -n kafka'
       - eval_time: 15m
@@ -54,6 +55,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: critical, service: kafka}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
               summary: Kafka partitions have no leader
               description: '3 partitions can be neither read nor written. Events wait in the outbox. Check: kubectl get pods -n kafka'
       - eval_time: 15m
@@ -61,6 +63,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: critical, service: kafka}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
               summary: Kafka does not have exactly one active controller
               description: '0 active controllers. Without a quorum of the 3 KRaft nodes, Kafka stops. Check: kubectl logs -n kafka -l strimzi.io/pool-name=combined'
 
@@ -75,6 +78,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, service: kafka, alertname: KafkaMetricsAbsent}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
               summary: No Kafka broker metrics
               description: Kafka is down, or Prometheus does not scrape it.
       - eval_time: 15m
@@ -82,6 +86,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: critical, service: lumen-api, alertname: LumenOutboxRelayAbsent}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
               summary: No outbox relay is running
               description: Events accumulate in the outbox until a relay runs.
 
@@ -100,6 +105,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, service: kafka, consumergroup: lumen-events-consumer}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
               summary: The event consumer is falling behind
               description: '1500 messages are waiting. Check: kubectl logs -n kafka -l app=lumen-events-consumer'
       - eval_time: 15m
@@ -107,6 +113,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: critical, service: lumen-api}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
               summary: Events are not reaching Kafka
               description: 'The oldest event has waited 10m 0s in the outbox. Nothing is lost. Check: kubectl logs -n kafka -l app=lumen-outbox-relay'
       - eval_time: 12m
@@ -114,5 +121,6 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, service: lumen-api}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/kafka.md#alerts
               summary: The event consumer could not read a message
               description: Messages went to the topic lumen.events.dlq. See docs/runbooks/kafka.md to read them.

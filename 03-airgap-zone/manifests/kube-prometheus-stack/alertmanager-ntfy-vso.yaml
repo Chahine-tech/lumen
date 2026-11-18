@@ -1,0 +1,44 @@
+# The token Alertmanager publishes to ntfy with (issue #23), synced from Vault
+# KV lumen/alertmanager-ntfy by VSO. Seeded by
+# 03-airgap-zone/scripts/seed-ntfy-token.sh. docs/runbooks/alerting.md
+
+---
+# VSO requests its tokens (audience vault); no pod runs as it (issue #6)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: alertmanager-ntfy-vso
+  namespace: monitoring
+automountServiceAccountToken: false
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: alertmanager-ntfy-vault-auth
+  namespace: monitoring
+spec:
+  vaultConnectionRef: vault-connection
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: alertmanager-ntfy
+    serviceAccount: alertmanager-ntfy-vso
+    audiences:
+      - vault
+
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: alertmanager-ntfy
+  namespace: monitoring
+spec:
+  vaultAuthRef: alertmanager-ntfy-vault-auth
+  type: kv-v2
+  mount: lumen
+  path: alertmanager-ntfy
+  destination:
+    name: alertmanager-ntfy   # alertmanager.alertmanagerSpec.secrets
+    create: true
+  refreshAfter: 1h

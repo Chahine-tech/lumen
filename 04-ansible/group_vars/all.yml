@@ -55,6 +55,19 @@ vault_transit_port: 8200
 infra_ca_dir: "{{ lookup('env', 'HOME') }}/.lumen-pki"
 
 # ──────────────────────────────────────────────────────────────────────────────
+# ntfy on backup-1: where Alertmanager sends its notifications (issue #23).
+# Outside the cluster, so that it can raise the alarm when the cluster is gone
+# ──────────────────────────────────────────────────────────────────────────────
+ntfy_version: "2.38.1"
+ntfy_image: "binwiederhier/ntfy:v{{ ntfy_version }}"
+ntfy_container: "ntfy"
+ntfy_port: 2586
+ntfy_alerts_topic: "lumen-alerts"
+ntfy_watchdog_topic: "lumen-watchdog"
+# The dead man's switch fires after this long without a Watchdog notification
+ntfy_watchdog_max_silence: "5m"
+
+# ──────────────────────────────────────────────────────────────────────────────
 # MetalLB
 # ──────────────────────────────────────────────────────────────────────────────
 metallb_vip: "192.168.2.100"

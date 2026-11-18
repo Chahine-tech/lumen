@@ -28,6 +28,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, service: lumen-db, namespace: lumen}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/postgres-backup-restore.md
               summary: lumen-db has no successful base backup for more than 26 hours
               description: 'Last available base backup is 1d 4h 0m 0s old. Check: kubectl get backup -n lumen --sort-by=.metadata.creationTimestamp'
   # Failure newer than last success
@@ -43,6 +44,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, service: lumen-db, namespace: lumen}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/postgres-backup-restore.md
               summary: The most recent base backup of lumen-db failed
               description: 'Check: kubectl get backup -n lumen and the plugin-barman-cloud container logs of the instance that ran it.'
   # No metric at all for 2h
@@ -56,6 +58,7 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, service: lumen-db, namespace: lumen}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/postgres-backup-restore.md
               summary: No backup metrics for lumen-db
               description: Prometheus has no barman_cloud_cloudnative_pg_io_last_available_backup_timestamp for namespace lumen. Either no backup exists or the plugin/scrape is broken.
   # WAL archiving: never failed (-1) vs failing after a success
@@ -72,5 +75,6 @@ tests:
         exp_alerts:
           - exp_labels: {severity: critical, service: lumen-db, namespace: lumen, pod: lumen-db-1}
             exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/postgres-backup-restore.md
               summary: WAL archiving is failing on lumen-db-1
               description: The last WAL archive attempt failed and none succeeded since. Point in time recovery stops at the last archived segment, and pg_wal grows on the primary until the volume is full.

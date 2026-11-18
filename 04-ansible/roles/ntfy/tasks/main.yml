@@ -1,0 +1,108 @@
+---
+# Role: ntfy: where Alertmanager sends its notifications, on backup-1, outside
+# the cluster, with the dead man's switch of the alerting chain (issue #23,
+# docs/runbooks/alerting.md)
+#
+# Prerequisites:
+#   - backup-1 created by Terraform (05-terraform, cloud-init installs Docker)
+#   - Image tar from scripts/mirror.py pull in 01-connected-zone/artifacts/ntfy/
+#   - Its certificate, from the infrastructure CA:
+#       03-airgap-zone/scripts/infra-ca.sh server {{ infra_ca_dir }} ntfy \
+#         IP:{{ backup_ip }} DNS:ntfy.airgap.local
+#
+# Then, once: 03-airgap-zone/scripts/seed-ntfy-token.sh
+
+- name: Check that backup-1 is running
+  ansible.builtin.command: multipass info {{ backup_vm_name }}
+  register: ntfy_vm
+  changed_when: false
+  failed_when: ntfy_vm.rc != 0 or 'Running' not in ntfy_vm.stdout
+
+- name: Check the ntfy certificate
+  ansible.builtin.stat:
+    path: "{{ infra_ca_dir }}/ntfy.{{ item }}"
+  loop: [crt, key]
+  register: ntfy_cert
+
+- name: Fail without the certificate
+  ansible.builtin.fail:
+    msg: |
+      {{ infra_ca_dir }}/ntfy.crt or .key missing. Create them:
+        03-airgap-zone/scripts/infra-ca.sh server {{ infra_ca_dir }} ntfy IP:{{ backup_ip }} DNS:ntfy.airgap.local
+  when: ntfy_cert.results | rejectattr('stat.exists') | list | length > 0
+
+- name: Check if the ntfy image is loaded on backup-1
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo docker image inspect {{ ntfy_image }}
+  register: ntfy_image_check
+  changed_when: false
+  failed_when: false
+
+- name: Transfer the ntfy image tar to backup-1
+  ansible.builtin.command: >
+    multipass transfer
+    {{ project_root }}/01-connected-zone/artifacts/ntfy/images/ntfy-{{ ntfy_version }}.tar
+    {{ backup_vm_name }}:/tmp/ntfy.tar
+  when: ntfy_image_check.rc != 0
+  changed_when: true
+
+- name: Load the ntfy image
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- bash -c
+    "sudo docker load -i /tmp/ntfy.tar && rm /tmp/ntfy.tar"
+  when: ntfy_image_check.rc != 0
+  changed_when: true
+
+- name: Render the scripts and the systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/tmp/{{ item }}"
+    mode: "0600"
+  loop:
+    - run-ntfy.sh
+    - ntfy-deadman.sh
+    - ntfy-deadman.service
+    - ntfy-deadman.timer
+
+# The key goes through /tmp on both sides for the copy only
+- name: Install the certificate, the scripts and the units on backup-1
+  ansible.builtin.shell: >
+    set -e;
+    multipass transfer {{ infra_ca_dir }}/ntfy.crt {{ infra_ca_dir }}/ntfy.key {{ infra_ca_dir }}/root.crt
+    /tmp/run-ntfy.sh /tmp/ntfy-deadman.sh /tmp/ntfy-deadman.service /tmp/ntfy-deadman.timer
+    {{ backup_vm_name }}:/tmp/ &&
+    multipass exec {{ backup_vm_name }} -- sudo bash -c
+    "install -d -m 0700 /etc/ntfy /var/lib/ntfy &&
+    install -m 0644 /tmp/ntfy.crt /etc/ntfy/tls.crt &&
+    install -m 0600 /tmp/ntfy.key /etc/ntfy/tls.key &&
+    install -m 0644 /tmp/root.crt /etc/ntfy/ca.crt &&
+    install -m 0700 /tmp/ntfy-deadman.sh /usr/local/bin/ntfy-deadman.sh &&
+    install -m 0644 /tmp/ntfy-deadman.service /tmp/ntfy-deadman.timer /etc/systemd/system/ &&
+    rm -f /tmp/ntfy.crt /tmp/ntfy.key /tmp/root.crt /tmp/ntfy-deadman.sh /tmp/ntfy-deadman.service /tmp/ntfy-deadman.timer"
+  changed_when: true
+
+- name: (Re)create the ntfy container
+  ansible.builtin.command: multipass exec {{ backup_vm_name }} -- sudo bash /tmp/run-ntfy.sh
+  changed_when: true
+
+- name: Enable the dead man's switch
+  ansible.builtin.command: >
+    multipass exec {{ backup_vm_name }} -- sudo bash -c
+    "systemctl daemon-reload && systemctl enable --now ntfy-deadman.timer"
+  changed_when: true
+
+- name: Remove the local copies
+  ansible.builtin.file:
+    path: "/tmp/{{ item }}"
+    state: absent
+  loop:
+    - run-ntfy.sh
+    - ntfy-deadman.sh
+    - ntfy-deadman.service
+    - ntfy-deadman.timer
+
+- name: Next step
+  ansible.builtin.debug:
+    msg: >-
+      ntfy on https://{{ backup_ip }}:{{ ntfy_port }}. Once:
+      03-airgap-zone/scripts/seed-ntfy-token.sh (docs/runbooks/alerting.md)

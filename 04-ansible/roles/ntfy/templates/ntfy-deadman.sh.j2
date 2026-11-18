@@ -1,0 +1,43 @@
+#!/bin/bash
+# Dead man's switch of the lumen cluster (issue #23). Managed by Ansible.
+#
+# Alertmanager publishes the always-firing Watchdog alert every minute. When
+# nothing arrives for {{ ntfy_watchdog_max_silence }}, the alerting chain is broken (cluster down,
+# Prometheus or Alertmanager stopped): raise the alarm from here, outside the
+# cluster. Silent until a first Watchdog has arrived, so that a backup-1 that
+# starts before the cluster raises nothing.
+set -uo pipefail
+
+. /etc/ntfy/secrets.env
+base=https://{{ backup_ip }}:{{ ntfy_port }}
+state=/var/lib/ntfy-deadman
+alarm_every=3600
+
+api() { curl -fsS --max-time 20 --cacert /etc/ntfy/ca.crt -H "Authorization: Bearer $DEADMAN_TOKEN" "$@"; }
+notify() { # TITLE PRIORITY TAGS MESSAGE
+  api -H "Title: $1" -H "Priority: $2" -H "Tags: $3" -d "$4" "$base/{{ ntfy_alerts_topic }}" > /dev/null
+}
+
+mkdir -p "$state"
+if ! heartbeats=$(api "$base/{{ ntfy_watchdog_topic }}/json?poll=1&since={{ ntfy_watchdog_max_silence }}"); then
+  echo "ntfy does not answer" >&2
+  exit 1
+fi
+
+if [ -n "$heartbeats" ]; then
+  touch "$state/seen"
+  if [ -f "$state/alarm" ]; then
+    notify "Lumen alerting is back" 3 white_check_mark "The Watchdog alert arrives again."
+    rm -f "$state/alarm"
+  fi
+  exit 0
+fi
+
+[ -f "$state/seen" ] || exit 0
+now=$(date +%s)
+last=$(stat -c %Y "$state/alarm" 2>/dev/null || echo 0)
+if [ $((now - last)) -ge "$alarm_every" ]; then
+  notify "Lumen alerting is down" 5 skull \
+    "No Watchdog alert for {{ ntfy_watchdog_max_silence }}: the cluster, Prometheus or Alertmanager is down, and no alert can reach you."
+  touch "$state/alarm"
+fi

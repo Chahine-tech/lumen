@@ -346,6 +346,22 @@ kubectl exec -n lumen lumen-db-1 -c postgres -- psql -U postgres -d app -tAc "SE
 The two new Applications come with auto-sync on: patch them as in step 2 if
 step 8 is not reached right away.
 
+## 7c. Alert notifications
+
+[alerting](alerting.md). The `alertmanager-ntfy` Secret must exist before the
+Alertmanager pods restart with the new chart.
+
+```bash
+03-airgap-zone/scripts/infra-ca.sh server ~/.lumen-pki ntfy IP:192.168.2.4 DNS:ntfy.airgap.local
+ansible-playbook 04-ansible/site.yml --tags ntfy
+03-airgap-zone/scripts/seed-ntfy-token.sh
+sync lumen-network-policies
+sync lumen-monitoring-config
+kubectl get secret -n monitoring alertmanager-ntfy
+sync kube-prometheus-stack
+kubectl get pods -n monitoring -l app.kubernetes.io/name=alertmanager   # 2 pods, 2/2
+```
+
 ## 8. The rest, then auto-sync back
 
 ```bash
@@ -406,6 +422,7 @@ with `"revision":"<commit>"` in `operation.sync`.
 - lumen-api v1.7.0 as a whole against the former Redis (step 6). The
   client against unauthenticated Sentinels was measured, the release was
   not.
+- Step 7c on lumen ([alerting, Tested](alerting.md#tested)).
 - `node-3` joining a running cluster, and step 7b as a whole
   ([kafka, Tested](kafka.md#tested)).
 - The source address of the Vault pods' traffic as seen by backup-1: if
