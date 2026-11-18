@@ -118,6 +118,25 @@ kubectl get pods -n lumen
 A bad release: `kubectl argo rollouts abort lumen-api -n lumen`, then
 [release-v1.7.0, Rollback](release-v1.7.0.md#rollback).
 
+## Vault availability
+
+| Alert | Means | Do |
+|---|---|---|
+| `VaultPodNotReady` | a pod is sealed or not ready for 2 minutes | `kubectl exec -n vault <pod> -- vault status`. A pod that stays sealed usually cannot reach the transit Vault: [vault-auto-unseal](vault-auto-unseal.md#day-to-day) |
+| `VaultRaftFailureToleranceLost` | Raft cannot lose another node | bring the missing pod back first: `vault operator raft list-peers` |
+| `VaultQuorumLost` | fewer than 2 pods are ready: Vault serves nothing | check `backup-1` and the transit Vault, then the pods |
+
+## PostgreSQL availability
+
+| Alert | Means | Do |
+|---|---|---|
+| `PostgresInstanceNotReady` | an instance is not ready for 2 minutes | `kubectl describe pod -n lumen <pod>` |
+| `PostgresReplicaMissing` | the primary streams to fewer than 2 replicas | `kubectl get cluster lumen-db -n lumen`, then the logs of the missing instance |
+| `PostgresNoPrimary` | no instance, or several, accept writes | `kubectl get pods -n lumen -L cnpg.io/instanceRole`, then the logs of `cnpg-controller-manager` in `cnpg-system` |
+| `PostgresFailover` | an instance changed role in the last 10 minutes | find out why the former primary stopped |
+| `PostgresReplicationLagHigh` | a replica is more than 5 minutes behind for 5 minutes | check its disk and network |
+| `PostgresConnectionsHigh` | above 80% of `max_connections` for 5 minutes | `SELECT usename, state, count(*) FROM pg_stat_activity GROUP BY 1, 2` |
+
 ## Tested
 
 On 18 November 2026, on k3d (K3s v1.33.6, 3 nodes), with the chart and values of
@@ -139,6 +158,19 @@ certificate from `infra-ca.sh server`.
 | Prometheus stopped | `Lumen alerting is down` from `backup-1` | |
 | Prometheus back | `Lumen alerting is back` | |
 
+`tests/alerting/platform-failures-test.sh`, on 18 November 2026, on k3d with a 3-node Vault (Raft, Shamir, no TLS), CloudNativePG 1.30.1 and PostgreSQL 16.6:
+
+| Real failure | Alerts that fired |
+|---|---|
+| One Vault pod sealed | `VaultPodNotReady`, `VaultRaftFailureToleranceLost`, and not `VaultQuorumLost` |
+| Two Vault pods sealed | `VaultQuorumLost` |
+| One PostgreSQL replica fenced | `PostgresInstanceNotReady`, `PostgresReplicaMissing` |
+| 85 connections held open | `PostgresConnectionsHigh` |
+| Primary deleted | `PostgresFailover` |
+| Platform healthy, before and after | none of them |
+
+`PostgresNoPrimary` and `PostgresReplicationLagHigh` are covered by promtool tests only.
+
 Access to ntfy, by hand: anonymous requests, a wrong token, a topic outside an
 identity's rights and plain HTTP are refused; each identity reaches its own.
 
@@ -150,6 +182,7 @@ Not tested:
 - the lumen cluster, `backup-1`, the Ansible role and `seed-ntfy-token.sh`;
 - VSO and Vault for the token: the Secret was created by hand;
 - a real error budget burn: the test alerts come from test rules;
+- the Vault and PostgreSQL alerts with the TLS and transit auto-unseal of lumen: there, a restarted pod unseals itself;
 - the switch staying silent until a first Watchdog has arrived;
 - the memory of `backup-1` (1 GB) with Garage, the transit Vault and ntfy.
 

@@ -1,0 +1,95 @@
+# Alerts on the availability of PostgreSQL, the lumen-db cluster (issue #25)
+# docs/runbooks/alerting.md
+#
+#   cnpg_*                 CNPG exporter, PodMonitor cnpg-lumen-db
+#   kube_pod_status_ready  kube-state-metrics
+#
+# The backups have their own alerts: cnpg-backup-rules.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: postgres
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack  # required by the Prometheus Operator ruleSelector
+spec:
+  groups:
+    - name: postgres
+      rules:
+        - alert: PostgresInstanceNotReady
+          expr: kube_pod_status_ready{namespace="lumen",condition="true",pod=~"lumen-db-[0-9]+"} == 0
+          for: 2m
+          labels:
+            severity: warning
+            service: lumen-db
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#postgresql-availability
+            summary: A PostgreSQL instance is not ready
+            description: >-
+              {{ $labels.pod }} is not ready. Check: kubectl get cluster lumen-db -n lumen
+
+        # The primary reports its streaming replicas, the others report 0
+        - alert: PostgresReplicaMissing
+          expr: max(cnpg_pg_replication_streaming_replicas{namespace="lumen"}) < 2
+          for: 2m
+          labels:
+            severity: warning
+            service: lumen-db
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#postgresql-availability
+            summary: PostgreSQL has fewer than 2 streaming replicas
+            description: >-
+              The primary streams to {{ $value }} replicas out of 2.
+              Check: kubectl get cluster lumen-db -n lumen
+
+        - alert: PostgresNoPrimary
+          expr: (count(cnpg_pg_replication_in_recovery{namespace="lumen"} == 0) or vector(0)) != 1
+          for: 1m
+          labels:
+            severity: critical
+            service: lumen-db
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#postgresql-availability
+            summary: PostgreSQL does not have exactly one primary
+            description: >-
+              {{ $value }} instances accept writes.
+              Check: kubectl get pods -n lumen -L cnpg.io/instanceRole
+
+        # An instance that leaves recovery was promoted
+        - alert: PostgresFailover
+          expr: sum(changes(cnpg_pg_replication_in_recovery{namespace="lumen"}[10m])) > 0
+          labels:
+            severity: warning
+            service: lumen-db
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#postgresql-availability
+            summary: The PostgreSQL primary changed
+            description: >-
+              An instance changed role in the last 10 minutes.
+              Check: kubectl get events -n lumen --field-selector involvedObject.name=lumen-db
+
+        - alert: PostgresReplicationLagHigh
+          expr: max(cnpg_pg_replication_lag{namespace="lumen"}) > 300
+          for: 5m
+          labels:
+            severity: warning
+            service: lumen-db
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#postgresql-availability
+            summary: A PostgreSQL replica is behind
+            description: >-
+              A replica is {{ $value | humanizeDuration }} behind the primary.
+
+        - alert: PostgresConnectionsHigh
+          expr: |
+            sum by (namespace, pod) (cnpg_backends_total{namespace="lumen"})
+              / on (namespace, pod) cnpg_pg_settings_setting{namespace="lumen",name="max_connections"} > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            service: lumen-db
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#postgresql-availability
+            summary: PostgreSQL is close to max_connections
+            description: >-
+              {{ $labels.pod }} uses {{ $value | humanizePercentage }} of its connections.
