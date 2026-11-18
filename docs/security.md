@@ -9,7 +9,7 @@ This document covers the complete security implementation in the Lumen airgap Ku
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Layer 1: Kyverno admission policies](#layer-1-kyverno-admission-policies)
-- [Layer 2: Pod Security Standards](#layer-2-pod-security-standards)
+- [Layer 2: Pod Security Standards](#layer-2-pod-security-standards-pss)
 - [Layer 3: NetworkPolicies](#layer-3-networkpolicies)
 - [Layer 4: Falco Runtime Security](#layer-4-falco-runtime-security)
 - [How Layers Work Together](#how-layers-work-together)

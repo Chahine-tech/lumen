@@ -19,7 +19,7 @@ lumen namespace
   and a pod that starts asks the Sentinels which one it is (issue #8)
 - lumen-api connects via `go-redis/v9` `NewFailoverClient`, with the
   password for the Sentinels too
-- Details, tests and limits (3 pods on 2 nodes): [runbooks/redis.md](runbooks/redis.md)
+- Details, tests and limits: [runbooks/redis.md](runbooks/redis.md)
 
 ### Connection (lumen-api)
 
@@ -80,6 +80,10 @@ master fails → replica + witness vote → replica promoted → downtime < 30s
 **Why 1 witness instead of 3 full replicas?**
 
 With only 2 nodes (master + replica), if the master becomes unreachable, the replica can't know if it's truly dead or just partitioned — risk of split-brain (both claim to be master → data corruption). The witness is a lightweight 3rd voter (~50MB RAM, no data) that breaks the tie safely.
+
+### Outbox
+
+Migration 3 adds the tables of the event stream to the `app` database: `outbox` (filled by a trigger on `events`), `processed_events` and `event_counts` (written by the Kafka consumer). See [runbooks/kafka.md](runbooks/kafka.md).
 
 ### Services
 

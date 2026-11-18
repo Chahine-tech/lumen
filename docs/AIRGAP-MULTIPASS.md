@@ -83,7 +83,7 @@ multipass exec node-2 -- bash -c "
 
 ## Step 3 — Configure containerd registry mirrors
 
-On both nodes, create `/etc/rancher/k3s/registries.yaml`:
+On every node, create `/etc/rancher/k3s/registries.yaml`:
 ```bash
 multipass transfer 03-airgap-zone/config/registries.yaml node-1:/tmp/registries.yaml
 multipass exec node-1 -- sudo cp /tmp/registries.yaml /etc/rancher/k3s/registries.yaml
@@ -124,7 +124,7 @@ multipass exec node-1 -- bash -c "
 
 ## Step 5 — MetalLB (bootstrap)
 
-See `scripts/install-metallb.sh` for details.
+See `03-airgap-zone/scripts/install-metallb.sh` for details.
 
 ```bash
 # Pull MetalLB images on Mac, transfer to node-1

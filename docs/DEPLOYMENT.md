@@ -1,6 +1,6 @@
 # Deployment Guide - Lumen Airgap Project
 
-> **Historical reference** — This document reflects an earlier phase of the project (k3d single-node). The current environment is a 2-node Multipass K3s cluster. See [architecture.md](architecture.md) for the current system overview.
+> **Historical reference.** This document reflects an earlier phase of the project (k3d single-node). See [architecture.md](architecture.md) for the current system overview. Its Gatekeeper phase, its image scripts and its k3d commands no longer apply.
 
 This document describes the actual deployment process and results.
 
@@ -2208,10 +2208,10 @@ traefik-65f8c9d4bf-qx2lp   10m          72Mi
 - `manifests/traefik/12-prometheus-ingressroute.yaml`
 - `manifests/traefik/13-alertmanager-ingressroute.yaml`
 - `manifests/traefik/14-argocd-ingressroute.yaml`
-- `scripts/copy-tls-secrets.sh`
-- `scripts/extract-ca-cert.sh`
-- `scripts/setup-dns.sh`
-- `scripts/verify-traefik.sh`
+- `03-airgap-zone/scripts/copy-tls-secrets.sh`
+- `03-airgap-zone/scripts/extract-ca-cert.sh`
+- `03-airgap-zone/scripts/setup-dns.sh`
+- `03-airgap-zone/scripts/verify-traefik.sh`
 
 **Documentation:**
 - `docs/traefik.md` (comprehensive guide)
