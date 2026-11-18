@@ -23,8 +23,8 @@ func TestLatest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v != 2 {
-		t.Fatalf("Latest = %d, want 2", v)
+	if v != 3 {
+		t.Fatalf("Latest = %d, want 3", v)
 	}
 	if _, err := migrations.Latest(fstest.MapFS{"initial.sql": {}}); err == nil {
 		t.Fatal("a file without a version prefix must be an error")
@@ -122,12 +122,12 @@ func TestUpFreshDatabase(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if v, err := migrations.Version(ctx, owner); err != nil || v != 2 {
-		t.Fatalf("Version = %d, %v, want 2", v, err)
+	if v, err := migrations.Version(ctx, owner); err != nil || v != 3 {
+		t.Fatalf("Version = %d, %v, want 3", v, err)
 	}
 	// The second run applied nothing
-	if got := appliedVersions(t, owner); len(got) != 2 {
-		t.Fatalf("applied versions = %v, want [1 2]", got)
+	if got := appliedVersions(t, owner); len(got) != 3 {
+		t.Fatalf("applied versions = %v, want [1 2 3]", got)
 	}
 }
 
@@ -151,8 +151,8 @@ func TestUpAdoptsLegacySchema(t *testing.T) {
 	if err := migrations.Up(ctx, dsnAs(ownerRole), migrations.Files(), ""); err != nil {
 		t.Fatal(err)
 	}
-	if v, err := migrations.Version(ctx, owner); err != nil || v != 2 {
-		t.Fatalf("Version = %d, %v, want 2", v, err)
+	if v, err := migrations.Version(ctx, owner); err != nil || v != 3 {
+		t.Fatalf("Version = %d, %v, want 3", v, err)
 	}
 	var name string
 	if err := owner.QueryRow(ctx, "SELECT name FROM items").Scan(&name); err != nil || name != "kept" {
@@ -217,8 +217,8 @@ func TestRuntimeRoleRights(t *testing.T) {
 			t.Errorf("runtime role, DML refused: %s: %v", s, err)
 		}
 	}
-	if v, err := migrations.Version(ctx, rt); err != nil || v != 2 {
-		t.Errorf("runtime role, Version = %d, %v, want 2", v, err)
+	if v, err := migrations.Version(ctx, rt); err != nil || v != 3 {
+		t.Errorf("runtime role, Version = %d, %v, want 3", v, err)
 	}
 
 	for _, s := range []string{
