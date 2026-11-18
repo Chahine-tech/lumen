@@ -111,7 +111,7 @@ kubectl exec -n argocd deployment/argocd-redis -- redis-cli GET test-key
 - [ ] Use proper storage class instead of local-path
 - [ ] Implement automated PVC backups to object storage
 
-See [TODO.md](../TODO.md) for Redis HA roadmap.
+Redis HA was done in issue #8: see [runbooks/redis.md](runbooks/redis.md).
 
 ---
 
@@ -1439,7 +1439,7 @@ These improvements transform the project from a basic GitOps setup to a **produc
 - ✅ Complete GitOps workflow: `git push-all` → ArgoCD auto-sync → Apps deployed
 - ✅ True airgap architecture suitable for secure/classified environments
 
-**Next Steps (see [TODO.md](../TODO.md)):**
+**Next Steps (at the time):**
 - Phase 9: Ingress Controller for persistent service access (Traefik)
 - Redis HA for production-grade ArgoCD
 - Gitea HA with PostgreSQL backend

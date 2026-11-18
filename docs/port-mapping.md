@@ -5,11 +5,11 @@ Central reference for all ports used in the Lumen airgap architecture.
 ---
 
 ## 📋 Table of Contents
-- [Cluster Internal Ports](#cluster-internal-ports)
-- [Port-Forward Mappings](#port-forward-mappings)
-- [Registry Ports](#registry-ports)
-- [K3d Cluster Ports](#k3d-cluster-ports)
-- [Reserved Ports](#reserved-ports)
+- [Cluster Internal Ports](#-cluster-internal-ports-inside-airgap)
+- [Port-Forward Mappings](#-port-forward-mappings-localhost--cluster)
+- [Registry Ports](#-registry-ports)
+- [K3d Cluster Ports](#%EF%B8%8F-k3d-cluster-ports)
+- [Reserved Ports](#-reserved-ports-do-not-use)
 
 ---
 
@@ -21,8 +21,18 @@ Services running inside the K3s airgap cluster.
 
 | Service | Namespace | Port | Protocol | Description | Manifest |
 |---------|-----------|------|----------|-------------|----------|
-| lumen-api | default | 8080 | HTTP | Lumen FastAPI application | `manifests/app/02-deployment.yaml` |
-| redis | lumen | 6379 | TCP | Redis cache for Lumen API | `manifests/app/03-redis.yaml` |
+| lumen-api | lumen | 8080 | HTTP | Lumen API | `manifests/app/03-lumen-api.yaml` |
+| lumen-api | lumen | 9090 | HTTP | Metrics, admin port | `manifests/app/03-lumen-api.yaml` |
+| redis | lumen | 6379 | TCP | Redis, one master among 3 pods | `manifests/app/02-redis.yaml` |
+| redis-sentinel | lumen | 26379 | TCP | Sentinels | `manifests/app/02-redis.yaml` |
+
+### Kafka Services
+
+| Service | Namespace | Port | Protocol | Description | Manifest |
+|---------|-----------|------|----------|-------------|----------|
+| lumen-kafka-bootstrap | kafka | 9093 | TLS | Clients, mTLS | `manifests/kafka/01-cluster.yaml` |
+| brokers, Kafka Exporter | kafka | 9404 | HTTP | Prometheus metrics | `manifests/kafka/01-cluster.yaml` |
+| lumen-outbox-relay, lumen-events-consumer | kafka | 9090 | HTTP | Metrics, `/livez` | `manifests/kafka/05-event-workers.yaml` |
 
 ### ArgoCD Services
 

@@ -107,10 +107,10 @@ Not tested:
 
 ## Limits
 
-- **3 pods on 2 nodes**: one node carries two Sentinels. If that node is
-  lost, only one Sentinel is left, short of the majority a failover needs.
-  If the master was on that node, Redis stays without a master until the
-  node comes back. A third node removes this (#9).
+- **3 pods on 2 nodes, until `node-3` is deployed** (#44): one node carries
+  two Sentinels. If that node is lost, only one Sentinel is left, short of
+  the majority a failover needs. If the master was on that node, Redis stays
+  without a master until the node comes back. Redis on 3 nodes was not tested.
 - **Asynchronous replication**: a failover loses the writes the new master
   had not received yet, idempotency records included (#33).
 - **Full restart**: each pod restarts from its own Sentinel's last record.

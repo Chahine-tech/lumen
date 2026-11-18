@@ -10,7 +10,7 @@ On 17 November 2026, `main` received, while the cluster was down:
 | #41 | #6 | one ServiceAccount per Vault consumer ([vault-identities](vault-identities.md)) |
 | #42 | #8 | Redis: one StatefulSet, any pod master ([redis](redis.md)) |
 | #37 | #15 to #19, #33 | v1.7.0 step 2 ([release-v1.7.0](release-v1.7.0.md)) and authentication in report mode ([lumen-api-authentication](lumen-api-authentication.md)) |
-| branch `kafka` | #44 | `node-3`, three CoreDNS replicas, Kafka and the event stream ([kafka](kafka.md)) |
+| #45 | #44 | `node-3`, three CoreDNS replicas, Kafka and the event stream ([kafka](kafka.md)) |
 
 Each runbook describes its own move from the former state, on its own.
 Together they do not fit one ArgoCD sync:

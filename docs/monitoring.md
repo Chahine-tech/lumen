@@ -2,6 +2,8 @@
 
 This document covers Phase 10 (kube-prometheus-stack), Phase 11/12 (upgrades), and Phase 15 (Loki + Alloy + Tempo + OpenTelemetry).
 
+> **History.** The `pull` and `push` scripts named below were replaced by `scripts/mirror.py` and `mirror.yaml`: see [mirroring.md](mirroring.md).
+
 ---
 
 ## 📋 Table of Contents
@@ -287,7 +289,6 @@ spec:
 | **kube-state-metrics** | v2.10.1 | v2.14.0 | ⬆️ Patch |
 | **Grafana Sidecar** | 1.25.2 | 1.30.1 | ⬆️ Minor |
 
-**Full comparison:** See `docs/VERSION-COMPARISON.md`
 
 ### Step 1: Update Download Script
 
@@ -1309,8 +1310,6 @@ Shows all traces with:
 - [Loki Deployment Modes](https://grafana.com/docs/loki/latest/get-started/deployment-modes/)
 - [Grafana Alloy — Promtail Migration](https://grafana.com/docs/alloy/latest/set-up/migrate/from-promtail/)
 - [Promtail EOL Announcement](https://community.grafana.com/t/promtail-end-of-life-eol-march-2026/159636)
-- [VERSION-COMPARISON.md](./VERSION-COMPARISON.md) - Detailed version comparison
-- [TESTING-MONITORING.md](./TESTING-MONITORING.md) - Testing procedures
 - [Grafana Tempo Documentation](https://grafana.com/docs/tempo/latest/)
 - [OpenTelemetry Go SDK](https://opentelemetry.io/docs/languages/go/)
 - [OTel contrib otelhttp](https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp)

@@ -2,6 +2,8 @@
 
 This document describes the complete architecture of the lumen project: how components interconnect, data flows, design decisions, and why each layer exists.
 
+> **It describes `main`.** Vault TLS and auto-unseal, the Redis StatefulSet, `node-3` and Kafka were merged in November 2026 and are not deployed on the lab yet: see the [cutover runbook](runbooks/cutover-november-2026.md).
+
 ---
 
 ## 1. Overview — The 3 Zones
@@ -29,10 +31,10 @@ The project simulates a real-world constraint: **no internet access from the clu
 │          TRANSIT ZONE                │          │         GitHub.com             │
 │    node-1:5000 (Docker Registry)     │          │   (backup + portfolio)         │
 │                                      │          └───────────────────────────────┘
-│  02-transit-zone/push-*.sh           │
-│  ├── docker load image.tar           │
-│  ├── docker tag → localhost:5000/... │
-│  └── docker push                     │
+│  scripts/mirror.py push              │
+│  ├── reads mirror.lock               │
+│  ├── pushes each image               │
+│  └── checks its digest               │
 │                                      │
 │  Registry catalog:                   │
 │  ├── chaos-mesh/chaos-mesh:v2.7.2   │
@@ -49,6 +51,7 @@ The project simulates a real-world constraint: **no internet access from the clu
 │                                                                                  │
 │   node-1 (192.168.2.2) — control-plane, 4CPU/6G                                 │
 │   node-2 (192.168.2.3) — worker, 2CPU/4G                                        │
+│   node-3 (192.168.2.5): worker, 2CPU/4G                                         │
 │                                                                                  │
 │   All images pulled from 192.168.2.2:5000 (containerd registry mirror)          │
 └──────────────────────────────────────────────────────────────────────────────────┘
@@ -228,7 +231,7 @@ How secrets reach pods without ever being stored in plaintext in etcd.
 │  └──────┬───────┘   └──────────────┘   └──────────────┘                │
 │         │                                                               │
 │  Active engines:                                                        │
-│  ├── KV v2 (secret/)     ← PostgreSQL, Redis credentials               │
+│  ├── KV v2 (lumen/)      ← PostgreSQL, Redis credentials               │
 │  └── PKI (pki/)          ← root CA + issuer *.airgap.local             │
 └─────────┬───────────────────────────────┬───────────────────────────────┘
           │                               │
@@ -240,23 +243,23 @@ How secrets reach pods without ever being stored in plaintext in etcd.
 │  (K8s CRD)              │    │  (vault-issuer)              │
 │                         │    │                              │
 │  spec:                  │    │  Certificate CRD:            │
-│    mount: secret        │    │  ├── lumen-api-tls           │
-│    path: lumen/postgres │    │  ├── argocd-tls              │
+│    mount: lumen         │    │  ├── lumen-api-tls           │
+│    path: db-runtime     │    │  ├── argocd-tls              │
 │    dest:                │    │  ├── grafana-tls             │
-│      name: pg-creds     │    │  └── ...                     │
+│      name: lumen-db-... │    │  └── ...                     │
 │      (K8s Secret)       │    │                              │
 │                         │    │  Auto-renewal: 30d before    │
-│  Sync: every 60s        │    │  expiry via CertificateReq   │
+│  Sync: every 1h         │    │  expiry via CertificateReq   │
 └──────────┬──────────────┘    └──────────────┬───────────────┘
            │                                  │
            ▼                                  ▼
 ┌──────────────────────────┐   ┌──────────────────────────────┐
-│  K8s Secret pg-creds     │   │  K8s Secret *-tls            │
-│  (in namespace lumen)    │   │  (TLS cert + key)            │
+│  K8s Secret              │   │  K8s Secret *-tls            │
+│  lumen-db-runtime        │   │  (TLS cert + key)            │
 │                          │   │                              │
-│  DB_HOST: lumen-db-rw    │   │  tls.crt: -----BEGIN...      │
-│  DB_USER: lumen          │   │  tls.key: -----BEGIN...      │
-│  DB_PASS: <rotated>      │   │                              │
+│                          │   │  tls.crt: -----BEGIN...      │
+│  username: lumen_runtime │   │  tls.key: -----BEGIN...      │
+│  password: <from Vault>  │   │                              │
 └──────────┬───────────────┘   └──────────────┬───────────────┘
            │                                  │
            └──────────────┬───────────────────┘
@@ -264,6 +267,13 @@ How secrets reach pods without ever being stored in plaintext in etcd.
                           ▼
                    lumen-api pod
 ```
+
+Around this flow:
+
+- **TLS.** Vault's own certificate comes from an infrastructure CA whose root stays offline, not from Vault: [vault-tls](runbooks/vault-tls.md).
+- **Auto-unseal.** A small transit Vault on `backup-1` unseals the cluster's Vault at each start: [vault-auto-unseal](runbooks/vault-auto-unseal.md).
+- **Audit and snapshots.** Audit log on stdout, daily Raft snapshots to Garage: [vault-audit-snapshots](runbooks/vault-audit-snapshots.md).
+- **Identities.** One ServiceAccount per Vault role, tokens of 15 minutes: [vault-identities](runbooks/vault-identities.md).
 
 ---
 
@@ -462,7 +472,7 @@ Two databases with different high-availability strategies.
 
   CloudNativePG (PostgreSQL)
   ┌─────────────────────────────────────────────────────┐
-  │  namespace: cnpg-system                             │
+  │  namespace: lumen (operator: cnpg-system)           │
   │                                                     │
   │  ┌──────────────┐    streaming    ┌───────────────┐ │
   │  │  lumen-db-1  │ ──────────────► │  lumen-db-2   │ │
@@ -492,27 +502,19 @@ Two databases with different high-availability strategies.
 Deployment order matters: CRDs must exist before the resources that use them.
 
 ```
-  Wave 0 (core infrastructure)
-  ├── cert-manager          (CRDs: Certificate, ClusterIssuer)
-  ├── Kyverno               (CRDs: ValidatingPolicy, ClusterPolicy)
-  └── MetalLB               (CRDs: IPAddressPool, L2Advertisement)
+  No wave    lumen-network-policies, traefik
+  Wave 2     argo-rollouts, chaos-mesh, strimzi
+  Wave 3     lumen-app, lumen-monitoring-config, kube-prometheus-stack, kafka
+  Wave 4     loki
+  Wave 5     alloy
+  Wave 6     tempo
+  Wave 7     cert-manager
+  Wave 8     vault
+  Wave 9     vault-secrets-operator
+  Wave 10    falco, kyverno, vso-config
+  Wave 11    kyverno-policies
 
-  Wave 1 (application dependencies)
-  ├── Vault HA              (CRDs: VaultConnection, VaultAuth)
-  ├── CloudNativePG         (CRDs: Cluster, Backup)
-  └── Traefik               (CRDs: IngressRoute, Middleware)
-
-  Wave 2 (controllers + advanced CRDs)
-  ├── Argo Rollouts         (CRDs: Rollout, AnalysisTemplate)
-  └── Chaos Mesh            (CRDs: PodChaos, NetworkChaos...)
-
-  Wave 3 (application)
-  └── lumen-app             (Rollout, Service, HPA, NetworkPolicies)
-
-  Wave 4+ (observability)
-  ├── kube-prometheus-stack
-  ├── Loki + Alloy
-  └── Tempo
+  Outside ArgoCD: MetalLB, CloudNativePG and Gitea (Ansible and scripts)
 
   ArgoCD sync:
   ┌────────────────────────────────────────────────┐
@@ -536,11 +538,16 @@ Each component in its own namespace with strict NetworkPolicies.
   ├── namespace: lumen
   │   ├── lumen-api (Rollout — 2 replicas)
   │   ├── redis-0..2 (Redis + Sentinel each)
+  │   ├── lumen-db-1 (primary), lumen-db-2 (replica), lumen-db-3 (witness)
   │   └── NetworkPolicies: default-deny + explicit allows
   │
   ├── namespace: cnpg-system
-  │   ├── lumen-db-1 (primary), lumen-db-2 (replica), lumen-db-3 (witness)
   │   └── cnpg-operator
+  │
+  ├── namespace: kafka
+  │   ├── lumen-combined-0..2 (KRaft brokers and controllers)
+  │   ├── strimzi-cluster-operator, entity operator, Kafka Exporter
+  │   └── lumen-outbox-relay, lumen-events-consumer
   │
   ├── namespace: vault
   │   ├── vault-0, vault-1, vault-2 (Raft HA)
@@ -557,7 +564,7 @@ Each component in its own namespace with strict NetworkPolicies.
   │   └── gitea (+ internal PostgreSQL)
   │
   ├── namespace: traefik
-  │   └── traefik (DaemonSet — node-1 + node-2)
+  │   └── traefik (LoadBalancer through MetalLB)
   │       ├── :80  → redirect HTTPS
   │       ├── :443 → TLS termination (cert-manager certs)
   │       └── IngressRoutes → services by Host header
@@ -565,16 +572,15 @@ Each component in its own namespace with strict NetworkPolicies.
   ├── namespace: monitoring
   │   ├── prometheus, grafana, alertmanager
   │   ├── node-exporter (DaemonSet)
-  │   └── kube-state-metrics
+  │   ├── kube-state-metrics
+  │   ├── loki, tempo
+  │   └── alloy (DaemonSet: log + trace collector)
   │
-  ├── namespace: loki
-  │   └── loki (single binary mode)
+  ├── namespace: vault-secrets-operator
+  │   └── vault-secrets-operator
   │
-  ├── namespace: tempo
-  │   └── tempo
-  │
-  ├── namespace: alloy
-  │   └── alloy (DaemonSet — log + trace collector)
+  ├── namespace: kyverno
+  │   └── kyverno (admission controller)
   │
   ├── namespace: falco
   │   ├── falco (DaemonSet — modern_ebpf)
@@ -605,14 +611,23 @@ Each component in its own namespace with strict NetworkPolicies.
   │   └── Workloads: Vault, ArgoCD, cert-manager, Traefik...
   │   Resources: 4 vCPU / 6GB RAM
   │
-  └── node-2 (192.168.2.3) — Ubuntu 24.04 arm64
-      ├── K3s worker
-      ├── MetalLB speaker
-      └── Workloads: lumen-api, Redis, monitoring...
-      Resources: 2 vCPU / 4GB RAM
+  ├── node-2 (192.168.2.3): Ubuntu 24.04 arm64
+  │   ├── K3s worker
+  │   ├── MetalLB speaker
+  │   └── Workloads: lumen-api, Redis, monitoring...
+  │   Resources: 2 vCPU / 4GB RAM
+  │
+  ├── node-3 (192.168.2.5): Ubuntu 24.04 arm64
+  │   ├── K3s worker (third failure domain for Kafka and CoreDNS)
+  │   └── Resources: 2 vCPU / 4GB RAM
+  │
+  └── backup-1 (192.168.2.4): outside the K3s cluster
+      ├── Garage (S3): PostgreSQL backups, Vault snapshots
+      └── Transit Vault: unseals the cluster's Vault
+      Resources: 1 vCPU / 1GB RAM
 
   Network: 192.168.2.0/24 (Multipass bridge)
-  MetalLB pool: 192.168.2.100-192.168.2.120
+  MetalLB pool: 192.168.2.100-192.168.2.200
   → LoadBalancer IPs accessible from macOS
 
   containerd registry mirror (all nodes):
@@ -815,8 +830,10 @@ VM provisioning and cluster configuration are fully automated. Two tools, two di
   ├── local_file.node2_cloudinit            ├── stop.yml       ← clean shutdown
   ├── multipass_instance.node1             └── provision.yml  ← Ansible-only fallback
   │   cpus=4, memory=6G, disk=40G
-  └── multipass_instance.node2
-      cpus=2, memory=4G, disk=30G          roles (12):
+  ├── multipass_instance.node2, node3
+  │   cpus=2, memory=4G, disk=30G
+  └── multipass_instance.backup
+      cpus=1, memory=1G, disk=30G          roles (12):
                                             ├── multipass   registry   images
   cloud-init (injected at creation):        ├── k3s         metallb    garage
   ├── SSH public key → authorized_keys      ├── argocd      gitea      vault
@@ -841,12 +858,33 @@ multipass set local.bridged-network=en0
 # 2. VMs (~3 min)
 cd 05-terraform && terraform init && terraform apply
 
-# 3. Full cluster (~20 min)
+# 3. Full cluster (~20 min). The vault step needs the infrastructure CA and
+# the transit Vault first: docs/runbooks/vault-auto-unseal.md, "New cluster"
 ansible-playbook 04-ansible/site.yml --ask-become-pass
 
 # Tear everything down
 cd 05-terraform && terraform destroy
 ```
+
+---
+
+## 14. Event Stream: Kafka and the Outbox
+
+lumen-api never talks to Kafka. A trigger copies each event to an outbox table in the same transaction, and a separate relay publishes it.
+
+```
+  lumen-api ── transaction ──► items + events
+                                 └─ trigger ──► outbox
+                                                  │
+                         lumen-outbox-relay (2 replicas, 1 active)
+                                                  │ acks=all, mTLS
+                                                  ▼
+  Kafka (3 KRaft nodes, replication 3, min.insync.replicas 2)
+    lumen.events ──► lumen-events-consumer ──► processed_events + event_counts
+                                └─ unreadable ──► lumen.events.dlq
+```
+
+Delivery is at least once, and the consumer applies each event id once. PostgreSQL stays the source of truth: `lumen-api outbox-rebuild` restores a lost topic. Details, tests and limits: [kafka](runbooks/kafka.md).
 
 ---
 
@@ -864,3 +902,4 @@ cd 05-terraform && terraform destroy
 | **Metric** | Pod `/metrics` → Prometheus → Grafana |
 | **Trace** | OTel SDK → Alloy → Tempo → Grafana |
 | **Chaos** | `kubectl apply PodChaos` → chaos-daemon → container kill |
+| **Event** | PostgreSQL trigger → outbox → relay → Kafka → consumer |

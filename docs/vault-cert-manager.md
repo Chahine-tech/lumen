@@ -248,6 +248,8 @@ ArgoCD Application: `03-airgap-zone/manifests/argocd/14-application-cert-manager
 
 ### 5. Vault Bootstrap (Init + Unseal)
 
+> **History.** Vault now unseals itself, and `vault-bootstrap.sh init` replaces this section: [runbooks/vault-auto-unseal.md](runbooks/vault-auto-unseal.md).
+
 Vault pods start **Sealed** — init and unseal must be done **manually** (no KMS available in airgap).
 
 ```bash
@@ -563,7 +565,7 @@ kubectl label namespace cert-manager name=cert-manager --overwrite
 **Symptom**:
 ```
 Failed to initialize Vault client:
-POST http://vault.vault.svc.cluster.local:8200/v1/auth/kubernetes/login
+POST https://vault.vault.svc.cluster.local:8200/v1/auth/kubernetes/login
 Code: 403 — service account name not authorized
 ```
 
