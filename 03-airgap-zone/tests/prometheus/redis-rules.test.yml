@@ -1,0 +1,120 @@
+# promtool unit tests for manifests/kube-prometheus-stack/redis-rules.yaml
+# Run: make test-alert-rules
+rule_files: [.rules/redis-rules.yml]
+evaluation_interval: 1m
+tests:
+  # Healthy: nothing fires
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_status_ready{namespace="lumen",condition="true",pod="redis-0"}'
+        values: '1x30'
+      - series: 'redis_instance_info{namespace="lumen",pod="redis-0",role="master"}'
+        values: '1x30'
+      - series: 'redis_instance_info{namespace="lumen",pod="redis-1",role="slave"}'
+        values: '1x30'
+      - series: 'redis_connected_slaves{namespace="lumen",pod="redis-0"}'
+        values: '2x30'
+      - series: 'redis_memory_used_bytes{namespace="lumen",pod="redis-0"}'
+        values: '50x30'
+      - series: 'redis_memory_max_bytes{namespace="lumen",pod="redis-0"}'
+        values: '100x30'
+      - series: 'redis_evicted_keys_total{namespace="lumen",pod="redis-0"}'
+        values: '0x30'
+    alert_rule_test:
+      - {eval_time: 20m, alertname: RedisPodNotReady, exp_alerts: []}
+      - {eval_time: 20m, alertname: RedisNoMaster, exp_alerts: []}
+      - {eval_time: 20m, alertname: RedisReplicaMissing, exp_alerts: []}
+      - {eval_time: 20m, alertname: RedisMasterChanged, exp_alerts: []}
+      - {eval_time: 20m, alertname: RedisMemoryHigh, exp_alerts: []}
+      - {eval_time: 20m, alertname: RedisKeysEvicted, exp_alerts: []}
+
+  # A pod lost, the memory nearly full, keys evicted
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_status_ready{namespace="lumen",condition="true",pod="redis-2"}'
+        values: '1x4 0x20'
+      - series: 'redis_instance_info{namespace="lumen",pod="redis-0",role="master"}'
+        values: '1x25'
+      - series: 'redis_connected_slaves{namespace="lumen",pod="redis-0"}'
+        values: '2x4 1x20'
+      - series: 'redis_memory_used_bytes{namespace="lumen",pod="redis-0"}'
+        values: '95x25'
+      - series: 'redis_memory_max_bytes{namespace="lumen",pod="redis-0"}'
+        values: '100x25'
+      - series: 'redis_evicted_keys_total{namespace="lumen",pod="redis-0"}'
+        values: '0x9 5x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: RedisPodNotReady
+        exp_alerts:
+          - exp_labels: {severity: warning, service: redis, namespace: lumen, condition: "true", pod: redis-2}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#redis
+              summary: A Redis pod is not ready
+              description: 'redis-2 is not ready. Check: kubectl describe pod -n lumen redis-2'
+      - eval_time: 10m
+        alertname: RedisReplicaMissing
+        exp_alerts:
+          - exp_labels: {severity: warning, service: redis}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#redis
+              summary: The Redis master has fewer than 2 replicas
+              description: 1 replicas are linked to the master.
+      - eval_time: 10m
+        alertname: RedisMemoryHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, service: redis, namespace: lumen, pod: redis-0}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#redis
+              summary: Redis is close to maxmemory
+              description: redis-0 uses 95% of maxmemory. When it is full, writes are refused.
+      - eval_time: 11m
+        alertname: RedisKeysEvicted
+        exp_alerts:
+          - exp_labels: {severity: critical, service: redis, namespace: lumen, pod: redis-0}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#redis
+              summary: Redis evicted keys
+              description: 'redis-0 dropped keys: idempotency records may be gone. Check maxmemory-policy, which must be noeviction.'
+
+  # No master, then another pod becomes master
+  - interval: 1m
+    input_series:
+      - series: 'redis_instance_info{namespace="lumen",pod="redis-0",role="master"}'
+        values: '1x9 stale'
+      - series: 'redis_instance_info{namespace="lumen",pod="redis-1",role="master"}'
+        values: '_x13 1x20'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: RedisNoMaster
+        exp_alerts:
+          - exp_labels: {severity: critical, service: redis}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#redis
+              summary: Redis does not have exactly one master
+              description: '0 pods report the master role. lumen-api cannot write to Redis without one. Check: docs/runbooks/redis.md'
+      - eval_time: 15m
+        alertname: RedisMasterChanged
+        exp_alerts:
+          - exp_labels: {severity: warning, service: redis}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#redis
+              summary: The Redis master changed
+              description: Sentinel elected another master in the last 5 minutes. Writes not yet replicated were lost.
+      - {eval_time: 25m, alertname: RedisMasterChanged, exp_alerts: []}
+
+  # A pod that cannot be scheduled: Pending, without a Ready condition
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_status_phase{namespace="lumen",phase="Pending",pod="redis-2"}'
+        values: '0x4 1x15'
+    alert_rule_test:
+      - {eval_time: 4m, alertname: RedisPodNotReady, exp_alerts: []}
+      - eval_time: 10m
+        alertname: RedisPodNotReady
+        exp_alerts:
+          - exp_labels: {severity: warning, service: redis, namespace: lumen, phase: Pending, pod: redis-2}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#redis
+              summary: A Redis pod is not ready
+              description: 'redis-2 is not ready. Check: kubectl describe pod -n lumen redis-2'

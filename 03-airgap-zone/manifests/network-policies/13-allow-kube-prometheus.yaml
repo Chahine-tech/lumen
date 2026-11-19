@@ -126,6 +126,10 @@ spec:
         - protocol: TCP
           port: 9404  # Kafka brokers and Kafka Exporter (issue #44)
         - protocol: TCP
+          port: 9121  # Redis exporter (issue #25)
+        - protocol: TCP
+          port: 9402  # cert-manager (issue #25)
+        - protocol: TCP
           port: 8200  # Vault (/v1/sys/metrics, issue #4)
         - protocol: TCP
           port: 3000  # Gitea

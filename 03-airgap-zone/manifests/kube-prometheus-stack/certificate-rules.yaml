@@ -1,0 +1,53 @@
+# Alerts on certificates (issue #25). docs/runbooks/alerting.md
+#
+#   certmanager_*  cert-manager controller (ServiceMonitor of its chart)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: certificates
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack  # required by the Prometheus Operator ruleSelector
+spec:
+  groups:
+    - name: certificates
+      rules:
+        # cert-manager renews 30 days ahead at the latest: 14 days left means
+        # the renewal has been failing for a while
+        - alert: CertificateExpiringSoon
+          expr: certmanager_certificate_expiration_timestamp_seconds - time() < 14 * 86400
+          for: 10m
+          labels:
+            severity: critical
+            service: cert-manager
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#certificates
+            summary: A certificate expires in less than 14 days
+            description: >-
+              {{ $labels.namespace }}/{{ $labels.name }} expires in {{ $value | humanizeDuration }}.
+              Check: kubectl describe certificate -n {{ $labels.namespace }} {{ $labels.name }}
+
+        - alert: CertificateNotReady
+          expr: certmanager_certificate_ready_status{condition="True"} == 0
+          for: 10m
+          labels:
+            severity: warning
+            service: cert-manager
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#certificates
+            summary: A certificate is not ready
+            description: >-
+              {{ $labels.namespace }}/{{ $labels.name }} is not ready.
+              Check: kubectl describe certificate -n {{ $labels.namespace }} {{ $labels.name }}
+
+        # The alerts above stay silent when cert-manager is not scraped
+        - alert: CertManagerMetricsAbsent
+          expr: absent(certmanager_clock_time_seconds)
+          for: 15m
+          labels:
+            severity: warning
+            service: cert-manager
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#certificates
+            summary: No cert-manager metrics
+            description: cert-manager is down, or Prometheus does not scrape it.

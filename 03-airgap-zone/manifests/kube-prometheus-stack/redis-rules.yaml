@@ -1,0 +1,94 @@
+# Alerts on Redis (issue #25). docs/runbooks/alerting.md
+#
+#   redis_*                redis_exporter, one per pod (PodMonitor redis)
+#   kube_pod_status_ready  kube-state-metrics
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: redis
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack  # required by the Prometheus Operator ruleSelector
+spec:
+  groups:
+    - name: redis
+      rules:
+        # A pod that cannot be scheduled has no Ready condition: Pending counts too
+        - alert: RedisPodNotReady
+          expr: |
+            kube_pod_status_ready{namespace="lumen",condition="true",pod=~"redis-[0-9]+"} == 0
+              or kube_pod_status_phase{namespace="lumen",phase="Pending",pod=~"redis-[0-9]+"} == 1
+          for: 2m
+          labels:
+            severity: warning
+            service: redis
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#redis
+            summary: A Redis pod is not ready
+            description: >-
+              {{ $labels.pod }} is not ready. Check: kubectl describe pod -n lumen {{ $labels.pod }}
+
+        - alert: RedisNoMaster
+          expr: (count(redis_instance_info{namespace="lumen",role="master"}) or vector(0)) != 1
+          for: 1m
+          labels:
+            severity: critical
+            service: redis
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#redis
+            summary: Redis does not have exactly one master
+            description: >-
+              {{ $value }} pods report the master role. lumen-api cannot write to
+              Redis without one. Check: docs/runbooks/redis.md
+
+        - alert: RedisReplicaMissing
+          expr: max(redis_connected_slaves{namespace="lumen"}) < 2
+          for: 3m
+          labels:
+            severity: warning
+            service: redis
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#redis
+            summary: The Redis master has fewer than 2 replicas
+            description: >-
+              {{ $value }} replicas are linked to the master.
+
+        # The pod that is master now was not, 5 minutes ago
+        - alert: RedisMasterChanged
+          expr: count(redis_instance_info{namespace="lumen",role="master"} unless on (pod) redis_instance_info{namespace="lumen",role="master"} offset 5m) > 0
+          labels:
+            severity: warning
+            service: redis
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#redis
+            summary: The Redis master changed
+            description: >-
+              Sentinel elected another master in the last 5 minutes. Writes not yet
+              replicated were lost.
+
+        # noeviction: once full, Redis refuses writes and lumen-api answers 503
+        - alert: RedisMemoryHigh
+          expr: redis_memory_used_bytes{namespace="lumen"} / redis_memory_max_bytes{namespace="lumen"} > 0.9
+          for: 5m
+          labels:
+            severity: warning
+            service: redis
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#redis
+            summary: Redis is close to maxmemory
+            description: >-
+              {{ $labels.pod }} uses {{ $value | humanizePercentage }} of maxmemory.
+              When it is full, writes are refused.
+
+        # Never expected with noeviction: the policy was changed
+        - alert: RedisKeysEvicted
+          expr: increase(redis_evicted_keys_total{namespace="lumen"}[5m]) > 0
+          labels:
+            severity: critical
+            service: redis
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#redis
+            summary: Redis evicted keys
+            description: >-
+              {{ $labels.pod }} dropped keys: idempotency records may be gone.
+              Check maxmemory-policy, which must be noeviction.

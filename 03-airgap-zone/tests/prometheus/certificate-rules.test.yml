@@ -1,0 +1,61 @@
+# promtool unit tests for manifests/kube-prometheus-stack/certificate-rules.yaml
+# Run: make test-alert-rules
+rule_files: [.rules/certificate-rules.yml]
+evaluation_interval: 1m
+tests:
+  # 60 days left, ready: nothing fires
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="lumen",name="ok"}'
+        values: '5184000x30'
+      - series: 'certmanager_certificate_ready_status{namespace="lumen",name="ok",condition="True"}'
+        values: '1x30'
+      - series: 'certmanager_clock_time_seconds{pod="cert-manager"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - {eval_time: 20m, alertname: CertificateExpiringSoon, exp_alerts: []}
+      - {eval_time: 20m, alertname: CertificateNotReady, exp_alerts: []}
+      - {eval_time: 20m, alertname: CertManagerMetricsAbsent, exp_alerts: []}
+
+  # 1 day left, and not ready
+  - interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="lumen",name="soon"}'
+        values: '86400x30'
+      - series: 'certmanager_certificate_ready_status{namespace="lumen",name="soon",condition="True"}'
+        values: '0x30'
+      - series: 'certmanager_clock_time_seconds{pod="cert-manager"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - {eval_time: 5m, alertname: CertificateExpiringSoon, exp_alerts: []}
+      - eval_time: 15m
+        alertname: CertificateExpiringSoon
+        exp_alerts:
+          - exp_labels: {severity: critical, service: cert-manager, namespace: lumen, name: soon}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#certificates
+              summary: A certificate expires in less than 14 days
+              description: 'lumen/soon expires in 23h 45m 0s. Check: kubectl describe certificate -n lumen soon'
+      - eval_time: 15m
+        alertname: CertificateNotReady
+        exp_alerts:
+          - exp_labels: {severity: warning, service: cert-manager, namespace: lumen, name: soon, condition: "True"}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#certificates
+              summary: A certificate is not ready
+              description: 'lumen/soon is not ready. Check: kubectl describe certificate -n lumen soon'
+
+  # cert-manager is not scraped
+  - interval: 1m
+    input_series:
+      - series: 'up{job="other"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: CertManagerMetricsAbsent
+        exp_alerts:
+          - exp_labels: {severity: warning, service: cert-manager}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#certificates
+              summary: No cert-manager metrics
+              description: cert-manager is down, or Prometheus does not scrape it.

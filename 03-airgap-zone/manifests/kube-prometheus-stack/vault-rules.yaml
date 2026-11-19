@@ -18,9 +18,12 @@ spec:
     - name: vault
       rules:
         # A sealed pod fails its readiness probe. Prometheus scrapes the active
-        # pod only, so its metrics cannot show a sealed standby
+        # pod only, so its metrics cannot show a sealed standby. A pod that cannot
+        # be scheduled has no Ready condition: Pending counts too
         - alert: VaultPodNotReady
-          expr: kube_pod_status_ready{namespace="vault",condition="true",pod=~"vault-[0-9]+"} == 0
+          expr: |
+            kube_pod_status_ready{namespace="vault",condition="true",pod=~"vault-[0-9]+"} == 0
+              or kube_pod_status_phase{namespace="vault",phase="Pending",pod=~"vault-[0-9]+"} == 1
           for: 2m
           labels:
             severity: warning

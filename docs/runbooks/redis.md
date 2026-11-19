@@ -111,6 +111,9 @@ Not tested:
   two Sentinels. If that node is lost, only one Sentinel is left, short of
   the majority a failover needs. If the master was on that node, Redis stays
   without a master until the node comes back. Redis on 3 nodes was not tested.
+- **One very large command can kill a pod.** A single Lua script that wrote
+  118 MB got the master `OOMKilled` at its 256 Mi limit (measured on 19 November
+  2026): `maxmemory` does not bound the memory the script itself holds.
 - **Asynchronous replication**: a failover loses the writes the new master
   had not received yet, idempotency records included (#33).
 - **Full restart**: each pod restarts from its own Sentinel's last record.
