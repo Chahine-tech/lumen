@@ -92,4 +92,8 @@ featureGates: ""
 
 # Prometheus metrics
 prometheus:
-  enabled: false  # Enable later via PodMonitor if needed
+  enabled: true
+  servicemonitor:
+    enabled: true
+    labels:
+      release: kube-prometheus-stack

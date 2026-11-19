@@ -328,6 +328,39 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+        # Metrics of this pod's Redis (issue #25): kube-prometheus-stack/redis-rules.yaml
+        - name: exporter
+          image: 192.168.2.2:5000/oliver006/redis_exporter:v1.97.0@sha256:a73be8aedc213ee3b1863be2c4e2c82f9e139b979effaa7235093cc099256751
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: REDIS_ADDR
+              value: redis://127.0.0.1:6379
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lumen-redis-vault
+                  key: password
+          ports:
+            - name: metrics
+              containerPort: 9121
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+          livenessProbe:
+            tcpSocket:
+              port: 9121
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
       volumes:
         - name: config-readonly
           configMap:

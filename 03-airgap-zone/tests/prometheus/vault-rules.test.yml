@@ -126,3 +126,23 @@ tests:
               runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#vault-availability
               summary: Vault has lost its Raft majority
               description: 'Fewer than 2 Vault pods are ready: Vault serves no request. Check: kubectl get pods -n vault'
+
+  # A pod that cannot be scheduled: Pending, without a Ready condition
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_status_phase{namespace="vault",phase="Pending",pod="vault-2"}'
+        values: '0x4 1x15'
+      - series: 'vault_core_unsealed{cluster="lumen-vault"}'
+        values: '1x20'
+      - series: 'kube_cronjob_status_last_successful_time{namespace="vault",cronjob="vault-raft-snapshot"}'
+        values: '0+60x20'
+    alert_rule_test:
+      - {eval_time: 4m, alertname: VaultPodNotReady, exp_alerts: []}
+      - eval_time: 10m
+        alertname: VaultPodNotReady
+        exp_alerts:
+          - exp_labels: {severity: warning, service: vault, namespace: vault, phase: Pending, pod: vault-2}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#vault-availability
+              summary: A Vault pod is sealed or not ready
+              description: 'vault-2 is not ready. Check: kubectl exec -n vault vault-2 -- vault status'

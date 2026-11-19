@@ -1,0 +1,17 @@
+# Redis (issue #25): the exporter of each pod, app/02-redis.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: redis
+  namespace: lumen
+  labels:
+    release: kube-prometheus-stack  # Critical: tells Prometheus Operator to discover this PodMonitor
+spec:
+  selector:
+    matchLabels:
+      app: redis
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

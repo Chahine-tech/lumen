@@ -137,6 +137,27 @@ A bad release: `kubectl argo rollouts abort lumen-api -n lumen`, then
 | `PostgresReplicationLagHigh` | a replica is more than 5 minutes behind for 5 minutes | check its disk and network |
 | `PostgresConnectionsHigh` | above 80% of `max_connections` for 5 minutes | `SELECT usename, state, count(*) FROM pg_stat_activity GROUP BY 1, 2` |
 
+## Redis
+
+| Alert | Means | Do |
+|---|---|---|
+| `RedisPodNotReady` | a pod is not ready or cannot be scheduled for 2 minutes | `kubectl describe pod -n lumen <pod>` |
+| `RedisNoMaster` | no pod, or several, report the master role | [redis](redis.md#operations): ask the Sentinels who the master is |
+| `RedisReplicaMissing` | the master has fewer than 2 replicas for 3 minutes | check the missing pod |
+| `RedisMasterChanged` | another pod became master in the last 5 minutes | writes not yet replicated were lost: find out why the former master stopped |
+| `RedisMemoryHigh` | above 90% of `maxmemory` for 5 minutes | when full, writes are refused and lumen-api answers 503: `redis-cli --bigkeys` |
+| `RedisKeysEvicted` | keys were dropped | `maxmemory-policy` must be `noeviction` |
+
+## Certificates
+
+| Alert | Means | Do |
+|---|---|---|
+| `CertificateExpiringSoon` | less than 14 days left | the renewal fails: `kubectl describe certificate -n <namespace> <name>`, then its `CertificateRequest` |
+| `CertificateNotReady` | not ready for 10 minutes | same, and check its issuer: `kubectl get clusterissuer` |
+| `CertManagerMetricsAbsent` | no cert-manager metric for 15 minutes | `kubectl get pods -n cert-manager` |
+
+The certificates of hosts outside the cluster (`infra-ca.sh server`: the transit Vault, ntfy) are not issued by cert-manager, and these alerts do not see them.
+
 ## Tested
 
 On 18 November 2026, on k3d (K3s v1.33.6, 3 nodes), with the chart and values of
@@ -170,6 +191,23 @@ certificate from `infra-ca.sh server`.
 | Platform healthy, before and after | none of them |
 
 `PostgresNoPrimary` and `PostgresReplicationLagHigh` are covered by promtool tests only.
+
+`tests/alerting/redis-certificates-test.sh`, on 19 November 2026, on the same k3d cluster, with `app/02-redis.yaml`, cert-manager 1.17.1 and the NetworkPolicies of `lumen`, `monitoring` and `cert-manager`:
+
+| Real failure | Alerts that fired |
+|---|---|
+| A replica lost, its node cordoned | `RedisPodNotReady`, `RedisReplicaMissing` |
+| The master lost | `RedisMasterChanged`, with a new master |
+| Redis filled to 99% of `maxmemory` | `RedisMemoryHigh` |
+| `allkeys-lru`, then more writes | `RedisKeysEvicted` |
+| A certificate valid for 48 hours | `CertificateExpiringSoon` |
+| A certificate with a missing issuer | `CertificateNotReady` |
+| Platform healthy, before and after | none of them |
+
+`RedisNoMaster` and `CertManagerMetricsAbsent` are covered by promtool tests only, and so is a Vault or PostgreSQL pod stuck in `Pending`.
+
+Found while testing: a pod that cannot be scheduled has no `Ready` condition, so the "not ready" alerts of Redis, Vault and PostgreSQL also look at the `Pending` phase.
+
 
 Access to ntfy, by hand: anonymous requests, a wrong token, a topic outside an
 identity's rights and plain HTTP are refused; each identity reaches its own.

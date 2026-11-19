@@ -164,6 +164,8 @@ images:
   - source: docker.io/library/redis:7.4.12-alpine
     digest: sha256:52d1ea8a654b10f06af3ecda4e9dbcd035c7868b5c49ee7975de917f81de13db
     renovate: true
+  - source: docker.io/oliver006/redis_exporter:v1.97.0
+    digest: sha256:a73be8aedc213ee3b1863be2c4e2c82f9e139b979effaa7235093cc099256751
 
   # MetalLB (install-metallb.sh, Helm chart below)
   - source: quay.io/metallb/controller:v0.15.3

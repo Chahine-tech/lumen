@@ -106,3 +106,19 @@ tests:
               summary: The PostgreSQL primary changed
               description: 'An instance changed role in the last 10 minutes. Check: kubectl get events -n lumen --field-selector involvedObject.name=lumen-db'
       - {eval_time: 25m, alertname: PostgresFailover, exp_alerts: []}
+
+  # A pod that cannot be scheduled: Pending, without a Ready condition
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_status_phase{namespace="lumen",phase="Pending",pod="lumen-db-3"}'
+        values: '0x4 1x15'
+    alert_rule_test:
+      - {eval_time: 4m, alertname: PostgresInstanceNotReady, exp_alerts: []}
+      - eval_time: 10m
+        alertname: PostgresInstanceNotReady
+        exp_alerts:
+          - exp_labels: {severity: warning, service: lumen-db, namespace: lumen, phase: Pending, pod: lumen-db-3}
+            exp_annotations:
+              runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#postgresql-availability
+              summary: A PostgreSQL instance is not ready
+              description: 'lumen-db-3 is not ready. Check: kubectl get cluster lumen-db -n lumen'
