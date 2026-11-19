@@ -11,6 +11,13 @@ argo-rollouts:
       limits:
         cpu: 500m
         memory: 256Mi
+    # Rollout phases, for kube-prometheus-stack/argocd-rules.yaml (issue #25)
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+        additionalLabels:
+          release: kube-prometheus-stack
 
   dashboard:
     enabled: true

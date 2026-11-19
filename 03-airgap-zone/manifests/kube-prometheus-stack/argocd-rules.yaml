@@ -1,0 +1,97 @@
+# Alerts on GitOps deployments (issue #25). docs/runbooks/alerting.md
+#
+#   argocd_app_*  ArgoCD application controller (ServiceMonitor argocd-metrics)
+#   rollout_info  Argo Rollouts controller (ServiceMonitor of its chart)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: argocd
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack  # required by the Prometheus Operator ruleSelector
+spec:
+  groups:
+    - name: argocd
+      rules:
+        # What runs is not what git says
+        - alert: ArgoCDAppOutOfSync
+          expr: argocd_app_info{sync_status!="Synced"} == 1
+          for: 15m
+          labels:
+            severity: warning
+            service: argocd
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#argocd-and-rollouts
+            summary: An ArgoCD application is out of sync
+            description: >-
+              {{ $labels.name }} is {{ $labels.sync_status }} for 15 minutes.
+              Check: kubectl get application -n argocd {{ $labels.name }}
+
+        - alert: ArgoCDAppUnhealthy
+          expr: argocd_app_info{health_status!~"Healthy|Progressing"} == 1
+          for: 10m
+          labels:
+            severity: warning
+            service: argocd
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#argocd-and-rollouts
+            summary: An ArgoCD application is not healthy
+            description: >-
+              {{ $labels.name }} is {{ $labels.health_status }} for 10 minutes.
+              Check: kubectl get application -n argocd {{ $labels.name }} -o jsonpath='{.status.resources}'
+
+        # The counter of an application's first failed sync starts at 1, which
+        # increase() does not see: a series that did not exist 15 minutes ago
+        # counts too
+        - alert: ArgoCDSyncFailed
+          expr: |
+            sum by (name) (increase(argocd_app_sync_total{phase=~"Error|Failed"}[15m])) > 0
+              or (sum by (name) (argocd_app_sync_total{phase=~"Error|Failed"})
+                  unless sum by (name) (argocd_app_sync_total{phase=~"Error|Failed"} offset 15m))
+          labels:
+            severity: warning
+            service: argocd
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#argocd-and-rollouts
+            summary: An ArgoCD sync failed
+            description: >-
+              A sync of {{ $labels.name }} failed in the last 15 minutes.
+              Check: kubectl get application -n argocd {{ $labels.name }} -o jsonpath='{.status.operationState.message}'
+
+        # The alerts above stay silent when the controller is not scraped
+        - alert: ArgoCDMetricsAbsent
+          expr: absent(argocd_app_info)
+          for: 15m
+          labels:
+            severity: warning
+            service: argocd
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#argocd-and-rollouts
+            summary: No ArgoCD application metrics
+            description: The application controller is down, or Prometheus does not scrape it.
+
+        # A canary aborted by its analysis, or a rollout that cannot progress.
+        # Phases of rollout_info: Progressing, Paused, Completed, Abort, Error, Timeout
+        - alert: RolloutFailed
+          expr: rollout_info{phase=~"Abort|Error|Timeout"} == 1
+          for: 2m
+          labels:
+            severity: warning
+            service: argo-rollouts
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#argocd-and-rollouts
+            summary: A rollout failed
+            description: >-
+              {{ $labels.exported_namespace }}/{{ $labels.name }} is in phase {{ $labels.phase }}: the
+              canary was aborted or cannot progress. Check: kubectl argo rollouts get rollout -n {{ $labels.exported_namespace }} {{ $labels.name }}
+
+        - alert: RolloutMetricsAbsent
+          expr: absent(rollout_info)
+          for: 15m
+          labels:
+            severity: warning
+            service: argo-rollouts
+          annotations:
+            runbook_url: https://gitea.airgap.local/lumen/lumen/src/branch/main/docs/runbooks/alerting.md#argocd-and-rollouts
+            summary: No Argo Rollouts metrics
+            description: The Argo Rollouts controller is down, or Prometheus does not scrape it.

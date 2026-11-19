@@ -25,13 +25,13 @@ PY
 
 echo "== promtool test rules"
 mkdir -p 03-airgap-zone/tests/prometheus/.rules
-for r in cnpg-backup-rules postgres-rules redis-rules certificate-rules vault-rules kafka-rules; do
+for r in cnpg-backup-rules postgres-rules redis-rules certificate-rules argocd-rules vault-rules kafka-rules; do
   python3 -c 'import sys,yaml; d=yaml.safe_load(open(sys.argv[1])); yaml.safe_dump({"groups": d["spec"]["groups"]}, open(sys.argv[2], "w"))' \
     "03-airgap-zone/manifests/kube-prometheus-stack/$r.yaml" \
     "03-airgap-zone/tests/prometheus/.rules/$r.yml"
 done
 docker run --rm -v "$PWD/03-airgap-zone/tests/prometheus:/w" -w /w --entrypoint promtool \
-  "$PROMETHEUS_IMAGE" test rules cnpg-backup-rules.test.yml postgres-rules.test.yml redis-rules.test.yml certificate-rules.test.yml vault-rules.test.yml kafka-rules.test.yml
+  "$PROMETHEUS_IMAGE" test rules cnpg-backup-rules.test.yml postgres-rules.test.yml redis-rules.test.yml certificate-rules.test.yml argocd-rules.test.yml vault-rules.test.yml kafka-rules.test.yml
 
 echo "== SLO rules up to date with 03-airgap-zone/slo (make slo-generate)"
 rm -rf .cache/slo && mkdir -p .cache/slo

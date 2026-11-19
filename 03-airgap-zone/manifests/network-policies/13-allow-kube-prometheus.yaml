@@ -103,6 +103,13 @@ spec:
         - protocol: TCP
           port: 6443
 
+    # Kubelet and cAdvisor on the nodes (host network: by port only).
+    # Without it, container and volume metrics are missing and KubeletDown
+    # fires (issue #25)
+    - ports:
+        - protocol: TCP
+          port: 10250
+
     # Scrape all services in all namespaces
     - to:
         - namespaceSelector: {}
@@ -113,6 +120,10 @@ spec:
           port: 8083  # ArgoCD metrics
         - protocol: TCP
           port: 8084  # ArgoCD repo-server
+        - protocol: TCP
+          port: 8082  # ArgoCD application controller (issue #25)
+        - protocol: TCP
+          port: 8090  # Argo Rollouts controller (issue #25)
         - protocol: TCP
           port: 9090  # Prometheus self-monitor
         - protocol: TCP

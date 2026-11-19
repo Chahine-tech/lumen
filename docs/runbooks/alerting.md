@@ -158,6 +158,16 @@ A bad release: `kubectl argo rollouts abort lumen-api -n lumen`, then
 
 The certificates of hosts outside the cluster (`infra-ca.sh server`: the transit Vault, ntfy) are not issued by cert-manager, and these alerts do not see them.
 
+## ArgoCD and Rollouts
+
+| Alert | Means | Do |
+|---|---|---|
+| `ArgoCDAppOutOfSync` | what runs differs from git for 15 minutes | a change by hand, or a sync that cannot finish: `kubectl get application -n argocd <name>` |
+| `ArgoCDAppUnhealthy` | not `Healthy` or `Progressing` for 10 minutes | the unhealthy resource is in `.status.resources` |
+| `ArgoCDSyncFailed` | a sync failed in the last 15 minutes | `.status.operationState.message` |
+| `RolloutFailed` | a rollout is in phase `Abort`, `Error` or `Timeout` | `kubectl argo rollouts get rollout -n <namespace> <name>`. An aborted canary leaves the stable version serving: fix and release again, or [release-v1.7.0, Rollback](release-v1.7.0.md#rollback) |
+| `ArgoCDMetricsAbsent`, `RolloutMetricsAbsent` | no metrics for 15 minutes | the controller is down, or not scraped |
+
 ## Tested
 
 On 18 November 2026, on k3d (K3s v1.33.6, 3 nodes), with the chart and values of
@@ -205,6 +215,20 @@ certificate from `infra-ca.sh server`.
 | Platform healthy, before and after | none of them |
 
 `RedisNoMaster` and `CertManagerMetricsAbsent` are covered by promtool tests only, and so is a Vault or PostgreSQL pod stuck in `Pending`.
+
+`tests/alerting/argocd-rollouts-test.sh`, on 19 November 2026, on k3d with `argocd/02-install-airgap.yaml`, the Argo Rollouts chart of this repository and the NetworkPolicies of `argocd` and `monitoring`. The test application came from GitHub (`argocd-example-apps`), not from Gitea:
+
+| Real failure | Alerts that fired |
+|---|---|
+| A broken image set by hand on a synced Deployment | `ArgoCDAppOutOfSync`, `ArgoCDAppUnhealthy` |
+| An application whose namespace does not exist | `ArgoCDSyncFailed` |
+| A canary whose analysis fails | `RolloutFailed` |
+| Healthy, before and after | none of them |
+
+`ArgoCDSyncFailed` for the very first failure of an application, whose counter appears at 1, and the absent metrics alerts are covered by promtool tests only.
+
+Found while testing, in the NetworkPolicies of `main`: Prometheus could reach neither the ArgoCD application controller (8082) nor the kubelets (10250). The application metrics were missing, and so were the container and volume metrics, while `KubeletDown` fired all the time.
+
 
 Found while testing: a pod that cannot be scheduled has no `Ready` condition, so the "not ready" alerts of Redis, Vault and PostgreSQL also look at the `Pending` phase.
 
